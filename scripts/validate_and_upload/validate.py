@@ -6,10 +6,14 @@ Usage:
 """
 
 import argparse
+import logging
 import os
 import sys
 
 from oopsie_tools.utils.validation.validation_utils import validate_h5_file, validate_session_dir
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+logger = logging.getLogger(__name__)
 
 
 def main() -> int:
@@ -28,19 +32,19 @@ def main() -> int:
     if os.path.isfile(target):
         try:
             validate_h5_file(target, strict_annotation_check=True)
-            print(f"\n✓ {os.path.basename(target)} passed\n")
+            logger.info("%s passed", os.path.basename(target))
             return 0
         except AssertionError as e:
-            print(f"\n✗ Validation failed: {e}\n")
+            logger.error("Validation failed: %s", e)
             return 1
         except Exception as e:
-            print(f"\n✗ Unexpected error: {e}\n")
+            logger.error("Unexpected error: %s", e)
             return 1
 
     if os.path.isdir(target):
         return validate_session_dir(target, strict_annotation_check=True)
 
-    print(f"\n✗ Path does not exist: {target}\n")
+    logger.error("Path does not exist: %s", target)
     return 1
 
 
