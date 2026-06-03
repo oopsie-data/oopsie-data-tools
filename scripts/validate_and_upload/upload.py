@@ -111,6 +111,33 @@ def ensure_repo():
 # ── Step 4: upload ────────────────────────────────────────────────────────────
 
 
+def check_folder_size(samples_dir: str) -> None:
+    """Abort if any directory under samples_dir exceeds 10 000 files."""
+    FILE_LIMIT = 10_000
+    oversized = []
+    for dirpath, _, filenames in os.walk(samples_dir):
+        if len(filenames) > FILE_LIMIT:
+            oversized.append((dirpath, len(filenames)))
+
+    if not oversized:
+        return
+
+    restructure_script = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "restructure_large_folder.py"
+    )
+    logger.error("[precheck] The following directories exceed %d files:", FILE_LIMIT)
+    for d, n in oversized:
+        logger.error("             %s  (%d files)", d, n)
+    logger.error(
+        "[precheck] HuggingFace Hub enforces a per-directory file limit.\n"
+        "           Restructure the folder first, then re-run the upload:\n\n"
+        "             python %s --source %s\n",
+        restructure_script,
+        samples_dir,
+    )
+    sys.exit(1)
+
+
 def upload_dataset(samples_dir: str, commit_message: str):
     from huggingface_hub import HfApi
 
@@ -130,11 +157,10 @@ def upload_dataset(samples_dir: str, commit_message: str):
     logger.info("[upload] Total size: %.2f GB", total_bytes / 1e9)
     logger.info("[upload] Uploading (this may take several minutes)...")
 
-    api.upload_folder(
+    api.upload_large_folder(
         folder_path=samples_dir,
         repo_id=HF_REPO,
         repo_type="dataset",
-        commit_message=commit_message,
     )
 
     logger.info("[upload] Done!")
@@ -192,7 +218,11 @@ def main():
     else:
         commit_message = f"Add episode {args.episode_id}"
 
-    # 2. Validate
+    # 2. Pre-upload folder-size check
+    if not args.skip_upload:
+        check_folder_size(samples_dir)
+
+    # 3. Validate
     if not args.skip_validate:
         ok = run_validation(samples_dir, args.episode_id, args.log_path)
         if not ok:
@@ -201,7 +231,7 @@ def main():
     else:
         logger.info("[validate] Skipped.")
 
-    # 3 + 4. Create repo and upload
+    # 4 + 5. Create repo and upload
     if not args.skip_upload:
         ensure_repo()
         upload_dataset(samples_dir, commit_message)
