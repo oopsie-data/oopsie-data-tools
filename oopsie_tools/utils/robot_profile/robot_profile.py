@@ -45,7 +45,6 @@ REQUIRED_KEYS = frozenset(
 
 REQUIRED_ROBOT_STATE_KEYS = frozenset(
     {
-        "joint_position",
         "gripper_position",
     }
 )
@@ -213,7 +212,7 @@ def robot_profile_from_raw(raw: Any) -> RobotProfile:
         camera_names=list(raw["camera_names"]),
         # Observation Related
         robot_state_keys=list(raw["robot_state_keys"]),
-        robot_state_joint_names=list(raw["robot_state_joint_names"]),
+        robot_state_joint_names=list(raw.get("robot_state_joint_names") or []),
         # Action Related
         action_space=action_space,
         action_joint_names=action_joint_names,
