@@ -21,12 +21,16 @@ MIN_EPISODE_LENGTH = 1
 MAX_EPISODE_LENGTH = 300
 
 
-def validate_episode(data: EpisodeData, strict_annotation_check: bool = False) -> None:
+def validate_episode(
+    data: EpisodeData,
+    strict_annotation_check: bool = False,
+    expected_lab_id: str | None = None,
+) -> None:
     """Run all semantic checks on a loaded EpisodeData.
 
     Raises AssertionError with a descriptive message on the first failure.
     """
-    _validate_metadata(data)
+    _validate_metadata(data, expected_lab_id=expected_lab_id)
     if data.robot_profile is not None:
         _validate_profile_consistency(data)
     _validate_trajectory_lengths(data)
@@ -38,11 +42,15 @@ def validate_episode(data: EpisodeData, strict_annotation_check: bool = False) -
 
 # ── Individual checks ──────────────────────────────────────────────────────────
 
-def _validate_metadata(data: EpisodeData) -> None:
+def _validate_metadata(data: EpisodeData, expected_lab_id: str | None = None) -> None:
     assert data.language_instruction, "language_instruction is empty"
     assert data.episode_id, "episode_id is empty"
     assert data.lab_id, "lab_id is empty"
     assert data.lab_id != "your_lab_id", "lab_id has not been changed from the placeholder value"
+    if expected_lab_id is not None:
+        assert data.lab_id == expected_lab_id, (
+            f"lab_id mismatch: file has {data.lab_id!r}, expected {expected_lab_id!r}"
+        )
     assert data.operator_name, "operator_name is empty"
     assert data.control_freq > 0, "control_freq must be > 0"
     assert MIN_EPISODE_LENGTH <= data.trajectory_length/data.control_freq <= MAX_EPISODE_LENGTH, (

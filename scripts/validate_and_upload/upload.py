@@ -70,7 +70,11 @@ def run_validation(base_path: str, episode_id: str, log_path: str | None=None) -
     target = os.path.join(base_path, f"{episode_id}.h5") if episode_id else base_path
     if os.path.isfile(target):
         try:
-            validate_h5_file(target, strict_annotation_check=True, log_path=log_path)
+            validate_h5_file(
+                target,
+                strict_annotation_check=True,
+                expected_lab_id=LAB_ID,
+            )
             logger.info("%s passed", os.path.basename(target))
             return 1
         except AssertionError as e:
@@ -81,7 +85,12 @@ def run_validation(base_path: str, episode_id: str, log_path: str | None=None) -
             return 0
 
     if os.path.isdir(target):
-        return validate_session_dir(target, strict_annotation_check=True, log_path=log_path)
+        return validate_session_dir(
+            target,
+            strict_annotation_check=True,
+            log_path=log_path,
+            expected_lab_id=LAB_ID,
+        )
 
 
 # ── Step 3: create repo (if needed) ───────────────────────────────────────────
