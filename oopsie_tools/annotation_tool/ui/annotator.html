@@ -6,146 +6,347 @@
     <title>OopsieData</title>
     <style>
       * { box-sizing: border-box; margin: 0; padding: 0; }
-      :root { color-scheme: dark; }
-      body {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        background: #1a1a2e;
-        color: #eee;
-        min-height: 100vh;
+      [hidden] { display: none !important; }
+      :root {
+        color-scheme: light dark;
+        /* Type scale — four role-named tiers. Every font-size in the stylesheet
+           should reference one of these; if you feel the urge to add a fifth,
+           it's a signal that a rule is doing something the role model doesn't
+           yet describe, not that we need finer granularity. */
+        --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+        --fs-label: 0.72rem;   /* uppercase eyebrows, hints, chip counters */
+        --fs-ui: 0.9rem;       /* every interface control + secondary body text */
+        --fs-heading: 1.1rem;  /* section headings inside a panel */
+        --fs-title: 1.5rem;    /* page title only */
+        --tree-indent: 14px;
+        --video-h: min(60vh, 420px);
+        --tooltip-w: min(280px, 90vw);
+        /* focus ring */
+        --focus-ring: 0 0 0 2px var(--bg-app), 0 0 0 4px var(--accent);
+        /* Dark theme (default). Overridden below by prefers-color-scheme + [data-theme]. */
+        --bg-app: #1a1a2e;
+        --bg-panel: #16213e;
+        --bg-inset: #0f172a;
+        --bg-hover: #1e3a5f;
+        --bg-tooltip: #1e293b;
+        --tooltip-text: #cbd5e1;
+        --text: #eee;
+        --text-strong: #f1f5f9;
+        --text-input: #fff;
+        --text-value: #e2e8f0;
+        --text-muted: #cbd5e1;
+        --text-muted-2: #94a3b8;
+        --text-muted-3: #64748b;
+        --border-input: #333;
+        --border-panel: #2a3f5f;
+        --border-divider: #334155;
+        --border-inner: #1e293b;
+        --accent: #60a5fa;
+        --primary-bg: #4ade80;
+        --primary-hover: #22c55e;
+        --primary-text: #000;
+        --scrollbar-thumb: #334155;
+        --scrollbar-thumb-hover: #475569;
+        --other-mark: #a78bfa;
+        --warn: #fbbf24;
+        --danger: #f87171;
+        --video-bg: #000;
       }
-      .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+      /* Standard OS-preference resolution: follow prefers-color-scheme first,
+         then let [data-theme] on <html> override for the toggle button. */
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg-app: #f1f5f9;
+          --bg-panel: #ffffff;
+          --bg-inset: #f8fafc;
+          --bg-hover: #dbeafe;
+          --bg-tooltip: #1e293b;
+          --tooltip-text: #f1f5f9;
+          --text: #0f172a;
+          --text-strong: #0f172a;
+          --text-input: #0f172a;
+          --text-value: #1e293b;
+          --text-muted: #475569;
+          --text-muted-2: #64748b;
+          --text-muted-3: #94a3b8;
+          --border-input: #cbd5e1;
+          --border-panel: #e2e8f0;
+          --border-divider: #e2e8f0;
+          --border-inner: #e2e8f0;
+          --accent: #2563eb;
+          --primary-bg: #22c55e;
+          --primary-hover: #16a34a;
+          --primary-text: #ffffff;
+          --scrollbar-thumb: #cbd5e1;
+          --scrollbar-thumb-hover: #94a3b8;
+          --other-mark: #7c3aed;
+          --warn: #b45309;
+          --danger: #dc2626;
+        }
+      }
+      :root[data-theme="dark"] {
+        color-scheme: dark;
+        --bg-app: #1a1a2e;
+        --bg-panel: #16213e;
+        --bg-inset: #0f172a;
+        --bg-hover: #1e3a5f;
+        --bg-tooltip: #1e293b;
+        --tooltip-text: #cbd5e1;
+        --text: #eee;
+        --text-strong: #f1f5f9;
+        --text-input: #fff;
+        --text-value: #e2e8f0;
+        --text-muted: #cbd5e1;
+        --text-muted-2: #94a3b8;
+        --text-muted-3: #64748b;
+        --border-input: #333;
+        --border-panel: #2a3f5f;
+        --border-divider: #334155;
+        --border-inner: #1e293b;
+        --accent: #60a5fa;
+        --primary-bg: #4ade80;
+        --primary-hover: #22c55e;
+        --primary-text: #000;
+        --scrollbar-thumb: #334155;
+        --scrollbar-thumb-hover: #475569;
+        --other-mark: #a78bfa;
+        --warn: #fbbf24;
+        --danger: #f87171;
+      }
+      :root[data-theme="light"] {
+        color-scheme: light;
+        --bg-app: #f1f5f9;
+        --bg-panel: #ffffff;
+        --bg-inset: #f8fafc;
+        --bg-hover: #dbeafe;
+        --bg-tooltip: #1e293b;
+        --tooltip-text: #f1f5f9;
+        --text: #0f172a;
+        --text-strong: #0f172a;
+        --text-input: #0f172a;
+        --text-value: #1e293b;
+        --text-muted: #475569;
+        --text-muted-2: #64748b;
+        --text-muted-3: #94a3b8;
+        --border-input: #cbd5e1;
+        --border-panel: #e2e8f0;
+        --border-divider: #e2e8f0;
+        --border-inner: #e2e8f0;
+        --accent: #2563eb;
+        --primary-bg: #22c55e;
+        --primary-hover: #16a34a;
+        --primary-text: #ffffff;
+        --scrollbar-thumb: #cbd5e1;
+        --scrollbar-thumb-hover: #94a3b8;
+        --other-mark: #7c3aed;
+        --warn: #b45309;
+        --danger: #dc2626;
+      }
+
+      html, body { height: 100%; }
+      body {
+        font-family: var(--font-body);
+        background: var(--bg-app);
+        color: var(--text);
+        overflow: hidden;
+      }
+      input, textarea, select, button, h1, h2, h3, h4, h5, h6 { font-family: inherit; }
+      :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+      /* Shared internal-scroll affordance. Apply to any element that owns its own scroll region. */
+      .scroll-y {
+        overflow-y: auto;
+        min-height: 0;
+        scrollbar-width: thin;
+        scrollbar-color: var(--scrollbar-thumb) transparent;
+      }
+      .scroll-y::-webkit-scrollbar { width: 10px; }
+      .scroll-y::-webkit-scrollbar-track { background: transparent; }
+      .scroll-y::-webkit-scrollbar-thumb {
+        background: var(--scrollbar-thumb);
+        border-radius: 6px;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+      }
+      .scroll-y::-webkit-scrollbar-thumb:hover {
+        background: var(--scrollbar-thumb-hover);
+        background-clip: padding-box;
+        border: 2px solid transparent;
+      }
+      .container {
+        max-width: none;
+        margin: 0 auto;
+        padding: 16px 20px 0;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
       header {
+        flex: 0 0 auto;
         display: flex;
         justify-content: space-between;
         align-items: center;
         flex-wrap: wrap;
-        gap: 12px 16px;
+        gap: 12px 20px;
         margin-bottom: 14px;
-        padding-bottom: 14px;
-        border-bottom: 1px solid #333;
+        padding-bottom: 12px;
+        border-bottom: 1px solid var(--border-divider);
       }
       header h1 {
-        font-size: 1.5rem;
+        font-size: var(--fs-title);
         margin: 0;
         min-width: 0;
+        flex-shrink: 0;
       }
-      .header-back { flex-shrink: 0; }
-      .statusline { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9rem; color: #cbd5e1; }
-
-      .context-bar {
-        background: #16213e;
-        border: 1px solid #2a3f5f;
-        border-radius: 8px;
-        padding: 12px 16px;
-        margin-bottom: 20px;
-      }
-      .context-bar-title {
-        font-size: 0.75rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        color: #64748b;
-        margin-bottom: 8px;
-      }
-      .context-bar-grid {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 12px 18px;
-        font-size: 0.85rem;
-        line-height: 1.45;
-      }
-      .context-bar-grid .ctx-row-wide { grid-column: 1 / -1; }
-      .context-bar .ctx-row {
-        display: flex;
-        flex-direction: row;
-        align-items: baseline;
-        gap: 6px;
+      .session-meta {
+        flex: 1 1 auto;
         min-width: 0;
+        display: flex;
+        align-items: baseline;
+        flex-wrap: wrap;
+        gap: 4px 8px;
+        font-size: var(--fs-ui);
+        color: var(--text-value);
       }
-      .context-bar .ctx-label {
-        flex: 0 0 auto;
-        color: #94a3b8;
+      .session-meta .ctx-label {
+        color: var(--text-muted-2);
         font-weight: 600;
         text-transform: uppercase;
-        font-size: 0.7rem;
+        font-size: var(--fs-label);
         letter-spacing: 0.04em;
-        white-space: nowrap;
       }
-      .context-bar .ctx-label::after {
-        content: ':';
-        color: #64748b;
-        font-weight: 500;
-        margin-left: 1px;
-      }
-      .context-bar .ctx-value {
-        flex: 1;
-        min-width: 0;
-        color: #e2e8f0;
-        word-break: break-word;
-      }
-      .context-bar .ctx-value.statusline { color: #cbd5e1; }
+      .session-meta .ctx-sep { color: var(--text-muted-3); }
+      .header-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+      .header-back { flex-shrink: 0; }
+      .theme-toggle { padding: 8px 12px; font-size: var(--fs-ui); color: var(--text); }
+      .statusline { font-family: var(--font-mono); font-size: var(--fs-ui); color: var(--text-muted); }
 
       .main-content {
+        flex: 1 1 auto;
+        min-height: 0;
         display: grid;
-        grid-template-columns: 260px 1fr 400px;
-        gap: 20px;
-        align-items: start;
+        grid-template-columns: minmax(220px, 1.2fr) minmax(0, 3fr) minmax(320px, 1.8fr);
+        gap: 16px;
+        padding-bottom: 16px;
       }
 
-      /* Left: h5 tree (styled like sample-list) */
       .sidebar {
-        background: #16213e;
+        background: var(--bg-panel);
         border-radius: 8px;
         padding: 10px;
         display: flex;
         flex-direction: column;
         min-height: 0;
-        align-self: start;
-        position: sticky;
-        top: 12px;
-        max-height: calc(100vh - 24px);
+        height: 100%;
       }
-      .sidebar #h5List {
-        flex: 1 1 auto;
-        min-height: 0;
-        overflow-y: auto;
-        margin-top: 10px;
-      }
-      .h5-nav { display: flex; gap: 6px; margin-bottom: 10px; }
-      .h5-nav button { flex: 1 1 0; padding: 7px 8px; font-size: 0.8rem; }
+      .sidebar #h5List { flex: 1 1 auto; margin-top: 10px; }
       .h5-header { display:flex; align-items:center; margin-bottom: 10px; padding: 0 5px; }
-      .h5-title { font-size: 0.9rem; color: #94a3b8; font-weight: 600; }
-      .h5-search { width: 100%; margin: 0 0 10px; padding: 10px; border: 1px solid #333; border-radius: 6px; background: #1a1a2e; color: #fff; font-size: 0.95rem; }
-      .h5-legend {
-        font-size: 0.72rem;
-        line-height: 1.45;
-        color: #94a3b8;
+      .h5-title { font-size: var(--fs-ui); color: var(--text-muted-2); font-weight: 600; }
+      .sidebar-stats {
         padding: 0 5px 10px;
-        border-bottom: 1px solid #2a3f5f;
+        border-bottom: 1px solid var(--border-panel);
+        margin-bottom: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        font-size: var(--fs-label);
+      }
+      .sidebar-stats .stats-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 8px;
+        color: var(--text-muted-2);
+      }
+      .sidebar-stats .stats-row span:last-child { color: var(--text-value); font-weight: 600; }
+      .sidebar-stats .stats-row.muted span:last-child { color: var(--text-muted-3); font-weight: 500; }
+
+      .episode-toolbar {
+        flex: 0 0 auto;
+        display: grid;
+        grid-template-columns: minmax(220px, 1.2fr) minmax(0, 3fr) minmax(320px, 1.8fr);
+        gap: 16px;
+        align-items: center;
+        margin-bottom: 14px;
+        background: var(--bg-panel);
+        border: 1px solid var(--border-panel);
+        border-radius: 8px;
+        padding: 8px 12px;
+      }
+      .episode-toolbar > .episode-nav { grid-column: 2; justify-self: stretch; width: 100%; justify-content: center; }
+      .episode-toolbar > .h5-search { grid-column: 3; }
+      .episode-position {
+        flex: 0 0 auto;
+        font-size: var(--fs-label);
+        color: var(--text-muted-2);
+        font-family: var(--font-mono);
+        padding: 0 4px;
+        white-space: nowrap;
+      }
+      .episode-nav {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+      .episode-nav button {
+        flex: 0 0 auto;
+        padding: 6px 10px;
+        font-size: var(--fs-ui);
+      }
+      .episode-nav .episode-name {
+        flex: 0 1 auto;
+        min-width: 0;
+        max-width: 100%;
+        text-align: center;
+        font-family: var(--font-mono);
+        font-size: var(--fs-ui);
+        color: var(--text-value);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .episode-nav .episode-name.placeholder { color: var(--text-muted-3); }
+      .h5-search { padding: 8px 10px; font-size: var(--fs-ui); }
+      .h5-search::placeholder { color: var(--text-muted-3); }
+      .h5-legend {
+        font-size: var(--fs-label);
+        line-height: 1.45;
+        color: var(--text-muted-2);
+        padding: 0 5px 10px;
+        border-bottom: 1px solid var(--border-panel);
         margin-bottom: 10px;
       }
       .h5-legend-row { margin-top: 4px; }
       .h5-legend-row:first-child { margin-top: 0; }
-      .muted { opacity: 0.85; color: #94a3b8; }
+      .muted { opacity: 0.85; color: var(--text-muted-2); }
 
-      button { padding: 10px 14px; border-radius: 6px; border: 1px solid #333; cursor: pointer; font-weight: 600; background: transparent; color: #60a5fa; }
-      button:hover { background: #1e3a5f; }
-      button.primary { background: #4ade80; color: #000; border: none; }
-      button.primary:hover { background: #22c55e; }
+      button { padding: 10px 14px; border-radius: 6px; border: 1px solid var(--border-input); cursor: pointer; font-weight: 600; background: transparent; color: var(--accent); }
+      button:hover { background: var(--bg-hover); }
+      button.primary { background: var(--primary-bg); color: var(--primary-text); border: none; }
+      button.primary:hover { background: var(--primary-hover); }
       button:disabled { opacity: 0.6; cursor: not-allowed; }
 
-      /* Center: videos (styled like video-section) */
       .video-section {
-        background: #16213e;
+        background: var(--bg-panel);
         border-radius: 8px;
-        padding: 20px;
+        padding: 16px 20px;
         min-height: 0;
-        align-self: stretch;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+      }
+      .video-section > * { flex: 0 0 auto; }
+      .video-scroll {
+        flex: 1 1 auto;
+        margin: 0 -8px;
+        padding: 0 8px;
       }
       .video-label {
-        font-size: 0.85rem;
+        font-size: var(--fs-ui);
         font-weight: 600;
-        color: #94a3b8;
+        color: var(--text-muted-2);
         margin-bottom: 4px;
         text-transform: uppercase;
         letter-spacing: 0.5px;
@@ -153,6 +354,7 @@
       .video-controls {
         display: flex;
         align-items: center;
+        justify-content: flex-end;
         gap: 16px;
         margin-bottom: 12px;
         flex-wrap: wrap;
@@ -163,67 +365,67 @@
         gap: 6px;
         margin: 0;
         font-weight: 500;
-        font-size: 0.85rem;
-        color: #cbd5e1;
+        font-size: var(--fs-ui);
+        color: var(--text-muted);
       }
       .video-controls select { width: auto; padding: 5px 8px; }
       .video-controls input[type="checkbox"] { width: 16px; height: 16px; }
 
-      /* Right: questionnaire (styled like form-section) */
       .form-section {
-        background: #16213e;
+        background: var(--bg-panel);
         border-radius: 8px;
-        padding: 20px;
+        padding: 16px 20px;
         display: flex;
         flex-direction: column;
         min-height: 0;
-        align-self: start;
-        position: sticky;
-        top: 12px;
-        max-height: calc(100vh - 24px);
+        height: 100%;
       }
-      .form-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+      .form-scroll {
+        flex: 1 1 auto;
+        margin: 0 -8px;
+        padding: 0 8px;
+      }
       .save-bar {
         flex: 0 0 auto;
         margin-top: 12px;
         padding-top: 12px;
-        border-top: 1px solid #334155;
+        border-top: 1px solid var(--border-divider);
         display: flex;
         align-items: center;
         gap: 12px;
         flex-wrap: wrap;
       }
       .save-bar .spacer { flex: 1 1 auto; }
-      .dirty-indicator { font-size: 0.8rem; font-weight: 600; color: #fbbf24; }
-      .dirty-indicator.saved { color: #4ade80; }
-      .autoadvance-label { font-size: 0.75rem; color: #94a3b8; display: flex; align-items: center; gap: 5px; cursor: pointer; user-select: none; }
+      .dirty-indicator { font-size: var(--fs-ui); font-weight: 600; color: var(--warn); }
+      .dirty-indicator.saved { color: var(--primary-bg); }
+      .autoadvance-label { font-size: var(--fs-label); color: var(--text-muted-2); display: flex; align-items: center; gap: 5px; cursor: pointer; user-select: none; }
       .autoadvance-label input { width: 15px; height: 15px; }
       .form-group { margin-bottom: 20px; }
       .form-divider {
         margin: 8px 0 14px;
         padding-top: 8px;
-        border-top: 1px solid #334155;
-        font-size: 0.78rem;
-        color: #94a3b8;
+        border-top: 1px solid var(--border-divider);
+        font-size: var(--fs-ui);
+        color: var(--text-muted-2);
       }
       label { display: block; margin-bottom: 8px; font-weight: 500; }
-      .required::after { content: " *"; color: #f87171; }
-      input[type="text"], textarea, select {
+      .required::after { content: " *"; color: var(--danger); }
+      input[type="text"], input[type="search"], textarea, select {
         width: 100%;
         padding: 10px;
-        border: 1px solid #333;
+        border: 1px solid var(--border-input);
         border-radius: 6px;
-        background: #1a1a2e;
-        color: #fff;
-        font-size: 0.95rem;
+        background: var(--bg-app);
+        color: var(--text-input);
+        font-size: var(--fs-ui);
       }
+      input[type="search"] { appearance: none; -webkit-appearance: none; }
       textarea { min-height: 100px; resize: vertical; }
       select { cursor: pointer; }
       input[type="radio"], input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
       .opt-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-weight: 500; cursor: pointer; }
       .opt-row input { margin: 0; width: 18px; }
 
-      /* Tooltip styling similar to annotator.html */
       .info-icon {
         display: inline-flex;
         align-items: center;
@@ -231,96 +433,107 @@
         width: 15px;
         height: 15px;
         border-radius: 50%;
-        background: #1e3a5f;
-        color: #60a5fa;
-        font-size: 0.65rem;
+        background: var(--bg-hover);
+        color: var(--accent);
+        font-size: var(--fs-label);
         font-style: normal;
         cursor: help;
         flex-shrink: 0;
         position: relative;
       }
-      .info-tooltip {
+      /* Shared floating tooltip element. Lives at the end of <body> so it can
+         never be clipped by ancestor overflow (e.g. .form-scroll). Positioned
+         at hover-time by JS via getBoundingClientRect. */
+      .floating-tooltip {
+        position: fixed;
+        top: 0;
+        left: 0;
         display: none;
-        position: absolute;
-        right: 20px;
-        top: 50%;
-        transform: translateY(-50%);
-        background: #1e293b;
-        color: #cbd5e1;
-        border: 1px solid #334155;
+        background: var(--bg-tooltip);
+        color: var(--tooltip-text);
+        border: 1px solid var(--border-divider);
         border-radius: 6px;
         padding: 8px 12px;
-        font-size: 0.8rem;
+        font-size: var(--fs-ui);
         line-height: 1.4;
-        width: 280px;
-        z-index: 100;
+        width: max-content;
+        max-width: var(--tooltip-w);
+        z-index: 200;
         pointer-events: none;
         white-space: normal;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.25);
       }
-      .info-icon:hover .info-tooltip { display: block; }
+      .floating-tooltip.visible { display: block; }
 
-      /* Tree/list styling similar to sample list */
-      .tree-row { display:flex; align-items:center; gap: 8px; padding: 8px 10px; border-radius: 4px; cursor: pointer; font-size: 0.85rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; transition: background 0.15s; }
-      .tree-row:hover { background: #1a1a2e; }
-      .tree-row.active { background: #1e3a5f; color: #60a5fa; border: none; }
-      .tree-arrow { width: 14px; display:inline-block; opacity: 0.75; color: #94a3b8; }
-      .tree-label { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+      .tree-row { display:flex; align-items:center; gap: 8px; padding: 8px 10px; border-radius: 4px; cursor: pointer; font-size: var(--fs-ui); font-family: var(--font-mono); transition: background 0.15s; }
+      .tree-row:hover { background: var(--bg-app); }
+      .tree-row.active { background: var(--bg-hover); color: var(--accent); }
+      .tree-arrow { width: var(--tree-indent); display:inline-block; opacity: 0.75; color: var(--text-muted-2); }
+      .tree-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-      .tick { color: #4ade80; font-weight: 800; }
-      .other-mark { color: #a78bfa; font-weight: 800; }
+      .tick { color: var(--primary-bg); font-weight: 800; }
+      .other-mark { color: var(--other-mark); font-weight: 800; }
 
-      /* Videos: equal sizing */
-      /* Videos: vertical stack for larger size */
-      .videos-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+      .videos-grid {
+        display: grid;
+        grid-template-columns: repeat(var(--video-cols, 1), minmax(0, 1fr));
+        gap: 12px;
+      }
       .video-card { margin-bottom: 10px; }
-      .video-card video { width: 100%; height: 380px; object-fit: contain; border-radius: 4px; background: #000; }
+      .video-card video {
+        width: 100%;
+        height: auto;
+        max-height: var(--video-h);
+        object-fit: contain;
+        border-radius: 4px;
+        background: var(--video-bg);
+        display: block;
+      }
 
-      /* Task instruction box in right panel */
       .task-instruction-box {
-        background: #0f172a;
-        border: 1px solid #2a3f5f;
+        background: var(--bg-inset);
+        border: 1px solid var(--border-panel);
         border-radius: 6px;
         padding: 12px 14px;
         margin-bottom: 14px;
       }
       .task-instruction-box-label {
-        font-size: 0.7rem;
+        font-size: var(--fs-label);
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.6px;
-        color: #60a5fa;
+        color: var(--accent);
         margin-bottom: 4px;
       }
       .task-instruction-box-value {
-        font-size: 0.95rem;
+        font-size: var(--fs-ui);
         font-weight: 600;
-        color: #f1f5f9;
+        color: var(--text-strong);
         line-height: 1.4;
         word-break: break-word;
       }
 
-      /* Metadata panel above questionnaire */
       .meta-panel {
-        background: #0f172a;
-        border: 1px solid #334155;
+        background: var(--bg-inset);
+        border: 1px solid var(--border-divider);
         border-radius: 6px;
         padding: 12px 14px;
         margin-bottom: 16px;
-        font-size: 0.85rem;
+        font-size: var(--fs-ui);
       }
       .meta-instruction {
-        font-size: 0.95rem;
+        font-size: var(--fs-ui);
         font-weight: 600;
-        color: #f1f5f9;
+        color: var(--text-strong);
         margin-bottom: 8px;
         line-height: 1.4;
       }
       .meta-instruction-label {
-        font-size: 0.7rem;
+        font-size: var(--fs-label);
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.6px;
-        color: #60a5fa;
+        color: var(--accent);
         margin-bottom: 3px;
       }
       .meta-row {
@@ -329,138 +542,205 @@
         flex-wrap: wrap;
         margin-top: 8px;
         padding-top: 8px;
-        border-top: 1px solid #1e293b;
+        border-top: 1px solid var(--border-inner);
       }
+      .meta-row.meta-row-flat { margin-top: 0; padding-top: 0; border-top: none; }
       .meta-item { display: flex; flex-direction: column; gap: 1px; }
-      .meta-key { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; }
-      .meta-val { font-size: 0.8rem; color: #cbd5e1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+      .meta-key { font-size: var(--fs-label); text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted-3); }
+      .meta-val { font-size: var(--fs-ui); color: var(--text-muted); font-family: var(--font-mono); word-break: break-all; }
 
-      /* Episode data visualizer (#30) */
       #episodeFields { margin-bottom: 16px; }
-      .episode-data { background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 8px 12px; font-size: 0.8rem; }
-      .episode-data summary { cursor: pointer; color: #94a3b8; font-weight: 600; }
+      .episode-data { background: var(--bg-inset); border: 1px solid var(--border-divider); border-radius: 6px; padding: 8px 12px; font-size: var(--fs-ui); }
+      .episode-data summary { cursor: pointer; color: var(--text-muted-2); font-weight: 600; }
       .ef-section { margin-top: 10px; }
-      .ef-section-title { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; margin-bottom: 3px; }
+      .ef-section-title { font-size: var(--fs-label); text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted-3); margin-bottom: 3px; }
       .ef-row { display: flex; gap: 10px; padding: 1px 0; }
-      .ef-key { flex: 0 0 42%; color: #94a3b8; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-word; }
-      .ef-val { flex: 1; color: #cbd5e1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-word; }
+      .ef-key { flex: 0 0 42%; color: var(--text-muted-2); font-family: var(--font-mono); word-break: break-word; }
+      .ef-val { flex: 1; color: var(--text-muted); font-family: var(--font-mono); word-break: break-word; }
 
-      /* Autofill from a previous annotation (#27) */
       #autofillRow { margin-bottom: 16px; }
-      .autofill-label { display: block; font-size: 0.8rem; color: #94a3b8; font-weight: 500; }
-      .autofill-label select { margin-top: 4px; }
+      .autofill-label { display: block; font-size: var(--fs-ui); color: var(--text-muted-2); font-weight: 500; margin-bottom: 4px; }
+      #autofillRow select { margin-top: 4px; }
 
-      /* Editable task instruction (#31) */
-      .link-btn { background: none; border: none; color: #60a5fa; font-size: 0.7rem; padding: 0 0 0 6px; font-weight: 600; cursor: pointer; }
+      .link-btn { background: none; border: none; color: var(--accent); font-size: var(--fs-label); padding: 0 0 0 6px; font-weight: 600; cursor: pointer; }
       .link-btn:hover { background: none; text-decoration: underline; }
       #instrEditRow input { margin-bottom: 6px; }
       #instrEditRow .instr-btns { display: flex; gap: 6px; }
-      #instrEditRow .instr-btns button { padding: 6px 10px; font-size: 0.85rem; }
+      #instrEditRow .instr-btns button { padding: 6px 10px; font-size: var(--fs-ui); }
 
-      /* Questionnaire container */
-      #questionnaire h3 { margin-bottom: 12px; }
+      .card-title { font-size: var(--fs-heading); margin-bottom: 10px; font-weight: 600; }
+      .button-row { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+      .instr-edit { margin-top: 8px; }
+      .instr-edit input { margin-bottom: 6px; }
 
-      @media (max-width: 900px) {
-        .context-bar-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      /* Non-blocking toast for save/network errors (replaces alert()). */
+      .toast-region {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        z-index: 200;
+        pointer-events: none;
       }
-      @media (max-width: 520px) {
-        .context-bar-grid { grid-template-columns: 1fr; }
-        .context-bar-grid .ctx-row-wide { grid-column: auto; }
+      .toast {
+        pointer-events: auto;
+        background: var(--bg-tooltip);
+        color: var(--tooltip-text);
+        border: 1px solid var(--danger);
+        border-left-width: 4px;
+        border-radius: 6px;
+        padding: 10px 14px;
+        font-size: var(--fs-ui);
+        max-width: 360px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.25);
       }
+      .toast.info { border-color: var(--accent); }
 
       @media (max-width: 1200px) {
-        .main-content { grid-template-columns: 1fr; }
-        .sidebar, .form-section { position: static; max-height: none; }
+        html, body { height: auto; }
+        body { overflow: auto; }
+        .container { height: auto; padding-bottom: 16px; }
+        .main-content {
+          grid-template-columns: 1fr;
+          flex: 0 0 auto;
+          min-height: 0;
+        }
+        .episode-toolbar { grid-template-columns: 1fr; }
+        .episode-toolbar > .episode-nav,
+        .episode-toolbar > .h5-search { grid-column: auto; justify-self: stretch; }
+        .sidebar, .video-section, .form-section { height: auto; }
         .sidebar #h5List {
           flex: 0 1 auto;
           max-height: min(420px, 50vh);
         }
-        .form-scroll { overflow-y: visible; }
+        .video-scroll, .form-scroll { overflow-y: visible; }
         .videos-grid { grid-template-columns: 1fr; }
       }
     </style>
+    <script>
+      // Apply the persisted theme (if any) before the body paints, to avoid a flash
+      // of the wrong palette. When no explicit choice is saved, the CSS falls back to
+      // the OS-level prefers-color-scheme media query.
+      (function () {
+        try {
+          const saved = localStorage.getItem("oopsie_theme");
+          if (saved === "light" || saved === "dark") {
+            document.documentElement.setAttribute("data-theme", saved);
+          }
+          // Pre-set the button label so the "action verb" matches the current
+          // theme immediately — the main script re-syncs later, but this avoids
+          // an initial-paint flash of the wrong text.
+          const explicit = (saved === "light" || saved === "dark") ? saved : null;
+          const osDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+          const resolved = explicit ?? (osDark ? "dark" : "light");
+          document.addEventListener("DOMContentLoaded", () => {
+            const btn = document.getElementById("themeToggleBtn");
+            if (btn) btn.textContent = resolved === "dark" ? "Light mode" : "Dark mode";
+          });
+        } catch (e) { /* localStorage unavailable — fall back to prefers-color-scheme */ }
+      })();
+    </script>
   </head>
   <body>
     <div class="container">
       <header>
         <h1>OopsieData</h1>
-        <button class="header-back" id="backToTaskBtn" type="button" title="Return to instruction / next rollout">Start next Rollout</button>
+        <div class="session-meta" aria-label="Current session">
+          <span class="ctx-label">Status</span>
+          <span class="statusline" id="statusLine">Loading…</span>
+          <span class="ctx-sep">·</span>
+          <span class="ctx-label">Annotator</span>
+          <span id="sessionAnnotatorName">—</span>
+        </div>
+        <div class="header-actions">
+          <!-- Hidden by default. Only the in-the-loop mode reveals it (browse-only launches, i.e. standalone annotation of pre-collected data, never show this control). -->
+          <button class="header-back" id="backToTaskBtn" type="button" hidden title="Return to instruction / next rollout">Start next rollout</button>
+          <button class="theme-toggle" id="themeToggleBtn" type="button" aria-label="Toggle light/dark theme" title="Toggle theme">Light mode</button>
+        </div>
       </header>
 
-      <section class="context-bar" id="sessionContextBar" aria-label="Current session">
-        <div class="context-bar-grid muted">
-          <div class="ctx-row">
-            <span class="ctx-label">Status</span>
-            <span class="ctx-value statusline" id="statusLine">Loading…</span>
-          </div>
-          <div class="ctx-row">
-            <span class="ctx-label">Annotator</span>
-            <span class="ctx-value" id="sessionAnnotatorName">—</span>
-          </div>
-          <div class="ctx-row">
-            <span class="ctx-label">File</span>
-            <span class="ctx-value" id="sessionH5Name">—</span>
-          </div>
+      <nav class="episode-toolbar" aria-label="Episode navigation">
+        <div class="episode-nav">
+          <button id="prevBtn" type="button" title="Previous episode (←)" aria-label="Previous episode">◀ Prev</button>
+          <div class="episode-name placeholder" id="sessionH5Name" aria-live="polite">No episode selected</div>
+          <span class="episode-position" id="episodePosition" aria-hidden="true"></span>
+          <button id="nextBtn" type="button" title="Next episode (→)" aria-label="Next episode">Next ▶</button>
         </div>
-      </section>
+        <input id="h5Search" class="h5-search" type="search" placeholder="Search files…" aria-label="Search episode files" />
+      </nav>
 
-      <div class="main-content">
-        <div class="sidebar">
+      <main class="main-content">
+        <aside class="sidebar" aria-label="Episode list">
           <div class="h5-header">
-            <div class="h5-title">HDF5 files</div>
+            <h2 class="h5-title">HDF5 files</h2>
           </div>
           <div class="h5-legend" aria-label="Annotation status icons">
-            <div class="h5-legend-row"><span class="tick">✓</span> Only Success/failure Annotated (failure details incomplete).</div>
-            <div class="h5-legend-row"><span class="tick">✓✓</span> Complete: Success/failure Annotated with description, category, and severity.</div>
-            <div class="h5-legend-row"><span class="other-mark">◆</span> Also annotated by another annotator.</div>
+            <div class="h5-legend-row"><span class="tick">✓</span> Success/failure only (failure details incomplete)</div>
+            <div class="h5-legend-row"><span class="tick">✓✓</span> Complete (description, category, severity)</div>
+            <div class="h5-legend-row"><span class="other-mark">◆</span> Also annotated by another annotator</div>
           </div>
-          <input id="h5Search" class="h5-search" type="text" placeholder="Search…" />
-          <div class="h5-nav">
-            <button id="prevBtn" type="button" title="Previous episode (←)">◀ Prev</button>
-            <button id="nextBtn" type="button" title="Next episode (→)">Next ▶</button>
+          <div class="sidebar-stats" id="sidebarStats">
+            <div class="stats-row"><span>Episodes</span><span id="statsTotal">—</span></div>
+            <div class="stats-row"><span>Fully annotated</span><span id="statsComplete">—</span></div>
+            <div class="stats-row muted" hidden id="h5CountRow"><span>Shown</span><span id="h5Count">—</span></div>
           </div>
-          <div class="muted" id="h5Count"></div>
-          <div id="h5List"></div>
-        </div>
+          <div id="h5List" class="scroll-y" role="tree" aria-label="Episode tree"></div>
+        </aside>
 
-        <div class="video-section">
-          <div id="instructionCard" style="display:none;">
-            <h3 style="margin-bottom:10px;">1) Provide language instruction</h3>
-            <label for="instruction">Instruction</label>
-            <input id="instruction" type="text" placeholder="e.g., pick up the red block and place it in the bin" />
-            <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
-              <button class="primary" id="submitInstructionBtn">Submit instruction</button>
-              <button id="repeatInstructionBtn" style="display:none;" type="button">Repeat last</button>
-            </div>
-          </div>
-
-          <div id="runningCard" style="display:none;">
-            <h3 style="margin-bottom:10px;">2) Policy is running</h3>
-            <div class="muted">Waiting for rollout to finish…</div>
-          </div>
-
-          <div id="annotateCard" style="display:none;">
+        <section class="video-section" aria-label="Episode preview">
+          <div id="annotateControls" hidden>
             <div class="video-controls">
-              <label>Speed
-                <select id="playbackRateSel">
+              <label title="Seek/play/pause one video and the others follow">Sync videos <input type="checkbox" id="syncVideosChk" /></label>
+              <label>Video speed
+                <select id="playbackRateSel" aria-label="Video speed">
+                  <option value="0.5">0.5×</option>
+                  <option value="0.75">0.75×</option>
                   <option value="1">1×</option>
                   <option value="1.5">1.5×</option>
                   <option value="2">2×</option>
+                  <option value="3">3×</option>
                   <option value="4">4×</option>
                 </select>
               </label>
-              <label title="Seek/play/pause one video and the others follow"><input type="checkbox" id="syncVideosChk" /> Sync videos</label>
+              <label>Video grid layout
+                <select id="videoLayoutSel" aria-label="Video grid layout">
+                  <option value="1">1 wide</option>
+                  <option value="2">2 side-by-side</option>
+                  <option value="3">3 side-by-side</option>
+                </select>
+              </label>
             </div>
-            <div class="videos-grid" id="videosRow"></div>
           </div>
-        </div>
+          <div class="video-scroll scroll-y">
+            <div id="instructionCard" hidden>
+              <h2 class="card-title">Provide language instruction</h2>
+              <label for="instruction">Instruction</label>
+              <input id="instruction" type="text" placeholder="e.g., pick up the red block and place it in the bin" />
+              <div class="button-row">
+                <button class="primary" id="submitInstructionBtn">Submit instruction</button>
+                <button id="repeatInstructionBtn" hidden type="button">Repeat last</button>
+              </div>
+            </div>
 
-        <div class="form-section">
-          <div class="form-scroll">
+            <div id="runningCard" hidden>
+              <h2 class="card-title">Policy is running</h2>
+              <div class="muted">Waiting for rollout to finish…</div>
+            </div>
+
+            <div id="annotateCard" hidden>
+              <div class="videos-grid" id="videosRow"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="form-section" aria-label="Annotation form">
+          <div class="form-scroll scroll-y">
             <div class="task-instruction-box">
-              <div class="task-instruction-box-label">Task instruction<button id="editInstrBtn" class="link-btn" type="button" style="display:none;" title="Edit this episode's task instruction">edit</button></div>
+              <div class="task-instruction-box-label">Task instruction<button id="editInstrBtn" class="link-btn" type="button" hidden title="Edit this episode's task instruction">edit</button></div>
               <div class="task-instruction-box-value" id="sessionTaskInstruction">—</div>
-              <div id="instrEditRow" style="display:none; margin-top:8px;">
+              <div id="instrEditRow" class="instr-edit" hidden>
                 <input id="instrEditInput" type="text" placeholder="Task instruction" />
                 <div class="instr-btns">
                   <button id="instrSaveBtn" class="primary" type="button">Save instruction</button>
@@ -468,30 +748,57 @@
                 </div>
               </div>
             </div>
-            <div id="metadataPanel" style="display:none;"></div>
-            <div id="episodeFields" style="display:none;"></div>
-            <div id="autofillRow" style="display:none;">
-              <label class="autofill-label">Copy from a previous annotation
-                <select id="autofillSelect"><option value="">— select —</option></select>
-              </label>
+            <div id="metadataPanel" hidden></div>
+            <div id="episodeFields" hidden></div>
+            <div id="autofillRow" hidden>
+              <label class="autofill-label" for="autofillSelect">Copy from a previous annotation</label>
+              <select id="autofillSelect"><option value="">— select —</option></select>
             </div>
             <div id="questionnaire"></div>
           </div>
           <div class="save-bar" id="saveBar">
-            <button class="primary" id="saveBtn">Save Annotation</button>
-            <span class="dirty-indicator" id="dirtyIndicator"></span>
-            <span class="muted" id="saveMsg"></span>
+            <button class="primary" id="saveBtn">Save annotation</button>
+            <span class="dirty-indicator" id="dirtyIndicator" role="status" aria-live="polite"></span>
+            <span class="muted" id="saveMsg" role="status" aria-live="polite"></span>
             <span class="spacer"></span>
             <label class="autoadvance-label" title="After saving, jump to the next episode">
-              <input type="checkbox" id="autoAdvanceChk" /> auto-advance
+              <input type="checkbox" id="autoAdvanceChk" /> Auto-advance
             </label>
           </div>
-        </div>
-      </div>
+        </section>
+      </main>
     </div>
+
+    <div id="toastRegion" class="toast-region" role="alert" aria-live="assertive"></div>
+    <div id="floatingTooltip" class="floating-tooltip" role="tooltip"></div>
 
     <script>
       const el = (id) => document.getElementById(id);
+
+      // Encapsulated app state (replaces ad-hoc window.__* globals).
+      const state = {
+        h5Items: [],
+        flatFileOrder: [],
+        recentAnnotations: [],
+        questionnaireSpec: {},
+      };
+
+      function escHtml(s) {
+        return String(s ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+
+      // Poll cadence + prefetch behaviour are the only "magic numbers" that affect
+      // UX; keep them here so they're greppable and tunable in one place.
+      const POLL_TASK_MS = 800;
+      const POLL_LIST_MS = 1500;
+      const PREFETCH_COUNT = 2;
+      const PREFETCH_LINK_CAP = 24; // rolling cap on <link rel=prefetch> nodes
+      const TREE_INDENT_PX = 14;    // must match --tree-indent in CSS
 
       /** Human-readable task state for the status line (API still uses short codes). */
       function taskStatusLabel(status, browseOnly) {
@@ -544,14 +851,16 @@
           if (li) task = li;
         }
         if (fileEl) {
-          fileEl.textContent = file;
+          const isPlaceholder = file === "—";
+          fileEl.textContent = isPlaceholder ? "No episode selected" : file;
           fileEl.title = fileTitle;
+          fileEl.classList.toggle("placeholder", isPlaceholder);
         }
         if (taskEl) taskEl.textContent = task;
         // The task instruction is only editable for a selected HDF5 episode (#31).
         const editBtn = el("editInstrBtn");
-        if (editBtn) editBtn.style.display = browseRelPath ? "" : "none";
-        if (!browseRelPath) el("instrEditRow").style.display = "none";
+        if (editBtn) editBtn.hidden = !browseRelPath;
+        if (!browseRelPath) el("instrEditRow").hidden = true;
       }
 
       async function jget(url) {
@@ -573,28 +882,51 @@
         return data;
       }
 
+      function setHidden(id, hidden) {
+        const node = el(id);
+        if (node) node.hidden = !!hidden;
+      }
       function showOnly(which) {
         for (const id of ["instructionCard", "runningCard", "annotateCard"]) {
-          el(id).style.display = (id === which) ? "" : "none";
+          setHidden(id, id !== which);
         }
-        // Keep questionnaire panel + save bar visible only when annotating/browsing
+        setHidden("annotateControls", which !== "annotateCard");
         if (which === "annotateCard") {
-          el("questionnaire").style.display = "";
-          el("saveBar").style.display = "";
-          el("autofillRow").style.display =
-            (window.__recentAnnotations && window.__recentAnnotations.length) ? "" : "none";
+          setHidden("questionnaire", false);
+          setHidden("saveBar", false);
+          setHidden("autofillRow", !(state.recentAnnotations && state.recentAnnotations.length));
         } else {
-          el("metadataPanel").style.display = "none";
-          el("episodeFields").style.display = "none";
-          el("autofillRow").style.display = "none";
-          el("questionnaire").style.display = "none";
-          el("saveBar").style.display = "none";
+          setHidden("metadataPanel", true);
+          setHidden("episodeFields", true);
+          setHidden("autofillRow", true);
+          setHidden("questionnaire", true);
+          setHidden("saveBar", true);
         }
+      }
+
+      // Non-blocking notification (replaces alert() for save/network errors).
+      function showToast(message, kind = "error", ttl = 5000) {
+        const region = el("toastRegion");
+        if (!region) return;
+        const t = document.createElement("div");
+        t.className = `toast ${kind === "info" ? "info" : ""}`;
+        t.textContent = String(message);
+        region.appendChild(t);
+        setTimeout(() => t.remove(), ttl);
       }
 
       // ── Video controls: playback speed (#32), sync scrubbing (#25), prefetch (#28) ──
       const RATE_KEY = "oopsie_playback_rate";
       const SYNC_KEY = "oopsie_sync_videos";
+      const COLS_KEY = "oopsie_video_cols";
+      function getVideoCols() {
+        const n = parseInt(localStorage.getItem(COLS_KEY) || "1", 10);
+        return (n === 2 || n === 3) ? n : 1;
+      }
+      function applyVideoCols(n) {
+        const row = el("videosRow");
+        if (row) row.style.setProperty("--video-cols", String(n));
+      }
 
       function getVideos() {
         return Array.from(el("videosRow").querySelectorAll("video"));
@@ -639,7 +971,7 @@
 
       const sampleCache = new Map();      // relPath -> /api/h5/sample JSON (#28)
       const prefetchedVideos = new Set(); // video URLs already <link rel=prefetch>'d
-      const PREFETCH_COUNT = 2;
+      const prefetchLinks = [];           // rolling FIFO of the <link> elements we added
       async function fetchSampleCached(relPath) {
         if (sampleCache.has(relPath)) return sampleCache.get(relPath);
         const s = await jget(`/api/h5/sample?path=${encodeURIComponent(relPath)}`);
@@ -654,9 +986,16 @@
         link.as = "video";
         link.href = url;
         document.head.appendChild(link);
+        prefetchLinks.push({ url, link });
+        // Cap the rolling set so a long session doesn't pile up hint elements.
+        while (prefetchLinks.length > PREFETCH_LINK_CAP) {
+          const oldest = prefetchLinks.shift();
+          prefetchedVideos.delete(oldest.url);
+          oldest.link.remove();
+        }
       }
       async function prefetchNeighbors(relPath) {
-        const order = window.__flatFileOrder || [];
+        const order = state.flatFileOrder || [];
         const idx = order.indexOf(relPath);
         if (idx < 0) return;
         for (let i = 1; i <= PREFETCH_COUNT; i++) {
@@ -672,16 +1011,14 @@
       function renderVideos(videoUrls) {
         const row = el("videosRow");
         row.innerHTML = "";
-        const entries = Object.entries(videoUrls || {});
-        for (const [cam, url] of entries) {
-          const wrap = document.createElement("div");
-          wrap.innerHTML = `
+        applyVideoCols(getVideoCols());
+        for (const [cam, url] of Object.entries(videoUrls || {})) {
+          row.insertAdjacentHTML("beforeend", `
             <div class="video-card">
-              <div class="video-label">${String(cam)} view</div>
-              <video controls muted autoplay playsinline preload="auto" src="${url}"></video>
+              <div class="video-label">${escHtml(cam)} view</div>
+              <video controls muted autoplay playsinline preload="metadata" src="${escHtml(url)}"></video>
             </div>
-          `;
-          row.appendChild(wrap);
+          `);
         }
         const rate = getPlaybackRate();
         getVideos().forEach((v) => {
@@ -693,15 +1030,10 @@
 
       function renderMetadata(meta) {
         const panel = el("metadataPanel");
-        if (!meta || Object.keys(meta).length === 0) {
-          panel.style.display = "none";
-          panel.innerHTML = "";
-          return;
-        }
-        const episodeId = String(meta.episode_id || "").trim();
-        const operator = String(meta.operator_name || "").trim();
-        const relPath = String(meta.rel_path || "").trim();
-        const sampleId = String(meta.sample_id || "").trim();
+        const episodeId = String(meta?.episode_id || "").trim();
+        const operator = String(meta?.operator_name || "").trim();
+        const relPath = String(meta?.rel_path || "").trim();
+        const sampleId = String(meta?.sample_id || "").trim();
 
         const extraRows = [];
         if (episodeId) extraRows.push({ k: "Episode", v: episodeId });
@@ -710,26 +1042,21 @@
         else if (sampleId && !relPath) extraRows.push({ k: "Sample", v: sampleId });
 
         if (!extraRows.length) {
-          panel.style.display = "none";
+          panel.hidden = true;
           panel.innerHTML = "";
           return;
         }
 
         panel.innerHTML = `
           <div class="meta-panel">
-            <div class="meta-row" style="margin-top:0;padding-top:0;border-top:none;">
-              ${extraRows.map(r => `<div class="meta-item"><span class="meta-key">${r.k}</span><span class="meta-val">${r.v}</span></div>`).join("")}
+            <div class="meta-row meta-row-flat">
+              ${extraRows.map(r => `<div class="meta-item"><span class="meta-key">${escHtml(r.k)}</span><span class="meta-val">${escHtml(r.v)}</span></div>`).join("")}
             </div>
           </div>`;
-        panel.style.display = "";
+        panel.hidden = false;
       }
 
       // ── Episode data visualizer (#30) ──────────────────────────────────────
-      function escHtml(s) {
-        return String(s ?? "")
-          .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
-          .replaceAll('"', "&quot;").replaceAll("'", "&#39;");
-      }
       function fmtFieldVal(v) {
         if (v == null) return "";
         if (Array.isArray(v)) return v.map(fmtFieldVal).join(", ");
@@ -740,7 +1067,7 @@
         const panel = el("episodeFields");
         if (!panel) return;
         if (!fields || typeof fields !== "object" || !Object.keys(fields).length) {
-          panel.style.display = "none";
+          panel.hidden = true;
           panel.innerHTML = "";
           return;
         }
@@ -766,112 +1093,99 @@
             ${section("observations/video_paths", kvRows(fields.video_paths))}
             ${section("Other", kvRows({ trajectory_length: fields.trajectory_length, annotators: (fields.annotators || []).join(", ") }))}
           </details>`;
-        panel.style.display = "";
+        panel.hidden = false;
       }
 
       // ── Autofill from a previous annotation (#27) ──────────────────────────
+      const RECENT_LIMIT = 15;
       async function loadRecentAnnotations() {
         try {
-          const items = await jget("/api/annotations/recent?limit=15");
-          window.__recentAnnotations = Array.isArray(items) ? items : [];
+          const items = await jget(`/api/annotations/recent?limit=${RECENT_LIMIT}`);
+          state.recentAnnotations = Array.isArray(items) ? items : [];
         } catch (e) {
-          window.__recentAnnotations = [];
+          state.recentAnnotations = [];
         }
         renderAutofillOptions();
       }
       function annotationSummaryLabel(a) {
-        const bs = String(a?.binary_success || "").trim() || "?";
-        if (bs === "Failure") {
-          const cats = (a.failure_category || []).join(", ");
-          const desc = String(a.failure_description || "").trim();
-          return `Failure — ${cats || "(no category)"}${desc ? ": " + desc.slice(0, 60) : ""}`;
-        }
-        const sc = String(a?.success_category || "").trim();
-        return `Success${sc ? " — " + sc : ""}`;
+        const desc = String(a?.failure_description || "").trim() || "(no description)";
+        const trimmed = desc.length > 80 ? desc.slice(0, 80) + "…" : desc;
+        const ep = String(a?.__source_name || "").trim();
+        return ep ? `[${ep}] ${trimmed}` : trimmed;
       }
       function renderAutofillOptions() {
         const sel = el("autofillSelect");
         const row = el("autofillRow");
         if (!sel || !row) return;
-        const items = window.__recentAnnotations || [];
+        const items = state.recentAnnotations || [];
         sel.innerHTML = items.length
           ? '<option value="">— copy from a previous annotation —</option>' +
             items.map((a, i) => `<option value="${i}">${escHtml(annotationSummaryLabel(a))}</option>`).join("")
           : '<option value="">— select —</option>';
         // Only surface the picker while annotating; showOnly also manages this.
-        const annotating = el("annotateCard").style.display !== "none";
-        row.style.display = (items.length && annotating) ? "" : "none";
+        const annotating = !el("annotateCard").hidden;
+        row.hidden = !(items.length && annotating);
       }
 
       function inputForQuestion(q) {
-        const name = q.name || q.id || q.key || "";
-        const label = q.label || q.prompt || name;
+        const name = escHtml(q.name || q.id || q.key || "");
+        const label = escHtml(q.label || q.prompt || q.name || q.id || q.key || "");
         const type = (q.type || "text").toLowerCase();
         const sectionIntro =
-          name === "additional_notes"
+          (q.id || q.name || q.key) === "additional_notes"
             ? `<div class="form-divider"></div>`
             : "";
-        const required = q.required ? "data-required='1'" : "";
-        const optLabel = (o) => (typeof o === "string" ? o : (o && o.name ? String(o.name) : ""));
+        // "data-required" (single input) and "data-required-group" (radio/checkbox
+        // group) fold into one attribute — the qtype attribute already tells the
+        // validator which selector to use.
+        const requiredAttr = q.required ? `data-required="1"` : "";
+        const labelClass = q.required ? "required" : "";
+        const optLabelRaw = (o) => (typeof o === "string" ? o : (o && o.name ? String(o.name) : ""));
+        const optLabel = (o) => escHtml(optLabelRaw(o));
         const optInfo = (o) => (typeof o === "object" && o && o.long_form)
-          ? `<span class="info-icon">ⓘ<span class="info-tooltip">${String(o.long_form)}</span></span>`
+          ? `<span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="${escHtml(o.long_form)}">ⓘ</span>`
           : "";
         if (type === "select" || type === "dropdown") {
           const opts = (q.options || []).map(o => `<option value="${optLabel(o)}">${optLabel(o)}</option>`).join("");
           return `
             ${sectionIntro}
-            <div class="form-group" data-question-id="${name}" data-qtype="${type}">
-            <label class="${q.required ? "required" : ""}">${label}</label>
-            <select name="${name}" data-qname="${name}" ${required}>
-              <option value=""></option>
-              ${opts}
-            </select>
+            <div class="form-group" data-question-id="${name}" data-qtype="${escHtml(type)}">
+              <label class="${labelClass}">${label}</label>
+              <select name="${name}" data-qname="${name}" ${requiredAttr}>
+                <option value=""></option>
+                ${opts}
+              </select>
             </div>
           `;
         }
-        if (type === "radio") {
+        if (type === "radio" || type === "checkbox") {
+          const inputType = type;
           const opts = (q.options || []).map(o => `
             <label class="opt-row">
-              <input type="radio" name="${name}" value="${optLabel(o)}" data-qname="${name}" ${required} />
+              <input type="${inputType}" name="${name}" value="${optLabel(o)}" data-qname="${name}" />
               <span>${optLabel(o)}</span>
               ${optInfo(o)}
             </label>
           `).join("");
           return `
             ${sectionIntro}
-            <div class="form-group" data-question-id="${name}" data-qtype="radio" ${q.required ? "data-required-group='1'" : ""}>
-              <label class="${q.required ? "required" : ""}">${label}</label>
-              <div>${opts}</div>
-            </div>
-          `;
-        }
-        if (type === "checkbox") {
-          const opts = (q.options || []).map(o => `
-            <label class="opt-row">
-              <input type="checkbox" name="${name}" value="${optLabel(o)}" data-qname="${name}" />
-              <span>${optLabel(o)}</span>
-              ${optInfo(o)}
-            </label>
-          `).join("");
-          return `
-            ${sectionIntro}
-            <div class="form-group" data-question-id="${name}" data-qtype="checkbox" ${q.required ? "data-required-group='1'" : ""}>
-              <label class="${q.required ? "required" : ""}">${label}</label>
+            <div class="form-group" data-question-id="${name}" data-qtype="${inputType}" ${requiredAttr}>
+              <label class="${labelClass}">${label}</label>
               <div>${opts}</div>
             </div>
           `;
         }
         if (type === "textarea") {
           const failureBlockIntro =
-            name === "failure_description"
+            (q.id || q.name || q.key) === "failure_description"
               ? `<div class="form-divider">Fill all or leave all.</div>`
               : "";
           return `
             ${sectionIntro}
             <div class="form-group" data-question-id="${name}" data-qtype="textarea">
-            ${failureBlockIntro}
-            <label class="${q.required ? "required" : ""}">${label}</label>
-            <textarea name="${name}" data-qname="${name}" ${required}></textarea>
+              ${failureBlockIntro}
+              <label class="${labelClass}">${label}</label>
+              <textarea name="${name}" data-qname="${name}" ${requiredAttr}></textarea>
             </div>
           `;
         }
@@ -879,8 +1193,8 @@
         return `
           ${sectionIntro}
           <div class="form-group" data-question-id="${name}" data-qtype="text">
-          <label class="${q.required ? "required" : ""}">${label}</label>
-          <input type="text" name="${name}" data-qname="${name}" ${required} />
+            <label class="${labelClass}">${label}</label>
+            <input type="text" name="${name}" data-qname="${name}" ${requiredAttr} />
           </div>
         `;
       }
@@ -930,10 +1244,11 @@
       function renderQuestionnaire(spec) {
         const root = el("questionnaire");
         root.innerHTML = "";
-        const title = document.createElement("h3");
+        const title = document.createElement("h2");
+        title.className = "card-title";
         title.textContent = spec?.title || "Questionnaire";
         root.appendChild(title);
-        window.__questionnaireSpec = spec || {};
+        state.questionnaireSpec = spec || {};
         const qs = Array.isArray(spec?.questions) ? spec.questions : [];
         const card = document.createElement("div");
         card.className = "card";
@@ -947,9 +1262,78 @@
         applySuccessConditional();
       }
 
+      // Shared tooltip driver. One <div id="floatingTooltip"> at body-level is
+      // positioned at hover-time from the icon's bounding rect, so it can never
+      // be clipped by a scrolling ancestor (e.g. .form-scroll's implicit
+      // overflow-x). Clicks on the icon are also swallowed to stop the
+      // enclosing <label class="opt-row"> from toggling its radio/checkbox.
+      (function initFloatingTooltip() {
+        const tip = document.getElementById("floatingTooltip");
+        if (!tip) return;
+        const MARGIN = 8;
+        function place(icon) {
+          const text = icon.getAttribute("data-tooltip") || "";
+          if (!text) return hide();
+          tip.textContent = text;
+          tip.classList.add("visible");
+          const iconRect = icon.getBoundingClientRect();
+          // Measure after making visible so max-width has applied.
+          const tw = tip.offsetWidth;
+          const th = tip.offsetHeight;
+          const vw = document.documentElement.clientWidth;
+          const vh = document.documentElement.clientHeight;
+          // Prefer left of the icon (matches the previous visual affordance);
+          // fall back to right if left would clip, then clamp vertically.
+          let left = iconRect.left - tw - MARGIN;
+          if (left < MARGIN) left = iconRect.right + MARGIN;
+          if (left + tw > vw - MARGIN) left = Math.max(MARGIN, vw - tw - MARGIN);
+          let top = iconRect.top + (iconRect.height - th) / 2;
+          if (top < MARGIN) top = MARGIN;
+          if (top + th > vh - MARGIN) top = vh - th - MARGIN;
+          tip.style.left = `${Math.round(left)}px`;
+          tip.style.top = `${Math.round(top)}px`;
+        }
+        function hide() {
+          tip.classList.remove("visible");
+        }
+        function targetIcon(e) {
+          const t = e.target;
+          return (t && t.closest) ? t.closest(".info-icon[data-tooltip]") : null;
+        }
+        document.addEventListener("mouseover", (e) => {
+          const icon = targetIcon(e);
+          if (icon) place(icon);
+        });
+        document.addEventListener("mouseout", (e) => {
+          const icon = targetIcon(e);
+          const to = e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest(".info-icon[data-tooltip]");
+          if (icon && icon !== to) hide();
+        });
+        document.addEventListener("focusin", (e) => {
+          const icon = targetIcon(e);
+          if (icon) place(icon);
+        });
+        document.addEventListener("focusout", (e) => {
+          const icon = targetIcon(e);
+          if (icon) hide();
+        });
+        // Reposition on scroll/resize while visible so the anchor stays glued.
+        window.addEventListener("scroll", () => hide(), true);
+        window.addEventListener("resize", () => hide());
+        // Swallow clicks so the wrapping <label class="opt-row"> doesn't
+        // toggle the option, and the optional-radio deselect-tap logic
+        // never sees a false positive.
+        document.addEventListener("mousedown", (e) => {
+          if (targetIcon(e)) e.stopPropagation();
+        }, true);
+        document.addEventListener("click", (e) => {
+          if (targetIcon(e)) { e.preventDefault(); e.stopPropagation(); }
+        }, true);
+      })();
+
       function gatherAnswers() {
         const out = {};
-        const qs = Array.isArray(window.__questionnaireSpec?.questions) ? window.__questionnaireSpec.questions : [];
+        const qs = Array.isArray(state.questionnaireSpec?.questions) ? state.questionnaireSpec.questions : [];
         for (const q of qs) {
           const id = q.id || q.name || q.key;
           if (!id) continue;
@@ -958,7 +1342,7 @@
           // selected) count as empty: they must neither block save (#35) nor be
           // persisted with stale values the annotator can no longer see.
           const group = document.querySelector(`[data-question-id="${CSS.escape(id)}"]`);
-          if (group && group.style.display === "none") {
+          if (group && group.hidden) {
             out[id] = type === "checkbox" ? [] : "";
             continue;
           }
@@ -977,20 +1361,17 @@
       }
 
       function validateRequired() {
-        const nodes = document.querySelectorAll("[data-required='1']");
-        for (const n of nodes) {
-          const group = n.closest("[data-question-id]");
-          if (group && group.style.display === "none") continue;
-          if (!String(n.value ?? "").trim()) return false;
-        }
-        const groups = document.querySelectorAll("[data-required-group='1']");
+        const groups = document.querySelectorAll("[data-question-id][data-required='1']");
         for (const g of groups) {
-          if (g.style.display === "none") continue;
+          if (g.hidden) continue;
           const qtype = (g.getAttribute("data-qtype") || "").toLowerCase();
-          if (qtype === "checkbox") {
-            if (!g.querySelector('input[type="checkbox"]:checked')) return false;
-          } else if (qtype === "radio") {
+          if (qtype === "radio") {
             if (!g.querySelector('input[type="radio"]:checked')) return false;
+          } else if (qtype === "checkbox") {
+            if (!g.querySelector('input[type="checkbox"]:checked')) return false;
+          } else {
+            const field = g.querySelector('input, textarea, select');
+            if (!field || !String(field.value ?? "").trim()) return false;
           }
         }
         return true;
@@ -1029,7 +1410,7 @@
       // question currently holds one of the listed values. Questions without a
       // `show_when` are always visible. Generalizes the old hard-coded failure hide.
       function applySuccessConditional() {
-        const qs = Array.isArray(window.__questionnaireSpec?.questions) ? window.__questionnaireSpec.questions : [];
+        const qs = Array.isArray(state.questionnaireSpec?.questions) ? state.questionnaireSpec.questions : [];
         for (const q of qs) {
           const id = q.id || q.name || q.key;
           const cond = q && q.show_when;
@@ -1040,12 +1421,25 @@
             const vals = Array.isArray(allowed) ? allowed.map(String) : [String(allowed)];
             return vals.includes(questionCurrentValue(depId));
           });
-          group.style.display = visible ? "" : "none";
+          group.hidden = !visible;
         }
       }
 
       let currentSampleId = null; // rollout sample_id
       let browseRelPath = null;   // selected h5 rel path (string)
+
+      // Central place to reflect "is there a target to save into" — the Save
+      // button and its native hover tooltip both derive from this, so any code
+      // that flips browseRelPath / currentSampleId just needs to call this once.
+      function updateSaveButtonState() {
+        const btn = el("saveBtn");
+        if (!btn) return;
+        const hasTarget = Boolean(browseRelPath || currentSampleId);
+        btn.disabled = !hasTarget;
+        btn.title = hasTarget
+          ? ""
+          : "Select an episode from the file tree before saving.";
+      }
       let currentBrowseSample = null;
       let lastStatus = null;
       let questionnaireRenderedFor = null;
@@ -1056,15 +1450,19 @@
 
       // ── Episode navigation (#24, #33) ──────────────────────────────────────
       function currentFlatIndex() {
-        const order = window.__flatFileOrder || [];
+        const order = state.flatFileOrder || [];
         return browseRelPath ? order.indexOf(browseRelPath) : -1;
       }
       function updateNavButtons() {
-        const order = window.__flatFileOrder || [];
+        const order = state.flatFileOrder || [];
         const idx = currentFlatIndex();
         const prev = el("prevBtn"), next = el("nextBtn");
         if (prev) prev.disabled = !(idx > 0);
         if (next) next.disabled = !(order.length && idx >= 0 && idx < order.length - 1);
+        const pos = el("episodePosition");
+        if (pos) {
+          pos.textContent = (idx >= 0 && order.length) ? `${idx + 1} / ${order.length}` : "";
+        }
       }
       function expandParents(rel) {
         const parts = String(rel || "").split("/").filter(Boolean);
@@ -1079,7 +1477,7 @@
         if (node) node.scrollIntoView({ block: "nearest" });
       }
       async function navigateBy(delta) {
-        const order = window.__flatFileOrder || [];
+        const order = state.flatFileOrder || [];
         if (!order.length) return;
         let idx = currentFlatIndex();
         let target = idx < 0 ? (delta > 0 ? 0 : order.length - 1) : idx + delta;
@@ -1106,7 +1504,10 @@
         if (ind) { ind.textContent = "✓ Saved"; ind.classList.add("saved"); }
       }
       async function confirmDiscardIfDirty() {
-        if (!isDirty) return true;
+        // Only warn about "unsaved changes" when there's actually somewhere to
+        // save them to. Editing the questionnaire without a selected episode
+        // has no persistent side-effect, so silently drop those edits.
+        if (!isDirty || !(browseRelPath || currentSampleId)) return true;
         const ok = window.confirm("You have unsaved changes. Discard them and continue?");
         if (ok) setDirty(false);
         return ok;
@@ -1133,7 +1534,7 @@
 
       async function loadH5List() {
         const items = await jget("/api/h5/list");
-        window.__h5Items = Array.isArray(items) ? items : [];
+        state.h5Items = Array.isArray(items) ? items : [];
         renderH5List();
       }
 
@@ -1145,7 +1546,7 @@
           const sig = arr.map(it => `${it.rel_path}|${Number(it.annotation_tick_level ?? 0)}|${it.annotated_by_others ? 1 : 0}|${it.mtime}`).join("\n");
           if (sig !== lastH5ListSig) {
             lastH5ListSig = sig;
-            window.__h5Items = arr;
+            state.h5Items = arr;
             renderH5List();
           }
         } catch (e) {
@@ -1155,11 +1556,23 @@
 
       function renderH5List() {
         const q = String(el("h5Search").value || "").toLowerCase();
-        const items = (window.__h5Items || []).filter(it => {
+        const items = (state.h5Items || []).filter(it => {
           const rp = String(it.rel_path || "");
           return !q || rp.toLowerCase().includes(q);
         });
-        el("h5Count").textContent = `${items.length} file(s)`;
+        const allItems = state.h5Items || [];
+        const total = allItems.length;
+        const complete = allItems.filter(
+          (it) => Number(it.annotation_tick_level ?? 0) >= 2,
+        ).length;
+        const totalEl = el("statsTotal");
+        const completeEl = el("statsComplete");
+        if (totalEl) totalEl.textContent = String(total);
+        if (completeEl) completeEl.textContent = `${complete} / ${total}`;
+        // "Shown" row appears only while a search filter is narrowing the tree.
+        const countRow = el("h5CountRow");
+        if (countRow) countRow.hidden = !q;
+        el("h5Count").textContent = String(items.length);
 
         // Build a directory tree from rel_path strings.
         function makeNode() { return { files: [], dirs: new Map() }; }
@@ -1193,15 +1606,7 @@
           }
         }
 
-        function esc(s) {
-          return String(s ?? "")
-            .replaceAll("&", "&amp;")
-            .replaceAll("<", "&lt;")
-            .replaceAll(">", "&gt;")
-            .replaceAll('"', "&quot;")
-            .replaceAll("'", "&#39;");
-        }
-
+        const esc = escHtml;
         const lines = [];
         function renderDir(node, dirPath, depth) {
           const dirEntries = Array.from(node.dirs.entries()).sort((a,b) => a[0].localeCompare(b[0]));
@@ -1210,10 +1615,10 @@
           for (const [dirName, child] of dirEntries) {
             const childPath = dirPath ? `${dirPath}/${dirName}` : dirName;
             const isOpen = expandedDirs.has(childPath);
-            const indent = depth * 14;
+            const indent = depth * TREE_INDENT_PX;
             lines.push(
-              `<div class="tree-row" data-kind="dir" data-dir="${esc(childPath)}" style="margin-left:${indent}px;">` +
-              `<span class="tree-arrow">${isOpen ? "▾" : "▸"}</span>` +
+              `<div class="tree-row" role="treeitem" tabindex="-1" aria-expanded="${isOpen ? "true" : "false"}" data-kind="dir" data-dir="${esc(childPath)}" style="padding-left:${indent + 10}px;">` +
+              `<span class="tree-arrow" aria-hidden="true">${isOpen ? "▾" : "▸"}</span>` +
               `<span class="tree-label">${esc(dirName)}/</span>` +
               `</div>`
             );
@@ -1222,16 +1627,18 @@
 
           for (const it of fileEntries) {
             const rp = String(it.rel_path || "");
-            const active = (browseRelPath === rp) ? "active" : "";
+            const isActive = browseRelPath === rp;
+            const active = isActive ? "active" : "";
             const tl = Number(it.annotation_tick_level ?? 0);
-            const tick = tl >= 2 ? "✓✓ " : tl >= 1 ? "✓ " : "";
+            const tickMark = tl >= 2 ? "✓✓" : tl >= 1 ? "✓" : "";
+            const tick = tickMark ? `<span class="tick" aria-label="${tl >= 2 ? "Complete" : "Partial"}">${tickMark}</span> ` : "";
             const other = it.annotated_by_others
-              ? '<span class="other-mark" title="Also annotated by another annotator">◆</span> '
+              ? '<span class="other-mark" title="Also annotated by another annotator" aria-label="Also annotated by another annotator">◆</span> '
               : "";
-            const indent = depth * 14;
+            const indent = depth * TREE_INDENT_PX;
             lines.push(
-              `<div class="tree-row ${active}" data-kind="file" data-rel="${esc(rp)}" style="margin-left:${indent}px;">` +
-              `<span class="tree-arrow"></span>` +
+              `<div class="tree-row ${active}" role="treeitem" tabindex="${isActive ? 0 : -1}" aria-selected="${isActive ? "true" : "false"}" data-kind="file" data-rel="${esc(rp)}" style="padding-left:${indent + 10}px;">` +
+              `<span class="tree-arrow" aria-hidden="true"></span>` +
               `<span class="tree-label">${other}${tick}${esc(it._fileName)}</span>` +
               `</div>`
             );
@@ -1251,7 +1658,7 @@
           for (const [, child] of dirs) collect(child);
           for (const it of files) flatOrder.push(String(it.rel_path || ""));
         })(root);
-        window.__flatFileOrder = flatOrder;
+        state.flatFileOrder = flatOrder;
         updateNavButtons();
 
         el("h5List").querySelectorAll('[data-kind="dir"]').forEach(node => {
@@ -1275,7 +1682,7 @@
       function populateForm(existing) {
         const ann = existing && typeof existing === "object" ? existing : {};
         const skip = new Set(["annotated_at", "annotator", "source"]);
-        const qs = Array.isArray(window.__questionnaireSpec?.questions) ? window.__questionnaireSpec.questions : [];
+        const qs = Array.isArray(state.questionnaireSpec?.questions) ? state.questionnaireSpec.questions : [];
         // Reset every managed field first so applying a (possibly partial) annotation —
         // e.g. copying a previous annotation onto an already-filled form (#27) — never
         // leaves stale values (like a success_category) from a prior selection.
@@ -1319,8 +1726,9 @@
         currentBrowseSample = null;
         questionnaireRenderedFor = null;
         videosRenderedFor = null;
-        el("instrEditRow").style.display = "none"; // never carry an open edit onto another episode (#31)
+        el("instrEditRow").hidden = true; // never carry an open edit onto another episode (#31)
         renderH5List();
+        updateSaveButtonState();
         await refresh();
         prefetchNeighbors(relPath).catch(() => {});
       }
@@ -1329,10 +1737,11 @@
         browseRelPath = null;
         currentBrowseSample = null;
         el("saveMsg").textContent = "";
-        el("instrEditRow").style.display = "none";
+        el("instrEditRow").hidden = true;
         questionnaireRenderedFor = null;
         videosRenderedFor = null;
         renderH5List();
+        updateSaveButtonState();
       }
 
       async function refresh() {
@@ -1422,9 +1831,9 @@
             const last = String(st.last_instruction || "").trim();
             if (last) {
               el("instruction").value = last;
-              el("repeatInstructionBtn").style.display = "";
+              el("repeatInstructionBtn").hidden = false;
             } else {
-              el("repeatInstructionBtn").style.display = "none";
+              el("repeatInstructionBtn").hidden = true;
             }
           } else if (st.status === "running") {
             showOnly("runningCard");
@@ -1436,6 +1845,7 @@
 
         if (st.status === "annotating") {
           currentSampleId = nextSampleId;
+          updateSaveButtonState();
 
           // Render videos only when the sample changes.
           if (nextSampleId && videosRenderedFor !== nextSampleId) {
@@ -1453,6 +1863,7 @@
           }
         } else {
           currentSampleId = null;
+          updateSaveButtonState();
           questionnaireRenderedFor = null;
           videosRenderedFor = null;
           renderMetadata({});
@@ -1468,7 +1879,7 @@
           await jpost("/api/task/submit", { instruction: v });
           el("instruction").value = "";
         } catch (e) {
-          alert(String(e));
+          showToast(`Could not submit instruction: ${e}`);
         } finally {
           el("submitInstructionBtn").disabled = false;
           el("repeatInstructionBtn").disabled = false;
@@ -1513,7 +1924,7 @@
           }
         } catch (e) {
           el("saveMsg").textContent = "Error saving.";
-          alert(String(e));
+          showToast(`Could not save annotation: ${e}`);
         } finally {
           el("saveBtn").disabled = false;
         }
@@ -1530,14 +1941,14 @@
         if (!browseRelPath) return;
         const cur = String(currentBrowseSample?.metadata?.language_instruction || "").trim();
         el("instrEditInput").value = cur;
-        el("instrEditRow").style.display = "";
+        el("instrEditRow").hidden = false;
         el("instrEditInput").focus();
       });
-      el("instrCancelBtn").addEventListener("click", () => { el("instrEditRow").style.display = "none"; });
+      el("instrCancelBtn").addEventListener("click", () => { el("instrEditRow").hidden = true; });
 
       // Autofill: copy a chosen previous annotation into the form (#27)
       el("autofillSelect").addEventListener("change", () => {
-        const items = window.__recentAnnotations || [];
+        const items = state.recentAnnotations || [];
         const idx = parseInt(el("autofillSelect").value, 10);
         if (Number.isInteger(idx) && items[idx]) {
           populateForm(items[idx]);
@@ -1549,7 +1960,7 @@
       el("instrSaveBtn").addEventListener("click", async () => {
         if (!browseRelPath) return;
         const val = el("instrEditInput").value.trim();
-        if (!val) { alert("Instruction cannot be empty."); return; }
+        if (!val) { showToast("Instruction cannot be empty."); return; }
         el("instrSaveBtn").disabled = true;
         try {
           await jpost(`/api/h5/instruction?path=${encodeURIComponent(browseRelPath)}`, { instruction: val });
@@ -1562,9 +1973,9 @@
           }
           el("sessionTaskInstruction").textContent = val;
           sampleCache.delete(browseRelPath); // cached sample now has a stale instruction
-          el("instrEditRow").style.display = "none";
+          el("instrEditRow").hidden = true;
         } catch (e) {
-          alert(String(e));
+          showToast(`Could not save instruction: ${e}`);
         } finally {
           el("instrSaveBtn").disabled = false;
         }
@@ -1573,6 +1984,38 @@
       // Dirty tracking: any real edit flips the indicator and clears stale messages (#34).
       el("questionnaire").addEventListener("input", () => { setDirty(true); el("saveMsg").textContent = ""; });
       el("questionnaire").addEventListener("change", () => { setDirty(true); el("saveMsg").textContent = ""; });
+
+      // Theme toggle: dark/light. Reads OS preference by default; explicit choice is
+      // persisted in localStorage and applied via data-theme on <html>.
+      (function initThemeToggle() {
+        const THEME_KEY = "oopsie_theme";
+        const btn = el("themeToggleBtn");
+        if (!btn) return;
+        const mql = window.matchMedia("(prefers-color-scheme: dark)");
+        function currentTheme() {
+          const attr = document.documentElement.getAttribute("data-theme");
+          if (attr === "light" || attr === "dark") return attr;
+          return mql.matches ? "dark" : "light";
+        }
+        function syncButton() {
+          const t = currentTheme();
+          btn.textContent = t === "dark" ? "Light mode" : "Dark mode";
+          btn.title = t === "dark" ? "Switch to light mode" : "Switch to dark mode";
+        }
+        syncButton();
+        btn.addEventListener("click", () => {
+          const next = currentTheme() === "dark" ? "light" : "dark";
+          document.documentElement.setAttribute("data-theme", next);
+          try { localStorage.setItem(THEME_KEY, next); } catch (e) { /* ignore */ }
+          syncButton();
+        });
+        // Follow OS changes only while the user hasn't made an explicit choice.
+        mql.addEventListener?.("change", () => {
+          try {
+            if (!localStorage.getItem(THEME_KEY)) syncButton();
+          } catch (e) { syncButton(); }
+        });
+      })();
 
       // Persisted auto-advance-on-save preference (#33), default on.
       (function initAutoAdvance() {
@@ -1599,6 +2042,17 @@
         if (syncChk) {
           syncChk.checked = localStorage.getItem(SYNC_KEY) === "1";
           syncChk.addEventListener("change", () => localStorage.setItem(SYNC_KEY, syncChk.checked ? "1" : "0"));
+        }
+        const colsSel = el("videoLayoutSel");
+        if (colsSel) {
+          colsSel.value = String(getVideoCols());
+          applyVideoCols(getVideoCols());
+          colsSel.addEventListener("change", () => {
+            const n = parseInt(colsSel.value, 10);
+            const clean = (n === 2 || n === 3) ? n : 1;
+            localStorage.setItem(COLS_KEY, String(clean));
+            applyVideoCols(clean);
+          });
         }
       })();
 
@@ -1635,7 +2089,12 @@
 
       // Guard against losing unsaved edits on tab close / reload (#34).
       window.addEventListener("beforeunload", (e) => {
-        if (isDirty) { e.preventDefault(); e.returnValue = ""; }
+        // Same rationale as confirmDiscardIfDirty: nothing to lose if there's
+        // no target episode selected.
+        if (isDirty && (browseRelPath || currentSampleId)) {
+          e.preventDefault();
+          e.returnValue = "";
+        }
       });
 
       el("backToTaskBtn").addEventListener("click", async () => {
@@ -1649,16 +2108,26 @@
         await refresh();
       });
 
-      if (typeof ANNOTATOR_BROWSE_ONLY !== "undefined" && ANNOTATOR_BROWSE_ONLY) {
-        el("backToTaskBtn").style.display = "none";
+      // Standalone (browse-only) launches only annotate pre-collected data — no
+      // rollout to start, so hide the "Start next rollout" affordance entirely.
+      // In-the-loop launches show it as the primary way to advance to the next
+      // policy execution.
+      const IS_IN_THE_LOOP = !(typeof ANNOTATOR_BROWSE_ONLY !== "undefined" && ANNOTATOR_BROWSE_ONLY);
+      if (IS_IN_THE_LOOP) {
+        el("backToTaskBtn").hidden = false;
       }
 
+      updateSaveButtonState(); // start disabled with the "select an episode" tooltip
       loadH5List().catch(() => {});
       loadRecentAnnotations().catch(() => {});
-      if (typeof ANNOTATOR_BROWSE_ONLY === "undefined" || !ANNOTATOR_BROWSE_ONLY) {
-        setInterval(() => refresh().catch(() => {}), 800);
-        setInterval(() => pollH5List().catch(() => {}), 1500);
-        refresh().catch(() => {});
+      refresh().catch(() => {}); // initial paint (renders questionnaire landing page)
+      if (IS_IN_THE_LOOP) {
+        setInterval(() => refresh().catch(() => {}), POLL_TASK_MS);
+        setInterval(() => pollH5List().catch(() => {}), POLL_LIST_MS);
+      } else {
+        // Browse mode: no rollout task-state to watch, but keep the list fresh so
+        // other annotators' new episodes appear without a hard refresh.
+        setInterval(() => pollH5List().catch(() => {}), POLL_LIST_MS);
       }
     </script>
   </body>
