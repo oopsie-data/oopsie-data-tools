@@ -44,6 +44,8 @@ huggingface_token: <HF_TOKEN>
 
 A robot profile captures hardware and policy metadata. Ask the user the following questions and create a new file (copy the template from `configs/robot_profiles/openpi_example_robot_profile.yaml`):
 
+Make sure to list available options to the user where the choice is constrained to a set of options, and explain them if the user asks for additional detail.
+
 ### 4a. Robot & policy identity
 | Question | YAML key | Example |
 |---|---|---|
