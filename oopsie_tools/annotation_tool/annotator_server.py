@@ -624,12 +624,10 @@ def api_recent_annotations():
                 ann = _read_existing_annotation_dict(ea, ann_name)
         except Exception:
             continue
-        if not ann or not str(ann.get("binary_success", "")).strip():
+        if str(ann.get("binary_success", "")).strip() != "Failure":
             continue
         key = json.dumps(
             {
-                "binary_success": str(ann.get("binary_success", "")).strip(),
-                "success_category": str(ann.get("success_category", "")).strip(),
                 "failure_category": sorted(str(x) for x in (ann.get("failure_category") or [])),
                 "severity": str(ann.get("severity", "")).strip(),
                 "failure_description": str(ann.get("failure_description", "")).strip(),
@@ -639,7 +637,8 @@ def api_recent_annotations():
         if key in seen:
             continue
         seen.add(key)
-        recent.append(ann)
+        rel = p.resolve().relative_to(root).as_posix()
+        recent.append({**ann, "__source_rel_path": rel, "__source_name": p.stem})
     return jsonify(recent)
 
 
