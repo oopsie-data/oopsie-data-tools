@@ -261,6 +261,35 @@
       }
       .sidebar-stats .stats-row span:last-child { color: var(--text-value); font-weight: 600; }
       .sidebar-stats .stats-row.muted span:last-child { color: var(--text-muted-3); font-weight: 500; }
+      .sidebar-filter {
+        padding: 0 5px 10px;
+        border-bottom: 1px solid var(--border-panel);
+        margin-bottom: 10px;
+      }
+      .sidebar-filter-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: var(--fs-label);
+        color: var(--text-muted-2);
+        font-weight: 500;
+        cursor: pointer;
+      }
+      .sidebar-filter-row input { width: 14px; height: 14px; }
+      .sidebar-filter-text {
+        display: inline-flex;
+        align-items: baseline;
+        gap: 6px;
+        min-width: 0;
+      }
+      .filter-shown {
+        font-family: var(--font-mono);
+        color: var(--text-muted-3);
+        font-weight: 500;
+        white-space: nowrap;
+      }
+      .filter-shown:empty::before { content: "\00a0"; } /* reserve a line so toggling never reflows */
 
       .episode-toolbar {
         flex: 0 0 auto;
@@ -667,6 +696,7 @@
           <div class="episode-name placeholder" id="sessionH5Name" aria-live="polite">No episode selected</div>
           <span class="episode-position" id="episodePosition" aria-hidden="true"></span>
           <button id="nextBtn" type="button" title="Next episode (→)" aria-label="Next episode">Next ▶</button>
+          <button id="nextUnannotatedBtn" type="button" title="Jump to next episode that isn't fully annotated" aria-label="Next unannotated episode">Next unannotated ▶▶</button>
         </div>
         <input id="h5Search" class="h5-search" type="search" placeholder="Search files…" aria-label="Search episode files" />
       </nav>
@@ -684,7 +714,16 @@
           <div class="sidebar-stats" id="sidebarStats">
             <div class="stats-row"><span>Episodes</span><span id="statsTotal">—</span></div>
             <div class="stats-row"><span>Fully annotated</span><span id="statsComplete">—</span></div>
-            <div class="stats-row muted" hidden id="h5CountRow"><span>Shown</span><span id="h5Count">—</span></div>
+          </div>
+          <div class="sidebar-filter">
+            <label class="sidebar-filter-row" title="Hide episodes that are already fully annotated">
+              <span class="sidebar-filter-text">
+                Hide fully annotated
+                <!-- Always reserved so toggling the checkbox does not shift the tree. -->
+                <span class="filter-shown" id="h5Count" aria-hidden="true"></span>
+              </span>
+              <input type="checkbox" id="hideAnnotatedChk" />
+            </label>
           </div>
           <div id="h5List" class="scroll-y" role="tree" aria-label="Episode tree"></div>
         </aside>
@@ -1463,6 +1502,21 @@
         if (pos) {
           pos.textContent = (idx >= 0 && order.length) ? `${idx + 1} / ${order.length}` : "";
         }
+        const unBtn = el("nextUnannotatedBtn");
+        if (unBtn) unBtn.disabled = findNextUnannotatedRel(idx) === null;
+      }
+
+      // Find the next episode in the current flat order whose tick level is
+      // below "complete" (i.e. still needs work). Returns null if none exists.
+      function findNextUnannotatedRel(fromIdx) {
+        const order = state.flatFileOrder || [];
+        const byRel = new Map((state.h5Items || []).map((it) => [String(it.rel_path || ""), it]));
+        const start = Math.max(-1, Number.isFinite(fromIdx) ? fromIdx : -1);
+        for (let i = start + 1; i < order.length; i++) {
+          const it = byRel.get(order[i]);
+          if (!it || Number(it.annotation_tick_level ?? 0) < 2) return order[i];
+        }
+        return null;
       }
       function expandParents(rel) {
         const parts = String(rel || "").split("/").filter(Boolean);
@@ -1476,18 +1530,25 @@
         const node = document.querySelector('#h5List .tree-row.active');
         if (node) node.scrollIntoView({ block: "nearest" });
       }
+      async function navigateToRel(rel) {
+        if (!rel || rel === browseRelPath) return;
+        if (!(await confirmDiscardIfDirty())) return;
+        expandParents(rel);
+        await selectBrowseH5(rel);
+        scrollActiveIntoView();
+      }
       async function navigateBy(delta) {
         const order = state.flatFileOrder || [];
         if (!order.length) return;
         let idx = currentFlatIndex();
         let target = idx < 0 ? (delta > 0 ? 0 : order.length - 1) : idx + delta;
         target = Math.max(0, Math.min(order.length - 1, target));
-        const rel = order[target];
-        if (!rel || rel === browseRelPath) return;
-        if (!(await confirmDiscardIfDirty())) return;
-        expandParents(rel);
-        await selectBrowseH5(rel);
-        scrollActiveIntoView();
+        await navigateToRel(order[target]);
+      }
+      async function navigateToNextUnannotated() {
+        const rel = findNextUnannotatedRel(currentFlatIndex());
+        if (!rel) return;
+        await navigateToRel(rel);
       }
 
       // ── Dirty / saved indicator (#34) ──────────────────────────────────────
@@ -1554,11 +1615,24 @@
         }
       }
 
+      function hideAnnotatedEnabled() {
+        const chk = el("hideAnnotatedChk");
+        return chk ? chk.checked : false;
+      }
       function renderH5List() {
         const q = String(el("h5Search").value || "").toLowerCase();
+        const hideAnnotated = hideAnnotatedEnabled();
+        // The currently-selected episode always stays visible even when the
+        // filter would otherwise hide it — the user is looking at it, and
+        // silently vanishing it from the tree while they're working on it is
+        // disorienting.
         const items = (state.h5Items || []).filter(it => {
           const rp = String(it.rel_path || "");
-          return !q || rp.toLowerCase().includes(q);
+          if (q && !rp.toLowerCase().includes(q)) return false;
+          if (hideAnnotated
+              && Number(it.annotation_tick_level ?? 0) >= 2
+              && rp !== browseRelPath) return false;
+          return true;
         });
         const allItems = state.h5Items || [];
         const total = allItems.length;
@@ -1569,10 +1643,11 @@
         const completeEl = el("statsComplete");
         if (totalEl) totalEl.textContent = String(total);
         if (completeEl) completeEl.textContent = `${complete} / ${total}`;
-        // "Shown" row appears only while a search filter is narrowing the tree.
-        const countRow = el("h5CountRow");
-        if (countRow) countRow.hidden = !q;
-        el("h5Count").textContent = String(items.length);
+        // Show the filtered count inline with the filter toggle when any
+        // filter narrows the list. The .filter-shown span always occupies at
+        // least one line (via ::before content), so toggling doesn't reflow.
+        const filtering = Boolean(q) || hideAnnotated;
+        el("h5Count").textContent = filtering ? `${items.length} shown` : "";
 
         // Build a directory tree from rel_path strings.
         function makeNode() { return { files: [], dirs: new Map() }; }
@@ -1935,6 +2010,19 @@
       // Prev/Next episode navigation (#24)
       el("prevBtn").addEventListener("click", () => navigateBy(-1));
       el("nextBtn").addEventListener("click", () => navigateBy(1));
+      el("nextUnannotatedBtn").addEventListener("click", () => navigateToNextUnannotated());
+
+      // Persisted "hide fully annotated" filter.
+      (function initHideAnnotated() {
+        const KEY = "oopsie_hide_annotated";
+        const chk = el("hideAnnotatedChk");
+        if (!chk) return;
+        chk.checked = localStorage.getItem(KEY) === "1";
+        chk.addEventListener("change", () => {
+          localStorage.setItem(KEY, chk.checked ? "1" : "0");
+          renderH5List();
+        });
+      })();
 
       // Editable task instruction (#31)
       el("editInstrBtn").addEventListener("click", () => {
