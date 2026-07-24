@@ -59,7 +59,7 @@ def validate_session_dir(
     """Validate every ``*.h5`` / ``*.hdf5`` file in a session directory.
 
     Returns:
-        1 if all files passed, 0 if any failed or the directory is invalid.
+        0 if all files passed, 1 if any failed or the directory is invalid.
     """
     if log_path is not None:
         setup_logger(__name__, log_path)
@@ -67,7 +67,7 @@ def validate_session_dir(
     session_path = os.path.abspath(os.path.normpath(session_dir))
     if not os.path.isdir(session_path):
         logger.error("Not a directory: %s", session_path)
-        return 0
+        return 1
 
     # find all hdf5 files recursively in the session directory
     h5_files = [
@@ -78,7 +78,7 @@ def validate_session_dir(
 
     if not h5_files:
         logger.error("No .h5 or .hdf5 files found in %s", session_path)
-        return 0
+        return 1
 
     logger.info("Validating %d HDF5 file(s) in: %s", len(h5_files), session_path)
     failures = 0
@@ -101,4 +101,4 @@ def validate_session_dir(
 
     passed = len(h5_files) - failures
     logger.info("Summary: %d/%d passed", passed, len(h5_files))
-    return 0 if failures else 1
+    return 1 if failures else 0
