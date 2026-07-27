@@ -23,7 +23,7 @@ import imageio_ffmpeg
 import numpy as np
 from huggingface_hub import HfApi, hf_hub_download
 
-from oopsie_tools.utils.robot_profile.robot_profile import (
+from oopsie_data_tools.utils.robot_profile.robot_profile import (
     RobotProfile,
     robot_profile_to_json,
 )

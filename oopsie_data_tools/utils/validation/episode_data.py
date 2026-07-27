@@ -7,7 +7,7 @@ from typing import Any, Optional
 
 import numpy as np
 
-from oopsie_tools.utils.robot_profile.robot_profile import RobotProfile
+from oopsie_data_tools.utils.robot_profile.robot_profile import RobotProfile
 
 
 @dataclass

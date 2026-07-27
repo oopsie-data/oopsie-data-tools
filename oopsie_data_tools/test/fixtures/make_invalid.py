@@ -55,7 +55,7 @@ E – Cross-consistency violations
 
 Usage
 -----
-    uv run python -m oopsie_tools.test.fixtures.make_invalid [OUTPUT_DIR]
+    uv run python -m oopsie_data_tools.test.fixtures.make_invalid [OUTPUT_DIR]
 """
 
 from __future__ import annotations

@@ -6,8 +6,8 @@ from pathlib import Path
 
 import h5py
 
-from oopsie_tools.test.fixtures.make_valid import write_valid_episode
-from oopsie_tools.utils.validation.diversity import check_diversity
+from oopsie_data_tools.test.fixtures.make_valid import write_valid_episode
+from oopsie_data_tools.utils.validation.diversity import check_diversity
 
 
 def test_below_min_episodes_no_warning(tmp_path: Path) -> None:

@@ -13,12 +13,12 @@ import imageio
 import numpy as np
 import datetime
 import yaml
-from oopsie_tools.utils.contributor_config import read_contributor_config
-from oopsie_tools.annotation_tool.annotation_schema import write_annotation_attrs
-from oopsie_tools.utils.robot_profile.robot_profile import RobotProfile, robot_profile_to_json
-from oopsie_tools.utils.robot_profile.rotation_utils import ActionQuatConversion
-from oopsie_tools.utils.validation.episode_data import EpisodeData, VideoInfo
-from oopsie_tools.utils.validation.episode_validator import validate_episode
+from oopsie_data_tools.utils.contributor_config import read_contributor_config
+from oopsie_data_tools.annotation_tool.annotation_schema import write_annotation_attrs
+from oopsie_data_tools.utils.robot_profile.robot_profile import RobotProfile, robot_profile_to_json
+from oopsie_data_tools.utils.robot_profile.rotation_utils import ActionQuatConversion
+from oopsie_data_tools.utils.validation.episode_data import EpisodeData, VideoInfo
+from oopsie_data_tools.utils.validation.episode_validator import validate_episode
 
 REQUIRED_OBSERVATION_KEYS = ["robot_state", "image_observation"]
 

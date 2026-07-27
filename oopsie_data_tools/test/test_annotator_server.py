@@ -13,9 +13,9 @@ from pathlib import Path
 import h5py
 import pytest
 
-from oopsie_tools.annotation_tool.annotation_schema import write_annotation_attrs
-from oopsie_tools.annotation_tool.annotator_server import app, configure_runtime
-from oopsie_tools.test.fixtures.make_valid import (
+from oopsie_data_tools.annotation_tool.annotation_schema import write_annotation_attrs
+from oopsie_data_tools.annotation_tool.annotator_server import app, configure_runtime
+from oopsie_data_tools.test.fixtures.make_valid import (
     _write_base_h5,
     _write_video,
     write_valid_episode,
@@ -133,23 +133,33 @@ def test_save_success_category_roundtrip(client, tmp_path: Path) -> None:
 
 
 def test_recent_annotations_returns_distinct(client, tmp_path: Path) -> None:
-    """/api/annotations/recent surfaces the annotator's distinct prior labels (#27)."""
-    write_valid_episode(tmp_path, stem="a")  # success by test_annotator
-    write_valid_episode(tmp_path, stem="b")
-    client.post(
-        "/api/h5/annotations?path=b.h5",
-        json={
-            "binary_success": "Failure",
-            "failure_category": ["Other"],
-            "failure_description": "dropped the object",
-            "severity": "Low severity - no damage, can be reset and reattempted",
-        },
-    )
+    """/api/annotations/recent surfaces the annotator's distinct prior failures (#27).
+
+    The endpoint feeds the failure-taxonomy autofill picker, so successes are
+    filtered out and identical failure labels are deduplicated.
+    """
+    write_valid_episode(tmp_path, stem="a")  # success by test_annotator — not offered
+    for stem, description in (("b", "dropped the object"), ("c", "dropped the object"), ("d", "missed the grasp")):
+        write_valid_episode(tmp_path, stem=stem)
+        resp = client.post(
+            f"/api/h5/annotations?path={stem}.h5",
+            json={
+                "binary_success": "Failure",
+                "failure_category": ["Other"],
+                "failure_description": description,
+                "severity": "Low severity - no damage, can be reset and reattempted",
+            },
+        )
+        assert resp.status_code == 200, resp.data
 
     items = client.get("/api/annotations/recent?limit=10").get_json()
-    kinds = {i["binary_success"] for i in items}
 
-    assert "Success" in kinds and "Failure" in kinds
+    assert {i["binary_success"] for i in items} == {"Failure"}
+    # b and c share a label; only one of them is offered.
+    assert sorted(i["failure_description"] for i in items) == [
+        "dropped the object",
+        "missed the grasp",
+    ]
 
 
 def test_list_reports_other_human_annotator(client, tmp_path: Path) -> None:

@@ -12,9 +12,9 @@ import logging
 import os
 from pathlib import Path
 
-from oopsie_tools.utils.log import setup_logger
-from oopsie_tools.utils.validation.episode_loader import load_episode_from_h5
-from oopsie_tools.utils.validation.episode_validator import validate_episode
+from oopsie_data_tools.utils.log import setup_logger
+from oopsie_data_tools.utils.validation.episode_loader import load_episode_from_h5
+from oopsie_data_tools.utils.validation.episode_validator import validate_episode
 
 logger = logging.getLogger(__name__)
 

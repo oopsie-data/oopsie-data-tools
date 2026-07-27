@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "oopsie-tools"
+name = "oopsie-data-tools"
 version = "0.2.0"
 description = "Add your description here"
 readme = "README.md"

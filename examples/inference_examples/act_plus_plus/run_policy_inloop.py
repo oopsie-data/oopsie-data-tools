@@ -22,8 +22,8 @@ from utils import set_seed
 # =======================================
 # ===== OopsieData project specific =====
 # =======================================
-from oopsie_tools.annotation_tool.rollout_annotator import WebRolloutAnnotator
-from oopsie_tools.utils.robot_profile.robot_profile import (
+from oopsie_data_tools.annotation_tool.rollout_annotator import WebRolloutAnnotator
+from oopsie_data_tools.utils.robot_profile.robot_profile import (
     act_plus_plus_robot_profile_path,
     load_robot_profile,
 )

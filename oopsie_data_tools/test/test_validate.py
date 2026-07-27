@@ -28,7 +28,7 @@ _VALIDATE_DIR = Path(__file__).resolve().parents[2] / "scripts" / "validate_and_
 sys.path.insert(0, str(_VALIDATE_DIR))
 
 from validate import validate_h5_file, validate_session_dir  # noqa: E402
-from oopsie_tools.test.fixtures.make_valid import write_valid_episode  # noqa: E402
+from oopsie_data_tools.test.fixtures.make_valid import write_valid_episode  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -232,24 +232,26 @@ class TestProfileFileConsistency:
 
 
 class TestValidateSessionDir:
+    """Return codes follow the shell convention: 0 = all passed, 1 = failure."""
+
     def test_valid_session_passes(self, valid_session_dir):
-        assert validate_session_dir(str(valid_session_dir)) == 1
+        assert validate_session_dir(str(valid_session_dir)) == 0
 
-    def test_nonexistent_dir_returns_0(self, tmp_path):
-        assert validate_session_dir(str(tmp_path / "no_such_dir")) == 0
+    def test_nonexistent_dir_returns_1(self, tmp_path):
+        assert validate_session_dir(str(tmp_path / "no_such_dir")) == 1
 
-    def test_empty_dir_returns_0(self, tmp_path):
-        assert validate_session_dir(str(tmp_path)) == 0
+    def test_empty_dir_returns_1(self, tmp_path):
+        assert validate_session_dir(str(tmp_path)) == 1
 
-    def test_mixed_dir_returns_0(self, tmp_path):
+    def test_mixed_dir_returns_1(self, tmp_path):
         write_valid_episode(tmp_path, "good")
         (tmp_path / "bad.h5").write_text("not hdf5")
-        assert validate_session_dir(str(tmp_path)) == 0
+        assert validate_session_dir(str(tmp_path)) == 1
 
-    def test_all_valid_returns_1(self, tmp_path):
+    def test_all_valid_returns_0(self, tmp_path):
         write_valid_episode(tmp_path, "ep_a")
         write_valid_episode(tmp_path, "ep_b")
-        assert validate_session_dir(str(tmp_path)) == 1
+        assert validate_session_dir(str(tmp_path)) == 0
 
 
 # ---------------------------------------------------------------------------
