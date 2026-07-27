@@ -117,7 +117,8 @@ Ask the user:
 - Where is their robot control loop? (file path)
 - What variable holds the robot observation dict? (must have `robot_state` and `image_observation` keys)
 - What variable holds the action dict? (keys must match `action_space` in the robot profile)
-- Where should episode HDF5 files and videos be saved? (`samples_dir`)
+- Where should episode HDF5 files and videos be saved? (`data_root_dir`)
+- Who is running the evaluation? (`operator_name`, stamped into every episode)
 
 Minimal integration pattern:
 ```python
@@ -127,15 +128,20 @@ from oopsie_data_tools.utils.robot_profile.robot_profile import load_robot_profi
 profile = load_robot_profile("configs/robot_profiles/<your_profile>.yaml")
 recorder = EpisodeRecorder(
     robot_profile=profile,
-    samples_dir="./samples",
-    language_instruction="pick up the red block",
+    data_root_dir="./samples",
+    operator_name="<operator>",
+    # resume_session_name="20260101_120000",  # optional: append to an existing session
 )
 
-# Inside the control loop:
-recorder.record_step(observation=obs, action=action)
+for _ in range(num_episodes):
+    recorder.reset_episode_recorder()  # clears the buffers between episodes
 
-# After the rollout ends:
-recorder.finish_rollout(success=success) # success needs to be recorded by the user somehow
+    # Inside the control loop:
+    recorder.record_step(observation=obs, action=action)
+
+    # After the rollout ends. `instruction` is required; `success` is optional
+    # (omit it to leave the episode unannotated for the web annotator).
+    recorder.finish_rollout(instruction="pick up the red block", success=success)
 ```
 
 Verify that the keys are consistent between the robot profile and the ones passed for recording. The data validation will fail otherwise.
@@ -146,7 +152,7 @@ Verify that the keys are consistent between the robot profile and the ones passe
 
 After annotation is complete:
 ```bash
-python scripts/validate_and_upload/upload.py --samples_dir ./samples
+python scripts/validate_and_upload/upload.py --path ./samples
 ```
 
 This validates and pushes episodes to the lab-specific HuggingFace repository.
