@@ -21,10 +21,10 @@ import sys
 import os
 import argparse
 from pathlib import Path
-from oopsie_tools.utils.contributor_config import read_contributor_config
-from oopsie_tools.utils.log import setup_logger
-from oopsie_tools.utils.validation.diversity import check_diversity
-from oopsie_tools.utils.validation.validation_utils import validate_h5_file, validate_session_dir
+from oopsie_data_tools.utils.contributor_config import read_contributor_config
+from oopsie_data_tools.utils.log import setup_logger
+from oopsie_data_tools.utils.validation.diversity import check_diversity
+from oopsie_data_tools.utils.validation.validation_utils import validate_h5_file, validate_session_dir
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
@@ -62,7 +62,11 @@ def _validate_import_path():
         sys.path.insert(0, script_dir)
 
 
-def run_validation(base_path: str, episode_id: str, log_path: str | None=None) -> bool:
+def run_validation(base_path: str, episode_id: str, log_path: str | None=None) -> int:
+    """Validate a single episode or a session dir.
+
+    Returns a shell-style exit code: 0 if everything passed, 1 otherwise.
+    """
     # Route this module's pass/fail lines to the log file too, so --log-path captures
     # the single-file path (validate_session_dir already logs through its own logger).
     if log_path is not None:
@@ -76,13 +80,13 @@ def run_validation(base_path: str, episode_id: str, log_path: str | None=None) -
                 expected_lab_id=LAB_ID,
             )
             logger.info("%s passed", os.path.basename(target))
-            return 1
+            return 0
         except AssertionError as e:
             logger.error("Validation failed: %s", e)
-            return 0
+            return 1
         except Exception as e:
             logger.error("Unexpected error: %s", e)
-            return 0
+            return 1
 
     if os.path.isdir(target):
         return validate_session_dir(
@@ -91,6 +95,9 @@ def run_validation(base_path: str, episode_id: str, log_path: str | None=None) -
             log_path=log_path,
             expected_lab_id=LAB_ID,
         )
+
+    logger.error("Path does not exist: %s", target)
+    return 1
 
 
 # ── Step 3: create repo (if needed) ───────────────────────────────────────────
@@ -237,8 +244,7 @@ def main():
 
     # 3. Validate
     if not args.skip_validate:
-        ok = run_validation(samples_dir, args.episode_id, args.log_path)
-        if not ok:
+        if run_validation(samples_dir, args.episode_id, args.log_path) != 0:
             logger.error("Aborting upload due to validation failure. Fix the dataset format and retry.")
             sys.exit(1)
     else:

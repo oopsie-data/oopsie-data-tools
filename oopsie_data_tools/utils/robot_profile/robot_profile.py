@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-from oopsie_tools.utils.robot_profile.rotation_utils import RotOption
+from oopsie_data_tools.utils.robot_profile.rotation_utils import RotOption
 
 ACTION_SPACE_SET_1 = {
     "joint_position",

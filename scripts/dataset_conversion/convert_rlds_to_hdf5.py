@@ -21,7 +21,7 @@ import cv2
 import h5py
 import numpy as np
 
-from oopsie_tools.annotation_tool.episode_recorder import write_mp4
+from oopsie_data_tools.annotation_tool.episode_recorder import write_mp4
 
 SCHEMA_VERSION = "robotic_failure_upload_data_format_v1"
 MAX_DIM = 1080  # must match validate.py MAX_IMAGE_SIZE

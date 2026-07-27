@@ -24,8 +24,8 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "scripts/validate_and_upload"))
 from validate import validate_session_dir  # noqa: E402
 
-from oopsie_tools.annotation_tool.episode_recorder import EpisodeRecorder
-from oopsie_tools.utils.robot_profile.robot_profile import RobotProfile
+from oopsie_data_tools.annotation_tool.episode_recorder import EpisodeRecorder
+from oopsie_data_tools.utils.robot_profile.robot_profile import RobotProfile
 
 
 # ── Robot configuration ───────────────────────────────────────────────────────

@@ -19,7 +19,7 @@ import os
 import sys
 from collections import Counter
 
-from oopsie_tools.utils.contributor_config import read_contributor_config
+from oopsie_data_tools.utils.contributor_config import read_contributor_config
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
