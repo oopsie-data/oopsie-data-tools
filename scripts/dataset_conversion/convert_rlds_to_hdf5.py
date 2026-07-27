@@ -24,7 +24,7 @@ import numpy as np
 from oopsie_data_tools.annotation_tool.episode_recorder import write_mp4
 
 SCHEMA_VERSION = "robotic_failure_upload_data_format_v1"
-MAX_DIM = 1080  # must match validate.py MAX_IMAGE_SIZE
+MAX_DIM = 1080  # stays within episode_validator.MAX_IMAGE_SIZE (1280)
 
 
 def _resize_frames(frames: np.ndarray, max_dim: int = MAX_DIM) -> np.ndarray:

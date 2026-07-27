@@ -167,12 +167,13 @@ def robot_profile_from_raw(raw: Any) -> RobotProfile:
     if not is_valid_action_space(action_space):
         raise ValueError(
             f"Invalid action_space: {action_space!r}. "
-            "Expected exactly 1 arm action from "
+            "Expected at least 1 arm action from "
             f"{sorted(ACTION_SPACE_SET_1)}, "
-            "exactly 1 gripper action from "
+            "at least 1 gripper action from "
             f"{sorted(ACTION_SPACE_SET_2)}, "
-            "and optionally 1 base action from "
-            f"{sorted(ACTION_SPACE_SET_3)}."
+            "at most 1 base action from "
+            f"{sorted(ACTION_SPACE_SET_3)}, "
+            "and no other keys."
         )
 
     required_robot_state_keys = set(REQUIRED_ROBOT_STATE_KEYS)
@@ -243,9 +244,18 @@ def robot_profile_from_raw(raw: Any) -> RobotProfile:
         robot_state_orientation_representation=raw.get("robot_state_orientation_representation", None),
         controller=raw.get("controller"),
         gains=raw.get("gains"),
-        intrinsic_calibration_matrix=raw.get("intrinsic_calibration_matrix"),
-        extrinsic_calibration_matrix=raw.get("extrinsic_calibration_matrix"),
+        intrinsic_calibration_matrix=_calibration_matrix(raw, "intrinsic"),
+        extrinsic_calibration_matrix=_calibration_matrix(raw, "extrinsic"),
     )
+
+
+def _calibration_matrix(raw: dict[str, Any], kind: str) -> dict[str, Any] | None:
+    """Read a calibration matrix under either spelling.
+
+    Profiles written from the bundled template use the spaced key
+    (``intrinsic calibration matrix``); the underscored key is canonical.
+    """
+    return raw.get(f"{kind}_calibration_matrix", raw.get(f"{kind} calibration matrix"))
 
 
 def _optional_str_list(value: Any) -> list[str] | None:
