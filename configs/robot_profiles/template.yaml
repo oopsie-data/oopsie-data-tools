@@ -86,11 +86,11 @@ gains:
     kp_ori: # list of float
     kd_ori: # list of float
 
-intrinsic calibration matrix: 
+intrinsic_calibration_matrix: 
   <str>: # camera name str
     - # 3 x list of three floats (camera intrinsics for left camera)
 
-extrinsic calibration matrix:
+extrinsic_calibration_matrix:
   <str>: # camera name str
     - # 4 x list of four floats (camera extrinsics in the form of a transformation matrix)
 # ========================
