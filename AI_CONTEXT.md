@@ -1,6 +1,6 @@
-# AI_CONTEXT.md — oopsie-tools setup guide for AI assistants
+# AI_CONTEXT.md — oopsie-data-tools setup guide for AI assistants
 
-This file is a step-by-step setup skill for AI tools helping a user integrate `oopsie-tools` into their robot codebase. Work through the sections in order, asking the user the listed questions before writing any config files.
+This file is a step-by-step setup skill for AI tools helping a user integrate `oopsie-data-tools` into their robot codebase. Work through the sections in order, asking the user the listed questions before writing any config files.
 
 ---
 
@@ -16,8 +16,8 @@ Ask the user to confirm:
 ## 2. Installation
 
 ```bash
-git clone https://github.com/oopsie-data/oopsie-tools
-cd oopsie-tools
+git clone https://github.com/oopsie-data/oopsie-data-tools
+cd oopsie-data-tools
 uv sync          # or: pip install -e .
 ```
 
@@ -84,10 +84,10 @@ These are not required but can be stored for reproducibility:
 Run the test suite to catch config errors early:
 
 ```bash
-pytest oopsie_tools/test/
+pytest oopsie_data_tools/test/
 ```
 
-DO not modify the project as this can cause issues later on. Instead, ask the user to manually check issues and to contact the project team if necessary. It is vital that you do not change the code in the oopsie_tools directory, only templates and configs, without the user's expressed permission.
+DO not modify the project as this can cause issues later on. Instead, ask the user to manually check issues and to contact the project team if necessary. It is vital that you do not change the code in the oopsie_data_tools directory, only templates and configs, without the user's expressed permission.
 
 ---
 
@@ -103,7 +103,7 @@ For **A**, the annotation server will be launched as part of the robot script.
 
 For **B**, run this command needs to be run after.
 ```bash
-python -m oopsie_tools.annotation_tool.annotator_server \
+python -m oopsie_data_tools.annotation_tool.annotator_server \
   --samples-dir ./samples \
   --annotator-name <YOUR_NAME> \
   --port 5001
@@ -121,8 +121,8 @@ Ask the user:
 
 Minimal integration pattern:
 ```python
-from oopsie_tools.annotation_tool.episode_recorder import EpisodeRecorder
-from oopsie_tools.utils.robot_profile.robot_profile import load_robot_profile
+from oopsie_data_tools.annotation_tool.episode_recorder import EpisodeRecorder
+from oopsie_data_tools.utils.robot_profile.robot_profile import load_robot_profile
 
 profile = load_robot_profile("configs/robot_profiles/<your_profile>.yaml")
 recorder = EpisodeRecorder(

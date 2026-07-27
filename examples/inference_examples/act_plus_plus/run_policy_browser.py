@@ -21,7 +21,7 @@ from utils import (
     set_seed,
 )
 
-from oopsie_tools.annotation_tool.rollout_annotator import WebRolloutAnnotator
+from oopsie_data_tools.annotation_tool.rollout_annotator import WebRolloutAnnotator
 
 
 def get_auto_index(dataset_dir):

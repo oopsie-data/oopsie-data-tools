@@ -10,7 +10,7 @@ import logging
 import os
 import sys
 
-from oopsie_tools.utils.validation.validation_utils import validate_h5_file, validate_session_dir
+from oopsie_data_tools.utils.validation.validation_utils import validate_h5_file, validate_session_dir
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)

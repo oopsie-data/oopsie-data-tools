@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate a set of valid test HDF5 episodes with synthetic MP4 videos.
 
-Writes files into OUTPUT_DIR (default: oopsie_tools/test/fixtures/samples/).
+Writes files into OUTPUT_DIR (default: oopsie_data_tools/test/fixtures/samples/).
 Each fixture covers a distinct annotation scenario so that the annotation tool,
 annotator server, and any downstream readers can be exercised without real data.
 
@@ -14,7 +14,7 @@ episode_multi_camera    – two cameras (left + wrist), no annotation
 
 Usage
 -----
-    uv run python -m oopsie_tools.test.fixtures.make_valid [OUTPUT_DIR]
+    uv run python -m oopsie_data_tools.test.fixtures.make_valid [OUTPUT_DIR]
 
 The videos are solid-color 64×64 MP4s (10 frames each).  They are tiny
 (< 20 KB) and require only imageio + libx264.

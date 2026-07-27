@@ -13,7 +13,7 @@ from typing import Any
 
 import numpy as np
 
-from oopsie_tools.utils.validation.episode_data import EpisodeData
+from oopsie_data_tools.utils.validation.episode_data import EpisodeData
 
 MAX_IMAGE_SIZE = 1280
 MIN_IMAGE_SIZE = 180

@@ -26,8 +26,8 @@ from typing import Any
 import numpy as np
 from moviepy.editor import ImageSequenceClip
 
-from oopsie_tools.annotation_tool.episode_recorder import EpisodeRecorder
-from oopsie_tools.utils.robot_profile.robot_profile import RobotProfile
+from oopsie_data_tools.annotation_tool.episode_recorder import EpisodeRecorder
+from oopsie_data_tools.utils.robot_profile.robot_profile import RobotProfile
 
 
 class WebRolloutAnnotator:
@@ -70,7 +70,7 @@ class WebRolloutAnnotator:
                 [
                     "python",
                     "-m",
-                    "oopsie_tools.annotation_tool.annotator_server",
+                    "oopsie_data_tools.annotation_tool.annotator_server",
                     "--samples-dir",
                     str(self.data_root_dir),
                     "--port",

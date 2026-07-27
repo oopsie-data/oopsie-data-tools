@@ -12,9 +12,9 @@ from pathlib import Path
 
 import numpy as np
 
-from oopsie_tools.annotation_tool.episode_recorder import EpisodeRecorder
-from oopsie_tools.annotation_tool.rollout_annotator import WebRolloutAnnotator
-from oopsie_tools.utils.robot_profile.robot_profile import RobotProfile
+from oopsie_data_tools.annotation_tool.episode_recorder import EpisodeRecorder
+from oopsie_data_tools.annotation_tool.rollout_annotator import WebRolloutAnnotator
+from oopsie_data_tools.utils.robot_profile.robot_profile import RobotProfile
 
 
 def _profile(**overrides) -> RobotProfile:

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from oopsie_tools.utils.contributor_config import read_contributor_config
+from oopsie_data_tools.utils.contributor_config import read_contributor_config
 
 
 def _write(tmp_path: Path, content: str) -> Path:
