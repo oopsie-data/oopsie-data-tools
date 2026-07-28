@@ -1,8 +1,15 @@
-#!/usr/bin/env python3
+"""Human-readable dump of an HDF5 file: groups, datasets, shapes, dtypes, attributes.
+
+Backs ``oopsie-data inspect``. This is a debugging aid for looking at a recorded episode,
+not a validator — it never rejects anything and makes no assumptions about the schema, so
+it is equally useful on a file that fails ``oopsie-data validate``.
+
+Output goes to stdout via ``print`` rather than the logger: it is the command's result,
+not a progress report.
+"""
 
 from __future__ import annotations
 
-import argparse
 import datetime as _dt
 import math
 from pprint import pformat
@@ -12,6 +19,10 @@ import h5py
 import numpy as np
 
 from oopsie_data_tools.utils.h5 import decode_h5_scalar
+
+_MAX_STR = 200  # truncation width for string scalars
+_MAX_ELEMS = 32  # array elements shown before eliding
+_MAX_LIST = 16  # list entries shown before eliding
 
 
 def _human_bytes(n: int | None) -> str:
@@ -28,9 +39,8 @@ def _human_bytes(n: int | None) -> str:
     return f"{f:.2f} EiB"
 
 
-def _indent(s: str, n: int) -> str:
-    pad = " " * n
-    return "\n".join(pad + line if line else line for line in s.splitlines())
+def _truncate(s: str) -> str:
+    return s[:_MAX_STR] + "…" if len(s) > _MAX_STR else s
 
 
 def _fmt_scalar(v: Any) -> str:
@@ -40,33 +50,22 @@ def _fmt_scalar(v: Any) -> str:
         except Exception:
             pass
     if isinstance(v, bytes):
-        s = decode_h5_scalar(v)
-        if len(s) > 200:
-            s = s[:200] + "…"
-        return repr(s)
+        return repr(_truncate(decode_h5_scalar(v)))
     if isinstance(v, str):
-        s = v
-        if len(s) > 200:
-            s = s[:200] + "…"
-        return repr(s)
+        return repr(_truncate(v))
     if isinstance(v, (_dt.datetime, _dt.date)):
         return v.isoformat()
     return repr(v)
 
 
-def _fmt_array(a: np.ndarray, *, max_elems: int = 32) -> str:
+def _fmt_array(a: np.ndarray, *, max_elems: int = _MAX_ELEMS) -> str:
     # Keep output stable and short for big arrays.
     if a.size == 0:
         return f"array(shape={a.shape}, dtype={a.dtype}, empty)"
 
     flat = a.ravel()
-    show = min(flat.size, max_elems)
-    head = flat[:show]
-
-    if flat.size > max_elems:
-        suffix = f", … (+{flat.size - max_elems} more)"
-    else:
-        suffix = ""
+    head = flat[: min(flat.size, max_elems)]
+    suffix = f", … (+{flat.size - max_elems} more)" if flat.size > max_elems else ""
 
     try:
         content = np.array2string(head, threshold=max_elems, edgeitems=math.inf)
@@ -83,10 +82,10 @@ def _fmt_attr_value(v: Any) -> str:
     if isinstance(v, (list, tuple)):
         if len(v) == 0:
             return "[]"
-        if len(v) <= 16:
+        if len(v) <= _MAX_LIST:
             return pformat([_fmt_scalar(x) for x in v])
-        head = [_fmt_scalar(x) for x in v[:16]]
-        return pformat(head)[:-1] + f", … (+{len(v) - 16} more)]"
+        head = [_fmt_scalar(x) for x in v[:_MAX_LIST]]
+        return pformat(head)[:-1] + f", … (+{len(v) - _MAX_LIST} more)]"
     return _fmt_scalar(v)
 
 
@@ -104,9 +103,7 @@ def _print_attrs(obj: h5py.Group | h5py.Dataset, *, indent: int) -> None:
 
 
 def _describe_dataset(ds: h5py.Dataset) -> str:
-    parts: list[str] = []
-    parts.append(f"shape={ds.shape}")
-    parts.append(f"dtype={ds.dtype}")
+    parts = [f"shape={ds.shape}", f"dtype={ds.dtype}"]
 
     try:
         if ds.chunks is not None:
@@ -143,27 +140,18 @@ def _walk(name: str, obj: h5py.Group | h5py.Dataset, *, indent: int) -> None:
         print(" " * indent + f"[group] {title}")
         _print_attrs(obj, indent=indent + 2)
 
-        keys = sorted(list(obj.keys()))
-        for k in keys:
-            try:
-                child = obj.get(k, getlink=True)
-            except Exception:
-                child = None
-
-            # Show links explicitly (common in some HDF5 layouts).
+        for k in sorted(obj.keys()):
+            # Show links explicitly rather than following them (common in some layouts).
             try:
                 link = obj.get(k, getlink=True)
                 if isinstance(link, (h5py.SoftLink, h5py.ExternalLink)):
-                    print(
-                        " " * (indent + 2) + f"[link] {title.rstrip('/')}/{k} -> {link}"
-                    )
+                    print(" " * (indent + 2) + f"[link] {title.rstrip('/')}/{k} -> {link}")
                     continue
             except Exception:
                 pass
 
-            child_obj = obj[k]
             child_name = (title.rstrip("/") + "/" + k) if title != "/" else ("/" + k)
-            _walk(child_name, child_obj, indent=indent + 2)
+            _walk(child_name, obj[k], indent=indent + 2)
 
     elif isinstance(obj, h5py.Dataset):
         print(" " * indent + f"[dataset] {name} ({_describe_dataset(obj)})")
@@ -173,21 +161,7 @@ def _walk(name: str, obj: h5py.Group | h5py.Dataset, *, indent: int) -> None:
 
 
 def inspect_h5(path: str) -> None:
+    """Print the full structure of the HDF5 file at *path* to stdout."""
     with h5py.File(path, "r") as f:
         print(f"HDF5: {path}")
         _walk("", f, indent=0)
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Inspect an HDF5 file: groups, datasets, shapes, dtypes, and attributes.",
-    )
-    parser.add_argument("path", help="Path to .h5/.hdf5 file")
-    args = parser.parse_args(argv)
-
-    inspect_h5(args.path)
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

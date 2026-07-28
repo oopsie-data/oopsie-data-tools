@@ -18,7 +18,6 @@ dependencies = [
     "opencv-python>=4.11.0.86",
     "pyyaml>=6.0.0",
     "scipy>=1.10.1",
-    "moviepy>=1.0.3,<2.0",
 ]
 
 # Installed by a bare `uv sync`; not shipped to users of the published wheel.
@@ -32,18 +31,7 @@ dev = [
 oopsie-data = "oopsie_data_tools.cli:main"
 
 [project.optional-dependencies]
-# For building TFDS datasets (tfds build command)
-# Used by dataset conversion scripts
-# Install with: uv sync --extra tfds
-tfds = [
-    "apache-beam[tfrecord]>=2.50.0",
-    "mlcroissant>=1.0.0",
-    "tensorflow>=2.13.0",
-    "tensorflow-io-gcs-filesystem<=0.34.0; python_version < '3.9'",  # 0.35+ dropped cp38 linux x86_64 wheels without declaring requires-python
-    "tensorflow-datasets>=4.9.0",
-]
-
-# For droid robot inference
+# For droid robot inference, needed only by examples/inference_examples/.
 # Install with: uv sync --extra droid
 # Note: openpi_client and droid.robot_env must be installed separately (not on PyPI)
 droid = [
@@ -51,21 +39,6 @@ droid = [
     "pillow>=10.0.0",
     "tqdm>=4.66.0",
     "tyro>=0.9.0",
-]
-
-# For converting LeRobot-style Hugging Face datasets such as MolmoAct2 eval rollouts
-# Install with: uv sync --extra lerobot
-lerobot = [
-    "pyarrow>=14.0.0",
-]
-
-[tool.uv]
-# These extras have conflicting dependencies and must be resolved separately:
-conflicts = [
-    [
-        { extra = "tfds" },
-        { extra = "droid" },
-    ],
 ]
 
 [tool.ruff]
@@ -89,14 +62,13 @@ select = ["E4", "E7", "E9", "F", "W", "I", "B", "FA"]
 "examples/inference_examples/act_plus_plus/run_policy_browser.py" = ["E722", "E731", "F841"]
 "examples/inference_examples/act_plus_plus/run_policy_inloop.py" = ["E722", "E731", "F841"]
 "examples/inference_examples/act_plus_plus/run_policy_bulk.py" = ["E722", "E731", "F841"]
-"scripts/inspect_h5.py" = ["F841"]
 
 [tool.pytest.ini_options]
 testpaths = ["oopsie_data_tools/test"]
 addopts = "--strict-markers --strict-config"
 filterwarnings = [
     "error",
-    # moviepy 1.x and imageio-ffmpeg emit these on import under Python 3.8.
+    # imageio-ffmpeg and its dependencies emit these on import under Python 3.8.
     "default::DeprecationWarning",
     "default::ImportWarning",
 ]

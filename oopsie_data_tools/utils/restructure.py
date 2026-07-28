@@ -1,26 +1,24 @@
-"""Restructure a dataset folder with >10,000 files into numbered subfolders.
+"""Split a session directory with too many files into numbered subfolders.
 
-This is a NON-DESTRUCTIVE operation: files are COPIED to a new output folder.
-The source folder is never modified. After verifying the output you must
-manually delete the original.
+Backs ``oopsie-data restructure``. HuggingFace Hub enforces a per-directory file limit
+(:data:`FILE_LIMIT`), and a long recording session blows past it easily — one HDF5 plus
+one MP4 per camera, per episode. ``hf_upload.check_folder_size`` refuses the upload and
+points here.
 
-Video paths stored inside HDF5 files are resolved to absolute paths before
-copying, so the script handles relative paths, absolute paths, and paths that
-cross directory boundaries (e.g. containing "..").  Each video is copied flat
-into the same subfolder as the HDF5 that references it, and the path stored in
-the HDF5 copy is updated accordingly.
+This is a NON-DESTRUCTIVE operation: files are COPIED to a new output folder and the
+source is never modified. After verifying the output you must delete the original yourself.
 
-Usage:
-    python restructure_large_folder.py --source /path/to/session_dir
-    python restructure_large_folder.py --source /path/to/session_dir --output /path/to/output
+Video paths stored inside the HDF5 files are resolved to absolute paths before copying, so
+relative paths, absolute paths, and paths containing ``..`` all work. Each video is copied
+flat into the same subfolder as the HDF5 that references it, and the path stored in the
+HDF5 *copy* is rewritten to match.
 """
+
 from __future__ import annotations
 
-import argparse
 import logging
 import os
 import shutil
-import sys
 from pathlib import Path
 
 import h5py
@@ -28,16 +26,12 @@ import h5py
 FILE_LIMIT = 10_000
 BATCH_SIZE = 500
 
-logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
 
 def files_per_dir(root: Path) -> dict[Path, int]:
-    """Count files (non-recursively) in every directory under root."""
-    counts: dict[Path, int] = {}
-    for dirpath, _, filenames in os.walk(root):
-        counts[Path(dirpath)] = len(filenames)
-    return counts
+    """Count files (non-recursively) in every directory under *root*."""
+    return {Path(dirpath): len(filenames) for dirpath, _, filenames in os.walk(root)}
 
 
 def oversized_dirs(root: Path) -> list[tuple[Path, int]]:
@@ -45,15 +39,14 @@ def oversized_dirs(root: Path) -> list[tuple[Path, int]]:
 
 
 def collect_h5_files(directory: Path) -> list[Path]:
-    """Return sorted list of all HDF5 files directly in *directory*."""
+    """Return a sorted list of the HDF5 files directly in *directory*."""
     return sorted(
-        p for p in directory.iterdir()
-        if p.is_file() and p.suffix.lower() in (".h5", ".hdf5")
+        p for p in directory.iterdir() if p.is_file() and p.suffix.lower() in (".h5", ".hdf5")
     )
 
 
 def read_video_paths(h5_path: Path) -> dict[str, str]:
-    """Return {camera: stored_path_string} from observations/video_paths."""
+    """Return ``{camera: stored_path_string}`` from ``observations/video_paths``."""
     paths: dict[str, str] = {}
     try:
         with h5py.File(h5_path, "r") as f:
@@ -73,13 +66,11 @@ def read_video_paths(h5_path: Path) -> dict[str, str]:
 def resolve_video_path(stored_path: str, h5_dir: Path) -> Path:
     """Resolve a stored video path to an absolute Path."""
     p = Path(stored_path)
-    if p.is_absolute():
-        return p.resolve()
-    return (h5_dir / p).resolve()
+    return p.resolve() if p.is_absolute() else (h5_dir / p).resolve()
 
 
 def write_video_paths(h5_path: Path, new_paths: dict[str, str]) -> None:
-    """Overwrite video path datasets in the HDF5 file at *h5_path*."""
+    """Overwrite the video path datasets in the HDF5 file at *h5_path*."""
     str_dtype = h5py.string_dtype(encoding="utf-8")
     with h5py.File(h5_path, "r+") as f:
         vp = f["observations/video_paths"]
@@ -90,10 +81,9 @@ def write_video_paths(h5_path: Path, new_paths: dict[str, str]) -> None:
 
 
 def estimate_bytes(h5_files: list[Path]) -> int:
-    """Return total bytes that would be copied (HDF5 files + referenced videos).
+    """Total bytes that would be copied (HDF5 files plus referenced videos).
 
-    Each unique absolute path is counted only once even if referenced by
-    multiple HDF5 files.
+    Each unique absolute path is counted once even if several HDF5 files reference it.
     """
     total = 0
     seen: set[Path] = set()
@@ -101,30 +91,23 @@ def estimate_bytes(h5_files: list[Path]) -> int:
         if h5.exists() and h5 not in seen:
             total += h5.stat().st_size
             seen.add(h5)
-        h5_dir = h5.parent
         for stored in read_video_paths(h5).values():
-            abs_v = resolve_video_path(stored, h5_dir)
+            abs_v = resolve_video_path(stored, h5.parent)
             if abs_v.exists() and abs_v not in seen:
                 total += abs_v.stat().st_size
                 seen.add(abs_v)
     return total
 
 
-# ── Subfolder naming ───────────────────────────────────────────────────────────
-
-
 def subfolder_name(start_idx: int, n_total: int) -> str:
-    """Return zero-padded folder name for the batch starting at *start_idx*.
+    """Zero-padded folder name for the batch starting at *start_idx*.
 
-    All names are padded to the same width so directories sort correctly.
+    All names are padded to the same width so the directories sort correctly.
     Examples for 10 000 files: 0000, 0500, 1000, …, 9500.
     """
     max_start = ((n_total - 1) // BATCH_SIZE) * BATCH_SIZE
     width = max(3, len(str(max_start)))
     return str(start_idx).zfill(width)
-
-
-# ── Core restructure ───────────────────────────────────────────────────────────
 
 
 def _unique_video_dest(
@@ -169,20 +152,20 @@ def restructure(output: Path, h5_files: list[Path]) -> None:
         sub.mkdir(parents=True, exist_ok=True)
         logger.info("\n  Subfolder %s/  (%d HDF5 files)", sub.name, len(batch))
 
-        # Track which filenames are already used in this subfolder to detect
-        # collisions across HDF5 files in the same batch.
+        # Which filenames this subfolder already holds, so collisions across HDF5 files in
+        # the same batch are detected rather than silently overwriting.
         used_filenames: dict[str, Path] = {}
 
         for i, h5_src in enumerate(batch, 1):
             h5_dir = h5_src.parent
             stored_video_paths = read_video_paths(h5_src)
 
-            # Copy HDF5 first so the destination file exists before we patch it.
+            # Copy the HDF5 first so the destination exists before we patch it.
             h5_dst = sub / h5_src.name
             shutil.copy2(h5_src, h5_dst)
 
-            # Resolve each video to an absolute path, copy it flat into the
-            # subfolder, and record what the new relative path will be.
+            # Resolve each video to an absolute path, copy it flat into the subfolder, and
+            # record what the new relative path will be.
             new_rel_paths: dict[str, str] = {}
             for cam, stored in stored_video_paths.items():
                 abs_video = resolve_video_path(stored, h5_dir)
@@ -195,12 +178,9 @@ def restructure(output: Path, h5_files: list[Path]) -> None:
                     new_rel_paths[cam] = stored
                     continue
 
-                dest_name = _unique_video_dest(
-                    abs_video, cam, h5_src.stem, used_filenames
-                )
-                dst_video = sub / dest_name
-                shutil.copy2(abs_video, dst_video)
-                # Path is stored with forward slashes, relative to HDF5 location.
+                dest_name = _unique_video_dest(abs_video, cam, h5_src.stem, used_filenames)
+                shutil.copy2(abs_video, sub / dest_name)
+                # Stored relative to the HDF5 location, which is now the same folder.
                 new_rel_paths[cam] = dest_name
 
             # Always write the updated paths back into the HDF5 copy so it is
@@ -211,39 +191,16 @@ def restructure(output: Path, h5_files: list[Path]) -> None:
             logger.info("    [%d/%d] %s", i, len(batch), h5_src.name)
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description=(
-            "Restructure a large folder into numbered subfolders "
-            f"of up to {BATCH_SIZE} HDF5 files each."
-        ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__,
-    )
-    parser.add_argument(
-        "--source", "-s", required=True,
-        help="Source folder to restructure (must contain .h5 / .hdf5 files at its root)",
-    )
-    parser.add_argument(
-        "--output", "-o", default=None,
-        help=(
-            "Destination folder for the restructured copy "
-            "(default: <source>_restructured next to the source folder)"
-        ),
-    )
-    args = parser.parse_args()
-
-    source = Path(args.source).expanduser().resolve()
+def run_restructure(source: Path, output: Path | None, assume_yes: bool) -> int:
+    """Full interactive flow: check, estimate, confirm, copy. Returns an exit code."""
+    source = Path(source).expanduser().resolve()
     if not source.is_dir():
         logger.error("Source is not a directory: %s", source)
-        sys.exit(1)
+        return 1
 
     output = (
-        Path(args.output).expanduser().resolve()
-        if args.output
+        Path(output).expanduser().resolve()
+        if output
         else source.parent / (source.name + "_restructured")
     )
 
@@ -251,38 +208,32 @@ def main() -> None:
     logger.info("  Large-Folder Restructure Utility")
     logger.info("=" * 60)
 
-    # ── Step 1: Check whether any directory exceeds the file limit ─────────────
+    # ── Step 1: does any directory exceed the file limit? ─────────────────────
     logger.info("\n[check] Scanning %s ...", source)
     over = oversized_dirs(source)
-
     if not over:
-        logger.info(
-            "[check] No directory exceeds %d files. No restructuring needed.",
-            FILE_LIMIT,
-        )
-        sys.exit(0)
+        logger.info("[check] No directory exceeds %d files. No restructuring needed.", FILE_LIMIT)
+        return 0
 
     logger.info("[check] Director(ies) exceeding %d files:", FILE_LIMIT)
     for d, n in over:
         logger.info("          %s  (%d files)", d, n)
 
-    # ── Step 2: Collect HDF5 files ─────────────────────────────────────────────
-    # Only files directly inside the source root are processed.
-    # If the oversized directory is a subdirectory, run the script on that
-    # subdirectory directly.
+    # ── Step 2: collect HDF5 files ────────────────────────────────────────────
+    # Only files directly inside the source root are processed. If the oversized directory
+    # is a subdirectory, run the command against that subdirectory instead.
     h5_files = collect_h5_files(source)
     if not h5_files:
         logger.error(
             "[check] No HDF5 files found at the root of %s\n"
-            "        If an oversized subdirectory needs restructuring, "
-            "pass that subdirectory as --source.",
+            "        If an oversized subdirectory needs restructuring, pass it as --source.",
             source,
         )
-        sys.exit(1)
+        return 1
 
     logger.info("[check] Found %d HDF5 file(s) at root of %s", len(h5_files), source)
 
-    # ── Step 3: Estimate copy size ─────────────────────────────────────────────
+    # ── Step 3: estimate copy size ────────────────────────────────────────────
     logger.info(
         "\n[size]  Estimating copy size "
         "(resolving video paths from all HDF5 files — may take a moment) ..."
@@ -290,13 +241,13 @@ def main() -> None:
     total_bytes = estimate_bytes(h5_files)
     logger.info("[size]  Estimated copy size: %.2f GB", total_bytes / 1e9)
 
-    # ── Step 4: Explicit user consent ─────────────────────────────────────────
+    # ── Step 4: explicit consent ──────────────────────────────────────────────
     n_batches = (len(h5_files) + BATCH_SIZE - 1) // BATCH_SIZE
     logger.info("\n" + "=" * 60)
     logger.info("  ACTION REQUIRED — please read carefully before proceeding")
     logger.info("=" * 60)
     logger.info(
-        "\nThis script will CREATE a new folder:\n"
+        "\nThis will CREATE a new folder:\n"
         "  %s\n"
         "\nIt will contain %d subfolder(s) named by starting HDF5 index\n"
         "(e.g. 000/, 500/, 1000/, …), each holding up to %d HDF5 files\n"
@@ -321,15 +272,18 @@ def main() -> None:
             "        Existing files with the same names will be overwritten.",
             output,
         )
-    logger.info("\nThis operation is not robust to interruptions! Please \n"
-            "ensure that the program runs in full. If it is interrupted \n"
-            "delete the output folder and restart.")
-    confirm = input('\nType exactly "yes" to proceed, anything else to abort: ').strip()
-    if confirm != "yes":
-        logger.info("\nAborted. No files were written.")
-        sys.exit(0)
+    logger.info(
+        "\nThis operation is not robust to interruptions! Please ensure that it\n"
+        "runs in full. If it is interrupted, delete the output folder and restart."
+    )
 
-    # ── Step 5: Restructure ────────────────────────────────────────────────────
+    if not assume_yes:
+        confirm = input('\nType exactly "yes" to proceed, anything else to abort: ').strip()
+        if confirm != "yes":
+            logger.info("\nAborted. No files were written.")
+            return 0
+
+    # ── Step 5: restructure ───────────────────────────────────────────────────
     output.mkdir(parents=True, exist_ok=True)
     restructure(output, h5_files)
 
@@ -344,7 +298,4 @@ def main() -> None:
         "  (will free approx. %.2f GB)",
         source, total_bytes / 1e9,
     )
-
-
-if __name__ == "__main__":
-    main()
+    return 0

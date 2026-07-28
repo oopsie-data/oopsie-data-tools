@@ -19,6 +19,9 @@ oopsie-data new-profile                          # starter robot profile to fill
 oopsie-data annotate --samples-dir ./samples     # launch the web annotation UI
 oopsie-data validate --path ./samples            # check episodes against the schema
 oopsie-data upload   --path ./samples            # validate, then upload to HuggingFace
+oopsie-data submissions                          # what your lab has already uploaded
+oopsie-data inspect episode.h5                   # dump an episode's structure
+oopsie-data restructure --source ./samples       # split a folder that is too large to upload
 ```
 
 `init` prompts for your lab id and HuggingFace token and saves them to a location the other
@@ -26,6 +29,10 @@ commands find automatically. It checks the token against the HuggingFace API, bu
 if that fails and saves it regardless — so a wrong token surfaces at `oopsie-data upload`, not
 at `init`. `new-profile` writes a robot-profile skeleton you fill in; it will not load until
 you do. `annotate` asks for your annotator name if `--annotator-name` is not passed.
+`inspect` is a plain structure dump, so it also works on a file `validate` rejects.
+`restructure` is only needed if `upload` stops you: HuggingFace enforces a per-directory
+file limit, and it copies your session into numbered subfolders that stay under it, never
+modifying the original.
 
 Credentials and robot profiles are looked up separately, so the tool also works when
 installed outside a checkout of this repository.
