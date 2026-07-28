@@ -1,38 +1,46 @@
 """``oopsie-data`` command line interface.
 
-Single entry point for the contributor workflow::
-
-    oopsie-data init                                 # first-time setup
-    oopsie-data show-config                          # where configs are read from
-    oopsie-data new-profile                          # starter robot profile to fill in
-    oopsie-data annotate --samples-dir ./samples --annotator-name "your_name"
-    oopsie-data validate --path ./samples
-    oopsie-data upload   --path ./samples
-    oopsie-data submissions                          # what has landed on HuggingFace
-    oopsie-data inspect episode.h5                   # dump an episode's structure
-    oopsie-data restructure --source ./samples       # split a folder HF would reject
-    oopsie-data install-skill                        # optional: teach Claude Code this workflow
-
-This is the only entry point; every capability lives here rather than in a parallel
-collection of scripts.
+Single entry point for the contributor workflow; every capability lives here rather than
+in a parallel collection of scripts.
 
 Credentials and robot profiles are looked up through separate chains (see
-oopsie_data_tools.utils.paths); --config-dir overrides the credential location for one
-invocation, and 'oopsie-data show-config' prints what is in effect right now.
+:mod:`oopsie_data_tools.utils.paths`); ``--config-dir`` overrides the credential location
+for one invocation, and ``oopsie-data show-config`` prints what is in effect right now.
+
+Note that this docstring is *not* the ``--help`` epilog: help text is user-facing and lives
+in :data:`_EPILOG` and the per-command ``description``/``epilog`` strings, so developer
+notes and reStructuredText markup cannot leak into a terminal.
 """
 
 from __future__ import annotations
 
 import argparse
+import difflib
 import logging
 import os
+import re
 import sys
 import textwrap
 from pathlib import Path
 
+from oopsie_data_tools.utils.hf_limits import BATCH_SIZE, FILE_LIMIT
 from oopsie_data_tools.utils.paths import ENV_CONFIG_DIR
 
 logger = logging.getLogger(__name__)
+
+
+def _version() -> str:
+    """Installed package version, for ``--version``.
+
+    A source tree that was never installed has no distribution metadata, and reporting the
+    version is never worth failing an invocation over.
+    """
+    try:
+        from importlib.metadata import version
+
+        return version("oopsie-data-tools")
+    except Exception:
+        return "unknown (not installed)"
 
 
 # ── show-config ───────────────────────────────────────────────────────────────
@@ -398,46 +406,142 @@ def cmd_restructure(args: argparse.Namespace) -> int:
 def cmd_install_skill(args: argparse.Namespace) -> int:
     from oopsie_data_tools.utils.claude_skill import install_skill
 
-    return install_skill(project=args.project, force=args.force)
+    return install_skill(user=args.user, force=args.force)
 
 
 # ── parser ────────────────────────────────────────────────────────────────────
 
+#: Shown under every top-level ``--help``. argparse already lists the commands and what each
+#: one does, so this adds only what that list cannot: the order they go in, and the two
+#: things people get stuck on.
+_EPILOG = """\
+A typical session, in order:
+
+  oopsie-data init                       # once: lab id + HuggingFace token
+  oopsie-data new-profile                # once per robot, then fill the file in
+  oopsie-data annotate --samples-dir ./samples --annotator-name "your name"
+  oopsie-data validate --path ./samples
+  oopsie-data upload   --path ./samples
+
+If upload refuses because a directory holds too many files for HuggingFace, split it with
+'oopsie-data restructure --source ./samples', or pass --with-restructure to upload. Run
+'oopsie-data show-config' to see where credentials and robot profiles are being read from,
+and 'oopsie-data <command> --help' for one command's options.
+"""
+
+
+class _HelpFormatter(argparse.RawDescriptionHelpFormatter):
+    """Wrap help prose to the terminal, but leave indented example blocks alone.
+
+    ``RawDescriptionHelpFormatter`` would print every description as one unwrapped line,
+    and the plain formatter would reflow the example blocks into paragraphs. A paragraph
+    is treated as preformatted if any of its lines is indented.
+    """
+
+    def _fill_text(self, text: str, width: int, indent: str) -> str:
+        chunks = []
+        for para in text.split("\n\n"):
+            if any(line[:1].isspace() for line in para.splitlines()):
+                chunks.append(textwrap.indent(para.strip("\n"), indent))
+            else:
+                chunks.append(
+                    textwrap.fill(
+                        " ".join(para.split()),
+                        width,
+                        initial_indent=indent,
+                        subsequent_indent=indent,
+                    )
+                )
+        return "\n\n".join(chunks)
+
+
+class _ArgumentParser(argparse.ArgumentParser):
+    """Replaces argparse's invalid-choice wall of text with a typo suggestion."""
+
+    def error(self, message: str):  # noqa: D102 - argparse API
+        match = re.search(r"argument <command>: invalid choice: '([^']*)'", message)
+        if match:
+            given = match.group(1)
+            close = difflib.get_close_matches(given, _COMMANDS, n=1)
+            hint = (
+                f"did you mean '{close[0]}'?"
+                if close
+                else "run 'oopsie-data --help' for the list of commands."
+            )
+            message = f"unknown command '{given}' — {hint}"
+        super().error(message)
+
+
+def _add_command(
+    sub, name: str, *, summary: str, description: str, examples: str = ""
+) -> argparse.ArgumentParser:
+    """Add a subcommand whose help renders consistently with every other one."""
+    return sub.add_parser(
+        name,
+        help=summary,
+        description=description,
+        epilog=f"Examples:\n\n{examples}" if examples else None,
+        formatter_class=_HelpFormatter,
+    )
+
+
+#: Kept next to the parser so the typo suggestion and the metavar cannot drift apart.
+_COMMANDS = [
+    "init",
+    "show-config",
+    "new-profile",
+    "annotate",
+    "validate",
+    "upload",
+    "submissions",
+    "inspect",
+    "restructure",
+    "install-skill",
+]
+
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _ArgumentParser(
         prog="oopsie-data",
-        description="Annotate, validate, and upload robotic rollout data.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__,
+        description=(
+            "Record, annotate, validate and publish robotic manipulation rollouts. "
+            "Start with 'oopsie-data init'."
+        ),
+        formatter_class=_HelpFormatter,
+        epilog=_EPILOG,
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"oopsie-data {_version()}"
     )
     parser.add_argument(
         "--config-dir",
         type=Path,
         default=None,
+        metavar="DIR",
         help=(
             "Directory holding contributor_config.yaml "
             f"(overrides ${ENV_CONFIG_DIR} for this invocation; robot profiles are unaffected)"
         ),
     )
-    sub = parser.add_subparsers(
-        dest="command",
-        required=True,
-        metavar=(
-            "{init,show-config,new-profile,annotate,validate,upload,"
-            "submissions,inspect,restructure,install-skill}"
-        ),
-    )
+    # Not required=True: a bare 'oopsie-data' should print the full help, which lists the
+    # commands, rather than a usage line that only says a command was missing.
+    sub = parser.add_subparsers(dest="command", metavar="<command>")
 
     # init
-    p_init = sub.add_parser(
+    p_init = _add_command(
+        sub,
         "init",
-        help="Set up the contributor config (lab id + HuggingFace token)",
+        summary="Set up the contributor config (lab id + HuggingFace token)",
         description=(
             "Interactive setup: picks a config directory and writes contributor_config.yaml "
             "with your lab id and HuggingFace token, verifying the token against the "
             "HuggingFace API. Values passed as flags are not prompted for, so a fully-flagged "
             "invocation runs unattended."
+        ),
+        examples=(
+            "  oopsie-data init\n"
+            "  oopsie-data init --lab-id my_lab --hf-token hf_xxx   # unattended\n"
+            "  oopsie-data --config-dir ./cfg init                  # somewhere else\n"
         ),
     )
     p_init.add_argument("--lab-id", default=None, help="Lab id from the registration form")
@@ -453,14 +557,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.set_defaults(func=cmd_init)
 
     # show-config
-    p_config = sub.add_parser(
+    p_config = _add_command(
+        sub,
         "show-config",
-        help="Show where configs are read from, and the current lab id and token",
+        summary="Show where configs are read from, and the current lab id and token",
         description=(
             "Print every location searched for the contributor config and for robot profiles, "
             "which one is currently being used, and the lab id and HuggingFace token in effect. "
             "Read-only: use 'oopsie-data init' to change anything. The token is masked unless "
             "--show-token is given."
+        ),
+        examples=(
+            "  oopsie-data show-config\n"
+            "  oopsie-data --config-dir ./cfg show-config   # try a different location\n"
         ),
     )
     p_config.add_argument(
@@ -469,14 +578,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_config.set_defaults(func=cmd_show_config)
 
     # new-profile
-    p_new_profile = sub.add_parser(
+    p_new_profile = _add_command(
+        sub,
         "new-profile",
-        help="Write a starter robot profile you can fill in",
+        summary="Write a starter robot profile you can fill in",
         description=(
             "Write a commented robot-profile skeleton into your project, by default "
             "./robot_profiles/. Profiles belong next to the robot code that loads them, not in "
             "your user config directory, and are never read out of the installed package. The "
             "skeleton does not load until you fill in the required fields — that is deliberate."
+        ),
+        examples=(
+            "  oopsie-data new-profile\n"
+            "  oopsie-data new-profile --name franka_pick --dir ./configs/robot_profiles\n"
         ),
     )
     p_new_profile.add_argument(
@@ -494,24 +608,39 @@ def build_parser() -> argparse.ArgumentParser:
     p_new_profile.set_defaults(func=cmd_new_profile)
 
     # annotate
-    p_annotate = sub.add_parser(
+    p_annotate = _add_command(
+        sub,
         "annotate",
-        help="Launch the web annotation UI over a directory of episodes",
-        description="Launch the Flask annotation UI for the episodes in --samples-dir.",
+        summary="Launch the web annotation UI over a directory of episodes",
+        description=(
+            "Serve the annotation UI for the episodes in --samples-dir and open it in a "
+            "browser. Annotations are written back into the HDF5 files under your annotator "
+            "name, so the same session can be annotated by several people. Runs until you "
+            "stop it with Ctrl-C."
+        ),
+        examples=(
+            "  oopsie-data annotate --samples-dir ./samples --annotator-name alex\n"
+            "  oopsie-data annotate --samples-dir ./samples --port 8080 --no-browser\n"
+        ),
     )
     p_annotate.add_argument(
         "--samples-dir",
+        "--path",
         type=Path,
         default=Path("samples"),
+        metavar="DIR",
         help="Directory containing saved MP4s (and HDF5 episodes) (default: ./samples)",
     )
     p_annotate.add_argument(
         "--annotator-name",
         type=str,
         default=None,
+        metavar="NAME",
         help="Annotator name to stamp into saved annotations (prompted for if omitted)",
     )
-    p_annotate.add_argument("--port", type=int, default=5001, help="Server port (default: 5001)")
+    p_annotate.add_argument(
+        "--port", type=int, default=5001, metavar="N", help="Server port (default: 5001)"
+    )
     p_annotate.add_argument(
         "--no-browser", action="store_true", help="Do not open a browser window on start"
     )
@@ -523,41 +652,67 @@ def build_parser() -> argparse.ArgumentParser:
     p_annotate.set_defaults(func=cmd_annotate)
 
     # validate
-    p_validate = sub.add_parser(
+    p_validate = _add_command(
+        sub,
         "validate",
-        help="Validate episodes against the oopsiedata schema",
-        description="Validate a single .h5 episode or every episode in a session directory.",
+        summary="Validate episodes against the oopsiedata schema",
+        description=(
+            "Check a single .h5 episode, or every episode in a session directory, against the "
+            "oopsiedata_format_v1 schema — the same check 'oopsie-data upload' runs before "
+            "publishing. Every failure is reported with the episode and field that caused it. "
+            "Exits 0 if everything passed, 1 otherwise, so it is usable in a script."
+        ),
+        examples=(
+            "  oopsie-data validate --path ./samples\n"
+            "  oopsie-data validate --path ./samples --episode-id 000001\n"
+            "  oopsie-data validate --path ./samples --log-path validate.log\n"
+        ),
     )
     p_validate.add_argument(
         "--path",
         "-p",
+        "--samples-dir",
         required=True,
-        help="Path to a single .h5 file or a session directory containing .h5 files",
+        metavar="PATH",
+        help="A single .h5 file, or a session directory containing .h5 files",
     )
     p_validate.add_argument(
         "--episode-id",
         "--episode_id",
         "-e",
         default=None,
+        metavar="ID",
         help="Zero-padded episode id (e.g. 000001) to validate just that episode inside --path",
     )
-    p_validate.add_argument("--log-path", "-l", default=None, help="Also write logs to this file")
+    p_validate.add_argument(
+        "--log-path", "-l", default=None, metavar="FILE", help="Also write logs to this file"
+    )
     p_validate.set_defaults(func=cmd_validate)
 
     # upload
-    p_upload = sub.add_parser(
+    p_upload = _add_command(
+        sub,
         "upload",
-        help="Validate and upload a session directory to HuggingFace",
+        summary="Validate and upload a session directory to HuggingFace",
         description=(
-            "Validate a session directory and upload it to the lab's HuggingFace dataset repo. "
-            "Credentials come from configs/contributor_config.yaml (HF_TOKEN overrides the token)."
+            "Validate a session directory and upload it to your lab's HuggingFace dataset repo, "
+            "OopsieData-Submissions/<lab_id>, creating the repo on first use. Credentials come "
+            "from contributor_config.yaml, with $HF_TOKEN overriding the stored token. Nothing "
+            "is uploaded unless validation passes and the directory layout is within "
+            "HuggingFace's per-directory file limit."
+        ),
+        examples=(
+            "  oopsie-data upload --path ./samples\n"
+            "  oopsie-data upload --path ./samples --skip-upload    # dry run: checks only\n"
+            "  oopsie-data upload --path ./samples --with-restructure\n"
         ),
     )
     p_upload.add_argument(
         "--path",
         "-p",
-        "-o",
+        "--samples-dir",
         required=True,
+        metavar="DIR",
         help="Session directory containing formatted episode files",
     )
     p_upload.add_argument(
@@ -565,7 +720,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--episode_id",
         "-e",
         default=None,
-        help="Zero-padded episode id to validate; if omitted, all *.h5 files in --path are validated",
+        metavar="ID",
+        help="Zero-padded episode id to validate; if omitted, every *.h5 in --path is validated",
     )
     p_upload.add_argument(
         "--skip-validate",
@@ -588,7 +744,9 @@ def build_parser() -> argparse.ArgumentParser:
             "left untouched, so this needs room for a second copy)"
         ),
     )
-    p_upload.add_argument("--log-path", "-l", default=None, help="Also write logs to this file")
+    p_upload.add_argument(
+        "--log-path", "-l", default=None, metavar="FILE", help="Also write logs to this file"
+    )
     p_upload.add_argument(
         "--strict-diversity",
         action="store_true",
@@ -597,54 +755,76 @@ def build_parser() -> argparse.ArgumentParser:
     p_upload.set_defaults(func=cmd_upload)
 
     # submissions
-    p_submissions = sub.add_parser(
+    p_submissions = _add_command(
+        sub,
         "submissions",
-        help="Show what your lab has already uploaded to HuggingFace",
+        summary="Show what your lab has already uploaded to HuggingFace",
         description=(
             "Report episode, video and file counts in OopsieData-Submissions/<lab_id> without "
             "downloading anything. A repo that does not exist yet is not an error — it is "
             "created on your first successful upload."
         ),
+        examples=(
+            "  oopsie-data submissions\n"
+            "  oopsie-data submissions --lab-id some_other_lab\n"
+        ),
     )
     p_submissions.add_argument(
         "--lab-id",
         default=None,
+        metavar="ID",
         help="Lab id to query (default: the lab_id in your contributor config)",
     )
     p_submissions.set_defaults(func=cmd_submissions)
 
     # inspect
-    p_inspect = sub.add_parser(
+    p_inspect = _add_command(
+        sub,
         "inspect",
-        help="Dump the structure of an HDF5 episode",
+        summary="Dump the structure of an HDF5 episode",
         description=(
             "Print every group, dataset, shape, dtype and attribute in an HDF5 file. This is a "
             "debugging aid, not a validator: it makes no assumptions about the schema, so it "
-            "works just as well on a file that 'oopsie-data validate' rejects."
+            "works just as well on a file that 'oopsie-data validate' rejects — which is "
+            "usually how you find out why it was rejected."
+        ),
+        examples=(
+            "  oopsie-data inspect ./samples/000000.h5\n"
+            "  oopsie-data inspect ./samples/000000.h5 | less\n"
         ),
     )
-    p_inspect.add_argument("path", help="Path to a .h5 / .hdf5 file")
+    p_inspect.add_argument("path", metavar="FILE", help="Path to a .h5 / .hdf5 file")
     p_inspect.set_defaults(func=cmd_inspect)
 
     # restructure
-    p_restructure = sub.add_parser(
+    p_restructure = _add_command(
+        sub,
         "restructure",
-        help="Split an oversized session directory into numbered subfolders",
+        summary="Split an oversized session directory into numbered subfolders",
         description=(
-            "Copy a session into a new folder in which every directory that exceeds the "
-            "HuggingFace per-directory file limit — the one 'oopsie-data upload' refuses on — "
-            "has been split into numbered subfolders of at most 500 episodes each. The whole "
-            "tree is copied, so directories already under the limit come through unchanged and "
-            "nesting works. Non-destructive: the source is never modified, and video paths are "
-            "rewritten only inside the HDF5 copies."
+            "Copy a session into a new folder in which every directory that exceeds "
+            f"HuggingFace's per-directory limit of {FILE_LIMIT:,} files — the one "
+            "'oopsie-data upload' refuses on — has been split into numbered subfolders of at "
+            f"most {BATCH_SIZE} episodes each, wherever in the tree that directory sits. "
+            "Directories already under the limit are copied through unchanged.\n\n"
+            "Non-destructive: the source is never modified, not even the HDF5 files, whose "
+            "stored video paths are rewritten only in the copy. That means you need room for "
+            "a second copy of the session, and you delete the original yourself once you have "
+            "checked the output. 'oopsie-data upload --with-restructure' does all of this as "
+            "one step."
+        ),
+        examples=(
+            "  oopsie-data restructure --source ./samples\n"
+            "  oopsie-data restructure --source ./samples --output /big/disk/samples_split\n"
+            "  oopsie-data restructure --source ./samples --yes   # no prompt, for scripts\n"
         ),
     )
     p_restructure.add_argument(
-        "--source", "-s", type=Path, required=True,
-        help="Directory to restructure (must contain .h5 / .hdf5 files at its root)",
+        "--source", "-s", type=Path, required=True, metavar="DIR",
+        help="Session directory to restructure (its whole tree is scanned)",
     )
     p_restructure.add_argument(
-        "--output", "-o", type=Path, default=None,
+        "--output", "-o", type=Path, default=None, metavar="DIR",
         help="Destination for the restructured copy (default: <source>_restructured alongside it)",
     )
     p_restructure.add_argument(
@@ -654,21 +834,28 @@ def build_parser() -> argparse.ArgumentParser:
     p_restructure.set_defaults(func=cmd_restructure)
 
     # install-skill
-    p_skill = sub.add_parser(
+    p_skill = _add_command(
+        sub,
         "install-skill",
-        help="Install the bundled Claude Code skill for oopsie-data",
+        summary="Install the bundled Claude Code skill for oopsie-data",
         description=(
-            "Copy the skill that ships with this package into your Claude Code configuration, "
-            "so Claude knows how to drive the contributor workflow. Entirely optional: nothing "
-            "else in oopsie-data needs Claude, and no files are written anywhere unless you run "
-            "this command. Installs to ~/.claude/skills/ by default, or ./.claude/skills/ with "
-            "--project, where it can be committed and shared with collaborators."
+            "Copy the skill that ships with this package into your project, so Claude Code "
+            "knows how to drive the contributor workflow. Entirely optional: nothing else in "
+            "oopsie-data needs Claude, and no files are written anywhere unless you run this "
+            "command. Installs into ./skills/oopsie-data/, a plain directory you can read, "
+            "edit and commit; the command prints how to link it into .claude/skills/ so Claude "
+            "Code picks it up. Pass --user to install it into ~/.claude/skills/ instead, where "
+            "it is active in every project straight away."
+        ),
+        examples=(
+            "  oopsie-data install-skill\n"
+            "  oopsie-data install-skill --user   # available in every project\n"
         ),
     )
     p_skill.add_argument(
-        "--project",
+        "--user",
         action="store_true",
-        help="Install into ./.claude/skills/ instead of your home directory",
+        help="Install into ~/.claude/skills/ instead of ./skills/",
     )
     p_skill.add_argument(
         "--force", action="store_true", help="Overwrite an existing installation of the skill"
@@ -680,7 +867,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    # A bare 'oopsie-data' is someone looking for the commands, so show them: the full help
+    # answers that, where argparse's "the following arguments are required" does not.
+    if getattr(args, "func", None) is None:
+        parser.print_help()
+        return 2
+
     # Export before any command runs, so library code resolving config paths sees it.
     if args.config_dir is not None:
         os.environ[ENV_CONFIG_DIR] = str(Path(args.config_dir).expanduser().resolve())
