@@ -102,12 +102,17 @@ def ensure_repo(api, repo: str) -> None:
 # ── Upload ────────────────────────────────────────────────────────────────────
 
 
-def check_folder_size(samples_dir: str) -> list[tuple[str, int]]:
+def check_folder_size(samples_dir: str, suggest_fix: bool = True) -> list[tuple[str, int]]:
     """Find directories under ``samples_dir`` that exceed the HF per-directory file limit.
+
+    Args:
+        samples_dir: Session directory to check, recursively.
+        suggest_fix: Log the command that repairs the layout. Set False when the caller is
+            about to run it anyway (``upload --with-restructure``), so the output does not
+            tell the user to do by hand what is happening on the next line.
 
     Returns:
         A list of ``(directory, file_count)`` pairs; empty if the layout is fine.
-        Offending directories are logged with the fix to apply.
     """
     oversized = [
         (dirpath, len(filenames))
@@ -120,12 +125,14 @@ def check_folder_size(samples_dir: str) -> list[tuple[str, int]]:
     logger.error("[precheck] The following directories exceed %d files:", FILE_LIMIT)
     for d, n in oversized:
         logger.error("             %s  (%d files)", d, n)
-    logger.error(
-        "[precheck] HuggingFace Hub enforces a per-directory file limit.\n"
-        "           Restructure the folder first, then re-run the upload:\n\n"
-        "             oopsie-data restructure --source %s\n",
-        samples_dir,
-    )
+    if suggest_fix:
+        logger.error(
+            "[precheck] HuggingFace Hub enforces a per-directory file limit.\n"
+            "           Restructure the folder first, then re-run the upload,\n"
+            "           or pass --with-restructure to do both in one step:\n\n"
+            "             oopsie-data restructure --source %s\n",
+            samples_dir,
+        )
     return oversized
 
 

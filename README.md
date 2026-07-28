@@ -22,6 +22,7 @@ oopsie-data upload   --path ./samples            # validate, then upload to Hugg
 oopsie-data submissions                          # what your lab has already uploaded
 oopsie-data inspect episode.h5                   # dump an episode's structure
 oopsie-data restructure --source ./samples       # split a folder that is too large to upload
+oopsie-data upload --path ./samples --with-restructure   # ...or do both in one step
 ```
 
 `init` prompts for your lab id and HuggingFace token and saves them to a location the other

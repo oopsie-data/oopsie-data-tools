@@ -262,6 +262,112 @@ def test_restructure_without_yes_aborts_on_anything_but_yes(tmp_path, monkeypatc
     assert not (tmp_path.parent / f"{tmp_path.name}_restructured").exists()
 
 
+# ── upload --with-restructure ─────────────────────────────────────────────────
+
+
+def _oversized_session(tmp_path, monkeypatch, n=3):
+    """A session directory that trips the folder-size precheck.
+
+    BATCH_SIZE is scaled down alongside FILE_LIMIT. One batch holds BATCH_SIZE episodes
+    plus their videos, so a batch only ends up under the limit if the two are set in a
+    realistic ratio — at the shipped 500 / 10,000 it takes about twenty cameras per episode
+    to overflow a batch.
+    """
+    monkeypatch.setattr(restructure, "FILE_LIMIT", 2)
+    monkeypatch.setattr(restructure, "BATCH_SIZE", 1)
+    monkeypatch.setattr(hf_upload, "FILE_LIMIT", 2)
+    source = tmp_path / "samples"
+    source.mkdir()
+    for i in range(n):
+        write_valid_episode(source, f"ep_{i}")
+    return source
+
+
+def test_upload_aborts_on_an_oversized_folder_without_the_flag(tmp_path, monkeypatch, caplog):
+    source = _oversized_session(tmp_path, monkeypatch)
+
+    # No --skip-upload: the precheck only runs when something would actually be uploaded.
+    # It returns non-zero before any network call is reached.
+    assert main(["upload", "--path", str(source)]) == 1
+
+    assert "exceed" in caplog.text
+    assert "--with-restructure" in caplog.text, "point at the one-step fix"
+    assert not (tmp_path / "samples_restructured").exists()
+
+
+def test_upload_with_restructure_does_not_tell_you_to_restructure_by_hand(
+    tmp_path, monkeypatch, caplog
+):
+    """The manual instruction contradicts what the next line does."""
+    source = _oversized_session(tmp_path, monkeypatch)
+
+    assert main(["upload", "--path", str(source), "--with-restructure", "--skip-upload"]) == 0
+
+    assert "exceed" in caplog.text, "still say which directories were over"
+    assert "oopsie-data restructure --source" not in caplog.text
+
+
+def test_upload_with_restructure_uploads_the_restructured_copy(tmp_path, monkeypatch, info_log):
+    source = _oversized_session(tmp_path, monkeypatch)
+    uploaded = {}
+    monkeypatch.setattr(
+        "oopsie_data_tools.utils.hf_upload.resolve_hf_target", lambda: ("tok", "repo/x")
+    )
+    monkeypatch.setattr("oopsie_data_tools.utils.hf_upload.hf_login", lambda token: "someone")
+    monkeypatch.setattr("oopsie_data_tools.utils.hf_upload.ensure_repo", lambda api, repo: None)
+    monkeypatch.setattr(
+        "oopsie_data_tools.utils.hf_upload.upload_dataset",
+        lambda api, repo, d: uploaded.update(dir=d),
+    )
+    monkeypatch.setattr("huggingface_hub.HfApi", lambda token=None: object())
+
+    assert main(["upload", "--path", str(source), "--with-restructure"]) == 0
+
+    output = tmp_path / "samples_restructured"
+    assert uploaded["dir"] == str(output), "the copy is uploaded, not the original"
+    # The original is untouched, which is the whole contract of restructure.
+    assert sorted(p.name for p in source.glob("*.h5")) == ["ep_0.h5", "ep_1.h5", "ep_2.h5"]
+    assert list(output.glob("*/ep_0.h5")), "the copy is batched into subfolders"
+
+
+def test_upload_with_restructure_validates_the_copy_not_the_original(tmp_path, monkeypatch):
+    """Video paths are rewritten by the split, so validation must run on the copy."""
+    source = _oversized_session(tmp_path, monkeypatch)
+    validated = {}
+
+    def fake_validation(path, episode_id, log_path):
+        validated["path"] = path
+        return 0
+
+    monkeypatch.setattr("oopsie_data_tools.utils.hf_upload.run_validation", fake_validation)
+
+    assert main(["upload", "--path", str(source), "--with-restructure", "--skip-upload"]) == 0
+    assert validated["path"] == str(tmp_path / "samples_restructured")
+
+
+def test_upload_with_restructure_is_a_no_op_when_the_folder_is_fine(tmp_path, monkeypatch):
+    source = tmp_path / "samples"
+    source.mkdir()
+    write_valid_episode(source, "ep_a")
+
+    assert main(["upload", "--path", str(source), "--with-restructure", "--skip-upload"]) == 0
+    assert not (tmp_path / "samples_restructured").exists()
+
+
+def test_upload_with_restructure_aborts_if_the_layout_is_still_oversized(
+    tmp_path, monkeypatch, caplog
+):
+    """A videos-only directory cannot be split by episode; do not upload it anyway."""
+    source = _oversized_session(tmp_path, monkeypatch)
+    clips = source / "clips"
+    clips.mkdir()
+    for i in range(5):
+        (clips / f"c{i}.mp4").write_bytes(b"x")
+
+    assert main(["upload", "--path", str(source), "--with-restructure", "--skip-upload"]) == 1
+    assert "still over the file limit" in caplog.text
+
+
 # ── submissions ───────────────────────────────────────────────────────────────
 
 

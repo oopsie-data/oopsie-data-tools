@@ -11,6 +11,7 @@ Single entry point for the contributor workflow::
     oopsie-data submissions                          # what has landed on HuggingFace
     oopsie-data inspect episode.h5                   # dump an episode's structure
     oopsie-data restructure --source ./samples       # split a folder HF would reject
+    oopsie-data install-skill                        # optional: teach Claude Code this workflow
 
 This is the only entry point; every capability lives here rather than in a parallel
 collection of scripts.
@@ -249,6 +250,45 @@ def cmd_validate(args: argparse.Namespace) -> int:
 # ── upload ────────────────────────────────────────────────────────────────────
 
 
+def _restructure_for_upload(samples_dir: str) -> str | None:
+    """Split an oversized session so it can be uploaded. Returns the copy, or None.
+
+    Passing --with-restructure is the consent the standalone command prompts for, so this
+    does not ask again — but ``run_restructure`` still logs the size estimate first, and
+    the source is left untouched either way.
+    """
+    from oopsie_data_tools.utils.hf_upload import check_folder_size
+    from oopsie_data_tools.utils.restructure import run_restructure
+
+    source = Path(samples_dir)
+    output = source.parent / f"{source.name}_restructured"
+    logger.info(
+        "[restructure] --with-restructure is set. Writing a restructured copy to\n"
+        "              %s\n"
+        "              The original is not modified. Run 'oopsie-data restructure' "
+        "yourself to choose a different destination.",
+        output,
+    )
+
+    if run_restructure(source, output, assume_yes=True) != 0:
+        logger.error("Aborting: the session could not be restructured.")
+        return None
+
+    # Confirm the layout is actually fixed rather than assuming it. A directory holding no
+    # episodes cannot be split by episode, so it survives the copy still oversized — and
+    # uploading it would fail at the Hub for the reason we just tried to fix.
+    if check_folder_size(str(output), suggest_fix=False):
+        logger.error(
+            "Aborting: %s is still over the file limit after restructuring. "
+            "Reorganise the directories listed above by hand.",
+            output,
+        )
+        return None
+
+    logger.info("[restructure] Continuing with %s", output)
+    return str(output)
+
+
 def cmd_upload(args: argparse.Namespace) -> int:
     from oopsie_data_tools.utils.hf_upload import (
         check_folder_size,
@@ -271,9 +311,18 @@ def cmd_upload(args: argparse.Namespace) -> int:
 
     # Pre-upload folder-size check (HF enforces a per-directory file limit). Only relevant
     # when something is actually going to be uploaded — with --skip-upload this is a
-    # validation run, and a layout HF would reject is not a reason to fail it.
-    if not args.skip_upload and check_folder_size(samples_dir):
-        return 1
+    # validation run, and a layout HF would reject is not a reason to fail it. Asking for
+    # --with-restructure is asking for the layout to be fixed, so it runs either way.
+    if not args.skip_upload or args.with_restructure:
+        if check_folder_size(samples_dir, suggest_fix=not args.with_restructure):
+            if not args.with_restructure:
+                return 1
+            restructured = _restructure_for_upload(samples_dir)
+            if restructured is None:
+                return 1
+            # Everything downstream must see the copy: validation reads the rewritten
+            # video paths, and it is the copy that gets uploaded.
+            samples_dir = restructured
 
     if not args.skip_validate:
         if run_validation(samples_dir, args.episode_id, args.log_path) != 0:
@@ -343,6 +392,15 @@ def cmd_restructure(args: argparse.Namespace) -> int:
     return run_restructure(args.source, args.output, assume_yes=args.yes)
 
 
+# ── install-skill ─────────────────────────────────────────────────────────────
+
+
+def cmd_install_skill(args: argparse.Namespace) -> int:
+    from oopsie_data_tools.utils.claude_skill import install_skill
+
+    return install_skill(project=args.project, force=args.force)
+
+
 # ── parser ────────────────────────────────────────────────────────────────────
 
 
@@ -367,7 +425,7 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         metavar=(
             "{init,show-config,new-profile,annotate,validate,upload,"
-            "submissions,inspect,restructure}"
+            "submissions,inspect,restructure,install-skill}"
         ),
     )
 
@@ -521,6 +579,15 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run validation and checks only, do not upload",
     )
+    p_upload.add_argument(
+        "--with-restructure",
+        action="store_true",
+        help=(
+            "If a directory exceeds the HuggingFace file limit, write a restructured copy "
+            "to <path>_restructured and upload that instead of aborting (the original is "
+            "left untouched, so this needs room for a second copy)"
+        ),
+    )
     p_upload.add_argument("--log-path", "-l", default=None, help="Also write logs to this file")
     p_upload.add_argument(
         "--strict-diversity",
@@ -585,6 +652,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip the confirmation prompt (this copies the whole dataset)",
     )
     p_restructure.set_defaults(func=cmd_restructure)
+
+    # install-skill
+    p_skill = sub.add_parser(
+        "install-skill",
+        help="Install the bundled Claude Code skill for oopsie-data",
+        description=(
+            "Copy the skill that ships with this package into your Claude Code configuration, "
+            "so Claude knows how to drive the contributor workflow. Entirely optional: nothing "
+            "else in oopsie-data needs Claude, and no files are written anywhere unless you run "
+            "this command. Installs to ~/.claude/skills/ by default, or ./.claude/skills/ with "
+            "--project, where it can be committed and shared with collaborators."
+        ),
+    )
+    p_skill.add_argument(
+        "--project",
+        action="store_true",
+        help="Install into ./.claude/skills/ instead of your home directory",
+    )
+    p_skill.add_argument(
+        "--force", action="store_true", help="Overwrite an existing installation of the skill"
+    )
+    p_skill.set_defaults(func=cmd_install_skill)
 
     return parser
 
