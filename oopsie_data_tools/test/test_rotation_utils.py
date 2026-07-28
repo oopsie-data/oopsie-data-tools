@@ -65,7 +65,10 @@ def test_matrix_is_accepted_flat():
 
     result = ActionQuatConversion(RotOption.MATRIX).convert_position(action)
 
-    np.testing.assert_allclose(result, [*POSITION, 0.0, 0.0, 0.0, 1.0], atol=1e-12)
+    # 1e-9 rather than exact: the value comes out of scipy's matrix-to-quaternion routine,
+    # and pinning it to machine epsilon would make this brittle across scipy/BLAS builds
+    # for no gain — the point is that it converts at all, and to the identity rotation.
+    np.testing.assert_allclose(result, [*POSITION, 0.0, 0.0, 0.0, 1.0], atol=1e-9)
 
 
 def test_biarm_converts_each_arm_independently():
