@@ -536,7 +536,7 @@ class EpisodeRecorder:
             provided_video_paths if isinstance(provided_video_paths, dict) else {}
         )
         # Both sides of every relpath below must be resolved otherwise complex
-        # relative paths can produce a path that is not actually relative to the episode
+        # relative paths can produce a convoluted path
         base = Path(output_dir).resolve()
 
         for cam in self.camera_names:
@@ -600,11 +600,15 @@ class EpisodeRecorder:
                 key: np.stack([t["robot_state"][key] for t in self.timesteps], axis=0)
                 for key in self.robot_profile.robot_state_keys
             },
+            # Only the keys actually recorded, which record_step guarantees are exactly
+            # profile.action_space. The buffer carries all nine VALID_ACTION_KEYS with None
+            # in the unused slots; stacking those produced object arrays of None that the
+            # validator's ndim guards happened to skip. episode_loader builds this dict from
+            # the non-empty datasets only, so this keeps the two construction sites agreeing
+            # on what `actions` means.
             actions={
-                key: np.stack(
-                    [t["action_dict"][key] for t in self.timesteps], axis=0
-                )
-                for key in self.timesteps[0]["action_dict"]
+                key: np.stack([t["action_dict"][key] for t in self.timesteps], axis=0)
+                for key in self.robot_profile.action_space
             },
             videos={
                 cam: VideoInfo.from_frames(self.frames[cam], fps=self.robot_profile.control_freq) for cam in self.camera_names

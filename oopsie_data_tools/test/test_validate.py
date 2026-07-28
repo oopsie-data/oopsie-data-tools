@@ -249,6 +249,35 @@ class TestProfileFileConsistency:
 # ---------------------------------------------------------------------------
 
 
+class TestProfileDocumentsTheEpisode:
+    """The profile is what documents an episode, so the two must agree in both directions."""
+
+    def test_undeclared_robot_state_key_is_rejected(self, invalid_fixtures):
+        """Data the profile does not declare has no joint names, units or expected DOF."""
+        with pytest.raises(AssertionError, match="does not declare.*velocity_hack"):
+            validate_h5_file(str(invalid_fixtures["invalid_robot_state_extra_key"]))
+
+    def test_a_declared_key_may_be_absent_is_still_the_other_error(self, invalid_fixtures):
+        """The reverse direction was always enforced; check the two messages stay distinct."""
+        with pytest.raises(AssertionError, match="Missing observations/robot_states/"):
+            validate_h5_file(str(invalid_fixtures["invalid_robot_state_missing_key"]))
+
+    def test_biarm_profile_rejects_a_single_arm_cartesian_pose(self, invalid_fixtures):
+        """7 DOF is one [x,y,z,qx,qy,qz,qw]; a bimanual robot records 14."""
+        with pytest.raises(AssertionError, match=r"has 7 DOF.*is_biarm=True.*means 14"):
+            validate_h5_file(str(invalid_fixtures["invalid_profile_biarm_mismatch"]))
+
+    def test_joint_count_is_not_constrained_by_is_biarm(self, tmp_path):
+        """Deliberately not a rule: two arms need not share a DOF count, so 7+6 is valid."""
+        h5_path = write_valid_episode(tmp_path, "asymmetric")
+        with h5py.File(h5_path, "r+") as f:
+            profile = json.loads(f.attrs["robot_profile"])
+            profile["is_biarm"] = True
+            f.attrs["robot_profile"] = json.dumps(profile)
+
+        assert validate_h5_file(str(h5_path), strict_annotation_check=True) is True
+
+
 class TestKnownValidationGaps:
     """Fixtures whose defect the validator does not actually detect.
 
@@ -264,10 +293,12 @@ class TestKnownValidationGaps:
     @pytest.mark.parametrize(
         "fixture_key,missing_rule",
         [
+            # Cannot be checked without a schema change: nothing in RobotProfile declares how
+            # many gripper DOF to expect, and inferring 1-or-2 from is_biarm would wrongly
+            # reject a multi-finger hand, which gripper_name explicitly anticipates. Needs a
+            # gripper_joint_names field mirroring robot_state_joint_names.
             ("invalid_gripper_pos_wrong_dof", "gripper_position DOF is never checked"),
             ("invalid_robot_state_wrong_dtype", "robot_state dtypes are never checked"),
-            ("invalid_robot_state_extra_key", "extra robot_state keys are accepted"),
-            ("invalid_profile_biarm_mismatch", "is_biarm is never checked against joint DOF"),
         ],
     )
     def test_structurally_valid_despite_the_defect(

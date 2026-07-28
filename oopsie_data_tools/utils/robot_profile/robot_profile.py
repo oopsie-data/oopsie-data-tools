@@ -69,12 +69,6 @@ class RobotProfile:
     pass those separately when constructing the annotator, e.g. via
     :meth:`WebRolloutAnnotator.from_robot_profile`.
     """
-
-    # typing.List/Dict/Optional rather than the PEP 585/604 spellings used elsewhere in
-    # this package. Those are fine in annotations that are never evaluated, but a dataclass
-    # is exactly the thing something later introspects — tyro, pydantic, or a plain
-    # get_type_hints — and resolving them raises TypeError on the declared Python 3.8 floor.
-    # The tyro examples hit precisely this. Revisit when the floor moves past 3.9.
     policy_name: str
     robot_name: str
     is_biarm: bool
@@ -196,9 +190,6 @@ def robot_profile_from_raw(raw: Any) -> RobotProfile:
             "action spaces"
         )
 
-    # is_valid_action_space already guarantees at least one gripper action, so only the
-    # mobile-base rule is left to check: it allows zero base actions in general, but a
-    # profile declaring a mobile base has to drive it.
     if bool(raw["uses_mobile_base"]) and set(action_space).isdisjoint(ACTION_SPACE_SET_3):
         raise ValueError(
             f"Invalid action_space {action_space!r} for mobile base: must include at least one of "

@@ -425,10 +425,25 @@ def make_profile_missing_rs_key(out_dir: Path) -> None:
 
 
 def make_profile_biarm_mismatch(out_dir: Path) -> None:
-    profile = {**_VALID_ROBOT_PROFILE, "is_biarm": True}
+    """A bimanual profile recording a single arm's end-effector pose.
+
+    Joint counts cannot be constrained by is_biarm — two arms need not share a DOF count —
+    but a cartesian pose is [x, y, z, qx, qy, qz, qw] per arm, so a biarm robot records 14.
+    This one records 7, which means either an arm is missing or is_biarm is wrong.
+
+    The previous version of this fixture only set is_biarm=True with 7 joints and no
+    cartesian data at all, which is internally consistent and so demonstrated nothing.
+    """
+    profile = {
+        **_VALID_ROBOT_PROFILE,
+        "is_biarm": True,
+        "robot_state_keys": ["joint_position", "gripper_position", "cartesian_position"],
+    }
     with h5py.File(out_dir / "invalid_profile_biarm_mismatch.h5", "w") as f:
         _base_attrs(f, "invalid_profile_biarm_mismatch", robot_profile=profile)
         _robot_states(f, joint_dof=7)
+        rs = f["observations/robot_states"]
+        rs.create_dataset("cartesian_position", data=np.zeros((20, 7), dtype=np.float64))
         _actions(f, joint_dof=7)
         _video_paths(f, "front", "invalid_profile_biarm_mismatch_front.mp4")
 
