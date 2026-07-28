@@ -564,10 +564,12 @@ def build_parser() -> argparse.ArgumentParser:
         "restructure",
         help="Split an oversized session directory into numbered subfolders",
         description=(
-            "Copy a session directory into numbered subfolders of at most 500 episodes each, so "
-            "it stays under the HuggingFace per-directory file limit that 'oopsie-data upload' "
-            "checks for. Non-destructive: the source is never modified, and video paths inside "
-            "the HDF5 copies are rewritten to point at the copied videos."
+            "Copy a session into a new folder in which every directory that exceeds the "
+            "HuggingFace per-directory file limit — the one 'oopsie-data upload' refuses on — "
+            "has been split into numbered subfolders of at most 500 episodes each. The whole "
+            "tree is copied, so directories already under the limit come through unchanged and "
+            "nesting works. Non-destructive: the source is never modified, and video paths are "
+            "rewritten only inside the HDF5 copies."
         ),
     )
     p_restructure.add_argument(
