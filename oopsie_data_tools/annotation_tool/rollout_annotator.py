@@ -185,6 +185,15 @@ class WebRolloutAnnotator:
         if self._active_recorder is not None:
             self._active_recorder.record_step(observation=observation, action=action)
 
+    @property
+    def episode_name(self) -> str:
+        """Name of the episode being recorded — the stem of its ``.h5`` and MP4 files.
+
+        Callers wanting to log which episode a result belongs to used to reach for a
+        ``_last_sample_id`` attribute that has never existed.
+        """
+        return "" if self._active_recorder is None else self._active_recorder.save_fname
+
     # ------------------------------------------------------------------
     # Post-rollout workflow
     # ------------------------------------------------------------------

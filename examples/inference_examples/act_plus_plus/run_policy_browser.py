@@ -21,6 +21,7 @@ from utils import (
 )
 
 from oopsie_data_tools.annotation_tool.rollout_annotator import WebRolloutAnnotator
+from oopsie_data_tools.utils.robot_profile.robot_profile import load_robot_profile
 
 
 def get_auto_index(dataset_dir):
@@ -29,11 +30,6 @@ def get_auto_index(dataset_dir):
         if not os.path.isfile(os.path.join(dataset_dir, f"qpos_{i}.npy")):
             return i
     raise Exception(f"Error getting auto index, or more than {max_idx} episodes")
-
-
-def _extract_video_views(image_list, camera_names):
-    """Extract per-camera frame lists from image_list as a dict."""
-    return {cam: [d[cam] for d in image_list if cam in d] for cam in camera_names}
 
 
 def main(args):
@@ -141,14 +137,18 @@ def main(args):
 
     if is_eval:
         ckpt_names = [args["ckpt_name"]]
+        # Five of these kwargs never existed on WebRolloutAnnotator; the robot profile
+        # now carries the camera names and policy identity that were passed loose here.
+        robot_profile = load_robot_profile(args["robot_profile"])
         rollout_annotator = WebRolloutAnnotator(
-            samples_dir=args["samples_dir"],
-            policy_name=args["policy_name"],
-            policy_id=args["policy_id"],
-            camera_names=camera_names,
-            annotator_port=args["annotator_port"],
+            robot_profile=robot_profile,
+            data_root_dir=args["samples_dir"],
+            operator_name=args["operator_name"],
+            annotator_name=args["annotator_name"],
+            port=args["annotator_port"],
             wait_for_annotation=not args["no_wait_for_annotation"],
         )
+        rollout_annotator.start()
         for ckpt_name in ckpt_names:
             eval_bc(config, ckpt_name, rollout_annotator)
         exit()
@@ -253,7 +253,8 @@ def eval_bc(config, ckpt_name, rollout_annotator: WebRolloutAnnotator):
     try:
         while True:
             instruction = rollout_annotator.wait_for_task()
-            rollout_annotator.start_rollout()
+            # There is no start_rollout(); an episode begins by resetting the recorder.
+            rollout_annotator.reset_episode_recorder()
 
             ts = env.reset()
 
@@ -456,13 +457,9 @@ def eval_bc(config, ckpt_name, rollout_annotator: WebRolloutAnnotator):
                 plt.savefig(os.path.join(ckpt_dir, f"qpos_{log_id}.png"))
                 plt.close()
 
-            # Extract per-camera frames and annotate
-            videos = _extract_video_views(image_list, camera_names)
-            rollout_annotator.finish_rollout(
-                instruction=instruction,
-                videos=videos,
-                t_step=max_timesteps - 1,
-            )
+            # finish_rollout takes only the instruction; frames were buffered by
+            # record_step, and it writes the videos and the episode itself.
+            rollout_annotator.finish_rollout(instruction=instruction)
 
     except KeyboardInterrupt:
         pass
@@ -591,7 +588,6 @@ def train_bc(train_dataloader, val_dataloader, config):
         if step % save_every == 0:
             ckpt_path = os.path.join(ckpt_dir, f"policy_step_{step}_seed_{seed}.ckpt")
             torch.save(policy.state_dict(), ckpt_path)
-            plot_history(train_history, validation_history, step, ckpt_dir, seed)
 
     ckpt_path = os.path.join(ckpt_dir, "policy_last.ckpt")
     torch.save(policy.state_dict(), ckpt_path)
@@ -652,9 +648,16 @@ if __name__ == "__main__":
         default="act",
         help="Policy ID for session directory naming",
     )
+    # Camera names come from the robot profile, which is the single source of truth;
+    # the parsed value here was never read and its default contradicted the profile.
     parser.add_argument(
-        "--camera_names", type=str, nargs="+", default=["left", "right", "wrist"]
+        "--robot_profile",
+        type=Path,
+        required=True,
+        help="Path to your robot profile YAML (see `oopsie-data new-profile`)",
     )
+    parser.add_argument("--operator_name", type=str, required=True)
+    parser.add_argument("--annotator_name", type=str, default=None)
     parser.add_argument("--annotator_port", type=int, default=5001)
     parser.add_argument("--no_wait_for_annotation", action="store_true")
     args = vars(parser.parse_args())

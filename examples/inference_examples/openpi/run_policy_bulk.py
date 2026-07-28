@@ -1,5 +1,3 @@
-# ruff: noqa
-
 from __future__ import annotations
 
 import contextlib
@@ -9,21 +7,23 @@ import faulthandler
 import os
 import signal
 import time
-from moviepy.editor import ImageSequenceClip
+from pathlib import Path
+from typing import Optional
+
 import numpy as np
-from openpi_client import image_tools
-from openpi_client import websocket_client_policy
 import pandas as pd
-from PIL import Image
-from droid.robot_env import RobotEnv
 import tqdm
 import tyro
+from droid.robot_env import RobotEnv
+from openpi_client import image_tools, websocket_client_policy
+from PIL import Image
 
 # =======================================
 # ===== OopsieData project specific =====
 # =======================================
 from oopsie_data_tools.annotation_tool.episode_recorder import EpisodeRecorder
-from oopsie_data_tools.utils.robot_profile.robot_profile import *
+from oopsie_data_tools.utils.robot_profile.robot_profile import load_robot_profile
+
 # =======================================
 
 faulthandler.enable()
@@ -34,13 +34,22 @@ DROID_CONTROL_FREQUENCY = 15
 
 @dataclasses.dataclass
 class Args:
+    # Required, and deliberately has no default. It used to default to the bundled openpi
+    # example profile, so an unedited run recorded episodes under someone else's
+    # robot_name, cameras and joint names — straight into the HDF5 attrs and the upload.
+    # Write your own with `oopsie-data new-profile`.
+    robot_profile: Path
+
     # Hardware parameters
     left_camera_id: str = "<your_camera_id>"  # e.g., "24259877"
     right_camera_id: str = "<your_camera_id>"  # e.g., "24514023"
     wrist_camera_id: str = "<your_camera_id>"  # e.g., "13062452"
 
     # Policy parameters
-    external_camera: str | None = (
+    # Optional[...] rather than `str | None`: tyro resolves these annotations at runtime via
+    # typing.get_type_hints, and PEP 604 syntax raises TypeError on the declared Python 3.8
+    # floor even with `from __future__ import annotations`.
+    external_camera: Optional[str] = (
         None  # which external camera should be fed to the policy, choose from ["left", "right"]
     )
 
@@ -60,14 +69,11 @@ class Args:
     data_root_dir: Path = Path(
         "./data"
     )  # annotation tool reads MP4s and JSON from here
-    resume_session_name: str = None
+    resume_session_name: Optional[str] = None
     annotator_port: int = 5003
     wait_for_annotation: bool = True  # block until browser annotation is submitted
     operator_name: str = "<operator_name>"
     annotator_name: str = "<annotator_name>"
-    robot_profile: Path = dataclasses.field(
-        default_factory=openpi_example_robot_profile_path
-    )
     # =======================================
 
 
@@ -116,7 +122,7 @@ def main(args: Args):
     # =======================================
     # ===== OopsieData project specific =====
     # =======================================
-    robot_profile = load_robot_profile(args.robot_setup)
+    robot_profile = load_robot_profile(args.robot_profile)
     episode_recorder = EpisodeRecorder(
         robot_profile=robot_profile,
         data_root_dir=args.data_root_dir,
@@ -138,9 +144,6 @@ def main(args: Args):
         actions_from_chunk_completed = 0
         pred_action_chunk = None
 
-        # Prepare to save video of rollout
-        timestamp = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-        video = []
         bar = tqdm.tqdm(range(args.max_timesteps))
         print("Running rollout... press Ctrl+C to stop early.")
         for t_step in bar:
@@ -153,8 +156,6 @@ def main(args: Args):
                     # Save the first observation to disk
                     save_to_disk=t_step == 0,
                 )
-
-                video.append(curr_obs[f"{args.external_camera}_image"])
 
                 # Send websocket request to policy server if it's time to predict a new chunk
                 if (
@@ -231,12 +232,6 @@ def main(args: Args):
             except KeyboardInterrupt:
                 break
 
-        video = np.stack(video)
-        save_filename = "video_" + timestamp
-        ImageSequenceClip(list(video), fps=10).write_videofile(
-            save_filename + ".mp4", codec="libx264"
-        )
-
         success: str | float | None = None
         while not isinstance(success, float):
             success = input(
@@ -257,12 +252,20 @@ def main(args: Args):
         episode_recorder.finish_rollout(instruction=instruction, success=success)
         # =======================================
 
-        df = df.append(
-            {
-                "success": success,
-                "duration": t_step,
-                "video_filename": save_filename,
-            },
+        # DataFrame.append was removed in pandas 2.0.
+        df = pd.concat(
+            [
+                df,
+                pd.DataFrame(
+                    [
+                        {
+                            "success": success,
+                            "duration": t_step,
+                            "video_filename": episode_recorder.save_fname,
+                        }
+                    ]
+                ),
+            ],
             ignore_index=True,
         )
 

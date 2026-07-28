@@ -1,5 +1,3 @@
-# ruff: noqa
-
 from __future__ import annotations
 
 import dataclasses
@@ -7,16 +5,16 @@ import os
 import pickle
 import time
 from pathlib import Path
+from typing import Optional
 
-from aloha.constants import FOLLOWER_GRIPPER_JOINT_OPEN
-from einops import rearrange
 import numpy as np
 import torch
-from torchvision import transforms
 import tyro
-
+from aloha.constants import FOLLOWER_GRIPPER_JOINT_OPEN
 from detr.models.latent_model import Latent_Model_Transformer
+from einops import rearrange
 from policy import ACTPolicy, CNNMLPPolicy, DiffusionPolicy
+from torchvision import transforms
 from utils import set_seed
 
 # =======================================
@@ -24,14 +22,24 @@ from utils import set_seed
 # =======================================
 from oopsie_data_tools.annotation_tool.episode_recorder import EpisodeRecorder
 from oopsie_data_tools.utils.robot_profile.robot_profile import (
-    act_plus_plus_robot_profile_path,
     load_robot_profile,
 )
+
 # =======================================
+
+
+# Index of each gripper inside the bimanual qpos vector. The profile's
+# robot_state_joint_names lists 14 joints with `gripper_left` at 6 and `gripper_right` at 13.
+GRIPPER_INDICES = (6, 13)
 
 
 @dataclasses.dataclass
 class Args:
+    # Required, and deliberately has no default. It used to default to a bundled example
+    # profile, so an unedited run recorded episodes under someone else's robot_name,
+    # cameras and joint names. Write your own with `oopsie-data new-profile`.
+    robot_profile: Path
+
     # ACT++ checkpoint / policy parameters
     ckpt_dir: str = ""
     policy_class: str = "ACT"  # choices: ACT, Diffusion, CNNMLP
@@ -39,26 +47,23 @@ class Args:
     ckpt_name: str = "policy_best.ckpt"
     temporal_agg: bool = False
     use_vq: bool = False
-    vq_class: int | None = None
-    vq_dim: int | None = None
-    chunk_size: int | None = None
+    vq_class: Optional[int] = None
+    vq_dim: Optional[int] = None
+    chunk_size: Optional[int] = None
     hidden_dim: int = 512
     dim_feedforward: int = 3200
     kl_weight: int = 10
-    actuator_network_dir: str | None = None
-    history_len: int | None = None
-    future_len: int | None = None
-    prediction_len: int | None = None
+    actuator_network_dir: Optional[str] = None
+    history_len: Optional[int] = None
+    future_len: Optional[int] = None
+    prediction_len: Optional[int] = None
 
     # =======================================
     # ===== OopsieData project specific =====
     # =======================================
     data_root_dir: Path = Path("./data")
-    resume_session_name: str | None = None
+    resume_session_name: Optional[str] = None
     operator_name: str = "operator"
-    robot_profile: Path = dataclasses.field(
-        default_factory=act_plus_plus_robot_profile_path
-    )
     # =======================================
 
 
@@ -195,12 +200,12 @@ def eval_bc(config, ckpt_name, episode_recorder: EpisodeRecorder):
 
     from aloha.real_env import make_real_env
     from aloha.robot_utils import move_grippers
+    from interbotix_common_modules.common_robot.exceptions import InterbotixException
     from interbotix_common_modules.common_robot.robot import (
         create_interbotix_global_node,
         get_interbotix_global_node,
         robot_startup,
     )
-    from interbotix_common_modules.common_robot.exceptions import InterbotixException
 
     try:
         node = get_interbotix_global_node()
@@ -326,19 +331,39 @@ def eval_bc(config, ckpt_name, episode_recorder: EpisodeRecorder):
                 # =======================================
                 # ===== OopsieData project specific =====
                 # =======================================
+                # record_step wants the observation grouped, not flat: `robot_state`
+                # and `image_observation` are its two required top-level keys.
+                #
+                # qpos is the full bimanual vector, matching the 14 entries in the
+                # profile's robot_state_joint_names, with the grippers at indices 6 and
+                # 13. This used to send qpos[:7] and call qpos[7] the gripper, which
+                # silently dropped the right arm and recorded `waist_right` as the
+                # gripper position.
                 record_observation = {
-                    "joint_position": np.asarray(qpos_numpy[:7], dtype=np.float32),
-                    "gripper_position": np.asarray(
-                        [qpos_numpy[7] if qpos_numpy.shape[0] > 7 else 0.0],
-                        dtype=np.float32,
-                    ),
+                    "robot_state": {
+                        "joint_position": np.asarray(qpos_numpy, dtype=np.float32),
+                        "gripper_position": np.asarray(
+                            [qpos_numpy[GRIPPER_INDICES[0]], qpos_numpy[GRIPPER_INDICES[1]]],
+                            dtype=np.float32,
+                        ),
+                    },
+                    "image_observation": {
+                        cam_name: obs_images[cam_name]
+                        for cam_name in camera_names
+                        if cam_name in obs_images
+                    },
                 }
-                for cam_name in camera_names:
-                    if cam_name in obs_images:
-                        record_observation[cam_name] = obs_images[cam_name]
+                target = np.asarray(target_qpos, dtype=np.float32)
                 episode_recorder.record_step(
                     observation=record_observation,
-                    action={"joint_position": np.asarray(target_qpos, dtype=np.float32)},
+                    # The action keys must match the profile's action_space exactly.
+                    action={
+                        "joint_position": target,
+                        "gripper_position": np.asarray(
+                            [target[GRIPPER_INDICES[0]], target[GRIPPER_INDICES[1]]],
+                            dtype=np.float32,
+                        ),
+                    },
                 )
                 # =======================================
 

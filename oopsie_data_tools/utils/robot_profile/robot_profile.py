@@ -5,11 +5,10 @@ from __future__ import annotations
 import dataclasses
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 import yaml
 
-from oopsie_data_tools.utils.paths import robot_profiles_dir
 from oopsie_data_tools.utils.robot_profile.rotation_utils import RotOption
 
 ACTION_SPACE_SET_1 = {
@@ -71,23 +70,28 @@ class RobotProfile:
     :meth:`WebRolloutAnnotator.from_robot_profile`.
     """
 
+    # typing.List/Dict/Optional rather than the PEP 585/604 spellings used elsewhere in
+    # this package. Those are fine in annotations that are never evaluated, but a dataclass
+    # is exactly the thing something later introspects — tyro, pydantic, or a plain
+    # get_type_hints — and resolving them raises TypeError on the declared Python 3.8 floor.
+    # The tyro examples hit precisely this. Revisit when the floor moves past 3.9.
     policy_name: str
     robot_name: str
     is_biarm: bool
     uses_mobile_base: bool
     gripper_name: str
     control_freq: int
-    camera_names: list[str]
-    robot_state_keys: list[str]
-    robot_state_joint_names: list[str]
-    action_space: list[str]
-    action_joint_names: list[str] | None = None
-    orientation_representation: str | None = None
-    robot_state_orientation_representation: str | None = None
-    controller: str | None = None
-    gains: dict[str, Any] | None = None
-    intrinsic_calibration_matrix: dict[str, Any] | None = None
-    extrinsic_calibration_matrix: dict[str, Any] | None = None
+    camera_names: List[str]
+    robot_state_keys: List[str]
+    robot_state_joint_names: List[str]
+    action_space: List[str]
+    action_joint_names: Optional[List[str]] = None
+    orientation_representation: Optional[str] = None
+    robot_state_orientation_representation: Optional[str] = None
+    controller: Optional[str] = None
+    gains: Optional[Dict[str, Any]] = None
+    intrinsic_calibration_matrix: Optional[Dict[str, Any]] = None
+    extrinsic_calibration_matrix: Optional[Dict[str, Any]] = None
 
     def get_rot_option(self) -> RotOption | None:
         if self.orientation_representation is None:
@@ -103,22 +107,6 @@ class RobotProfile:
 def robot_profile_to_json(profile: RobotProfile) -> str:
     """Serialize ``RobotProfile`` to a JSON string (for HDF5 file attributes)."""
     return json.dumps(dataclasses.asdict(profile), ensure_ascii=False)
-
-
-def robot_profile_config_dir() -> Path:
-    """Directory containing ``*.yaml`` robot profiles (see ``utils.paths.robot_profiles_dir``)."""
-    return robot_profiles_dir()
-
-
-# These two survive only because the tyro examples use them as a tyro default_factory.
-# Batch 8 makes --robot-profile required and deletes them: an unedited example run must
-# not record episodes under a bundled example's robot_name, cameras and joint names.
-def openpi_example_robot_profile_path() -> Path:
-    return robot_profile_config_dir() / "openpi_example_robot_profile.yaml"
-
-
-def act_plus_plus_robot_profile_path() -> Path:
-    return robot_profile_config_dir() / "act_plus_plus_robot_profile.yaml"
 
 
 def load_robot_profile(path: Path | str) -> RobotProfile:
