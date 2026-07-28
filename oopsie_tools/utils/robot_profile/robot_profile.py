@@ -49,6 +49,13 @@ REQUIRED_ROBOT_STATE_KEYS = frozenset(
     }
 )
 
+ARM_ACTION_REQUIRED_ROBOT_STATE_KEY = {
+    "joint_position": "joint_position",
+    "joint_velocity": "joint_position",
+    "cartesian_position": "cartesian_position",
+    "cartesian_velocity": "cartesian_position",
+}
+
 
 @dataclasses.dataclass(frozen=True)
 class RobotProfile:
@@ -156,14 +163,6 @@ def robot_profile_from_raw(raw: Any) -> RobotProfile:
     if missing:
         raise ValueError(f"Robot profile missing keys: {missing}")
 
-    missing_robot_state_keys = [
-        k for k in REQUIRED_ROBOT_STATE_KEYS if k not in raw.get("robot_state_keys")
-    ]
-    if missing_robot_state_keys:
-        raise ValueError(
-            f"Robot profile missing robot state keys: {missing_robot_state_keys}"
-        )
-
     action_space = list(raw["action_space"])
     if not is_valid_action_space(action_space):
         raise ValueError(
@@ -174,6 +173,20 @@ def robot_profile_from_raw(raw: Any) -> RobotProfile:
             f"{sorted(ACTION_SPACE_SET_2)}, "
             "and optionally 1 base action from "
             f"{sorted(ACTION_SPACE_SET_3)}."
+        )
+
+    required_robot_state_keys = set(REQUIRED_ROBOT_STATE_KEYS)
+    required_robot_state_keys.update(
+        ARM_ACTION_REQUIRED_ROBOT_STATE_KEY[action]
+        for action in action_space
+        if action in ARM_ACTION_REQUIRED_ROBOT_STATE_KEY
+    )
+    robot_state_keys = list(raw["robot_state_keys"])
+    missing_robot_state_keys = sorted(required_robot_state_keys - set(robot_state_keys))
+    if missing_robot_state_keys:
+        raise ValueError(
+            "Robot profile missing robot state keys required by its action_space: "
+            f"{missing_robot_state_keys}"
         )
 
     action_joint_names = _optional_str_list(raw.get("action_joint_names"))
@@ -211,7 +224,7 @@ def robot_profile_from_raw(raw: Any) -> RobotProfile:
         control_freq=raw["control_freq"],
         camera_names=list(raw["camera_names"]),
         # Observation Related
-        robot_state_keys=list(raw["robot_state_keys"]),
+        robot_state_keys=robot_state_keys,
         robot_state_joint_names=list(raw.get("robot_state_joint_names") or []),
         # Action Related
         action_space=action_space,

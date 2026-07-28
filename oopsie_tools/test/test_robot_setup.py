@@ -22,8 +22,7 @@ VALID_PROFILE = {
     "gripper_name": "test_gripper",
     "control_freq": 10,
     "camera_names": ["cam0"],
-    "robot_state_keys": ["joint_position", "gripper_position"],
-    "robot_state_joint_names": ["j0", "j1"],
+    "robot_state_keys": ["cartesian_position", "gripper_position"],
     "action_space": ["cartesian_position", "gripper_position"],
 }
 
@@ -96,19 +95,54 @@ class TestRobotProfileMissingRequiredKeys(unittest.TestCase):
 
 
 class TestRobotProfileInvalidRobotStateKeys(unittest.TestCase):
-    def test_missing_joint_position_state_key(self) -> None:
+    def test_cartesian_action_without_cartesian_position_state_key(self) -> None:
         data = {**VALID_PROFILE, "robot_state_keys": ["gripper_position"]}
         with tempfile.TemporaryDirectory() as tmp:
             path = _write_profile(data, tmp)
-            with self.assertRaises(ValueError, msg="missing joint_position in robot_state_keys"):
+            with self.assertRaisesRegex(
+                ValueError,
+                "cartesian_position",
+                msg="Cartesian control without cartesian_position state should raise",
+            ):
                 load_robot_profile(path)
 
     def test_missing_gripper_position_state_key(self) -> None:
-        data = {**VALID_PROFILE, "robot_state_keys": ["joint_position"]}
+        data = {**VALID_PROFILE, "robot_state_keys": ["cartesian_position"]}
         with tempfile.TemporaryDirectory() as tmp:
             path = _write_profile(data, tmp)
             with self.assertRaises(ValueError, msg="missing gripper_position in robot_state_keys"):
                 load_robot_profile(path)
+
+    def test_joint_velocity_action_without_joint_position_state_key(self) -> None:
+        data = {
+            **VALID_PROFILE,
+            "robot_state_keys": ["gripper_position"],
+            "action_space": ["joint_velocity", "gripper_position"],
+            "action_joint_names": ["j0", "j1"],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = _write_profile(data, tmp)
+            with self.assertRaisesRegex(
+                ValueError,
+                "joint_position",
+                msg="Joint velocity control without joint_position state should raise",
+            ):
+                load_robot_profile(path)
+
+    def test_joint_velocity_action_with_joint_position_state_key(self) -> None:
+        data = {
+            **VALID_PROFILE,
+            "robot_state_keys": ["joint_position", "gripper_position"],
+            "robot_state_joint_names": ["j0", "j1"],
+            "action_space": ["joint_velocity", "gripper_position"],
+            "action_joint_names": ["j0", "j1"],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            profile = load_robot_profile(_write_profile(data, tmp))
+            self.assertEqual(
+                profile.robot_state_keys,
+                ["joint_position", "gripper_position"],
+            )
 
     def test_empty_robot_state_keys(self) -> None:
         data = {**VALID_PROFILE, "robot_state_keys": []}
@@ -143,6 +177,8 @@ class TestRobotProfileInvalidActionSpace(unittest.TestCase):
     def test_joint_space_without_joint_names(self) -> None:
         data = {
             **VALID_PROFILE,
+            "robot_state_keys": ["joint_position", "gripper_position"],
+            "robot_state_joint_names": ["j0", "j1"],
             "action_space": ["joint_position", "gripper_position"],
             # action_joint_names intentionally omitted
         }
@@ -154,6 +190,8 @@ class TestRobotProfileInvalidActionSpace(unittest.TestCase):
     def test_joint_velocity_without_joint_names(self) -> None:
         data = {
             **VALID_PROFILE,
+            "robot_state_keys": ["joint_position", "gripper_position"],
+            "robot_state_joint_names": ["j0", "j1"],
             "action_space": ["joint_velocity", "gripper_position"],
         }
         with tempfile.TemporaryDirectory() as tmp:
