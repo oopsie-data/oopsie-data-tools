@@ -12,6 +12,7 @@ import os
 
 from oopsie_data_tools.utils.contributor_config import read_contributor_config
 from oopsie_data_tools.utils.log import setup_logger
+from oopsie_data_tools.utils.validation.errors import EpisodeValidationError
 from oopsie_data_tools.utils.validation.validation_utils import (
     validate_h5_file,
     validate_session_dir,
@@ -72,7 +73,7 @@ def run_validation(base_path: str, episode_id: str | None = None, log_path: str 
             validate_h5_file(target, strict_annotation_check=True, log_path=log_path)
             logger.info("%s passed", os.path.basename(target))
             return 0
-        except AssertionError as e:
+        except EpisodeValidationError as e:
             logger.error("Validation failed: %s", e)
             return 1
         except Exception as e:
