@@ -59,7 +59,8 @@ orientation_representation: # str
 # ===== Optional Keys =====
 # ==========================
 
-# For knowing what each index in the robot_state["joint_position"] corresponds to
+# Required when "joint_position" is in robot_state_keys.
+# Identifies what each index in robot_state["joint_position"] corresponds to.
 robot_state_joint_names: # list of str
   - # str
 

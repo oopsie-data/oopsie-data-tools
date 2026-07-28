@@ -189,6 +189,15 @@ def robot_profile_from_raw(raw: Any) -> RobotProfile:
             f"{missing_robot_state_keys}"
         )
 
+    robot_state_joint_names = _optional_str_list(
+        raw.get("robot_state_joint_names")
+    )
+    if "joint_position" in robot_state_keys and not robot_state_joint_names:
+        raise ValueError(
+            "robot_state_joint_names is required when joint_position is included "
+            "in robot_state_keys"
+        )
+
     action_joint_names = _optional_str_list(raw.get("action_joint_names"))
     if (
         any(k in {"joint_position", "joint_velocity"} for k in action_space)
@@ -225,7 +234,7 @@ def robot_profile_from_raw(raw: Any) -> RobotProfile:
         camera_names=list(raw["camera_names"]),
         # Observation Related
         robot_state_keys=robot_state_keys,
-        robot_state_joint_names=list(raw.get("robot_state_joint_names") or []),
+        robot_state_joint_names=robot_state_joint_names or [],
         # Action Related
         action_space=action_space,
         action_joint_names=action_joint_names,

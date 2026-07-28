@@ -144,6 +144,28 @@ class TestRobotProfileInvalidRobotStateKeys(unittest.TestCase):
                 ["joint_position", "gripper_position"],
             )
 
+    def test_joint_position_state_without_joint_names(self) -> None:
+        for joint_names in (None, []):
+            with self.subTest(robot_state_joint_names=joint_names):
+                data = {
+                    **VALID_PROFILE,
+                    "robot_state_keys": [
+                        "joint_position",
+                        "cartesian_position",
+                        "gripper_position",
+                    ],
+                }
+                if joint_names is not None:
+                    data["robot_state_joint_names"] = joint_names
+
+                with tempfile.TemporaryDirectory() as tmp:
+                    path = _write_profile(data, tmp)
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        "robot_state_joint_names is required",
+                    ):
+                        load_robot_profile(path)
+
     def test_empty_robot_state_keys(self) -> None:
         data = {**VALID_PROFILE, "robot_state_keys": []}
         with tempfile.TemporaryDirectory() as tmp:
