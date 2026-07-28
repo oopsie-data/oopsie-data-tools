@@ -778,6 +778,37 @@ def _load_template(filename: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def run_server(
+    samples_dir: Path,
+    annotator_name: str,
+    port: int = 5001,
+    open_browser: bool = True,
+    with_rollouts: bool = False,
+) -> int:
+    """Configure the runtime and serve the annotation UI (blocks until interrupted).
+
+    Shared by this module's ``main()`` and the ``oopsie-data annotate`` CLI command.
+    """
+    samples_dir = Path(samples_dir).resolve()
+    samples_dir.mkdir(parents=True, exist_ok=True)
+    configure_runtime(
+        samples_dir=samples_dir,
+        annotator_name=annotator_name.strip(),
+        browse_only=bool(not with_rollouts),
+    )
+
+    if open_browser and os.environ.get("WERKZEUG_RUN_MAIN") != "true":
+        webbrowser.open(f"http://localhost:{port}/")
+
+    # To suppress the werkzeug server logs
+    import logging
+
+    logging.getLogger("werkzeug").setLevel(logging.WARNING)  # or logging.ERROR
+
+    app.run(host="localhost", port=port, debug=True)
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Annotator server")
     parser.add_argument(
@@ -801,24 +832,13 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    samples_dir = args.samples_dir.resolve()
-    samples_dir.mkdir(parents=True, exist_ok=True)
-    configure_runtime(
-        samples_dir=samples_dir,
-        annotator_name=args.annotator_name.strip(),
-        browse_only=bool(not args.with_rollouts),
+    return run_server(
+        samples_dir=args.samples_dir,
+        annotator_name=args.annotator_name,
+        port=args.port,
+        open_browser=not args.no_browser,
+        with_rollouts=args.with_rollouts,
     )
-
-    if not args.no_browser and os.environ.get("WERKZEUG_RUN_MAIN") != "true":
-        webbrowser.open(f"http://localhost:{args.port}/")
-
-    # To suppress the werkzeug server logs
-    import logging
-
-    logging.getLogger("werkzeug").setLevel(logging.WARNING)  # or logging.ERROR
-
-    app.run(host="localhost", port=args.port, debug=True)
-    return 0
 
 
 if __name__ == "__main__":

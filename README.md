@@ -8,6 +8,45 @@ This repository currently provides around:
 - Web annotation workflows
 - In-the-loop annotation during policy rollout
 
+## Command line tool
+
+Installing the package (`uv sync`, or `pip install -e .`) provides the `oopsie-data` command:
+
+```bash
+oopsie-data init                                 # first-time setup (lab id + HF token)
+oopsie-data show-config                          # where configs are read from, and what is in them
+oopsie-data annotate --samples-dir ./samples     # launch the web annotation UI
+oopsie-data validate --path ./samples            # check episodes against the schema
+oopsie-data upload   --path ./samples            # validate, then upload to HuggingFace
+```
+
+`init` prompts for your lab id and HuggingFace token, verifies the token, and saves them to a
+location the other commands find automatically. `annotate` asks for your annotator name if
+`--annotator-name` is not passed.
+
+Credentials and robot profiles are looked up separately, so the tool also works when
+installed outside a checkout of this repository.
+
+`contributor_config.yaml` belongs to you and is shared by every project:
+
+1. `$OOPSIE_CONFIG_DIR`
+2. `~/.config/oopsie-data` (or `$XDG_CONFIG_HOME/oopsie-data`)
+3. this repository's `configs/` directory
+
+Robot profiles belong to the robot code that uses them, and are never expected in your user
+config directory:
+
+1. `$OOPSIE_ROBOT_PROFILES_DIR`
+2. `./robot_profiles` or `./configs/robot_profiles`, relative to where you run the command
+3. this repository's `configs/robot_profiles`
+
+In practice a profile is usually loaded by explicit path — `load_robot_profile("path/to.yaml")` —
+and the lookup above only backs the bundled examples. Pass
+`oopsie-data --config-dir <dir> <command>` to override the credential location for a single run.
+
+Run `oopsie-data show-config` to see which of these locations is actually being used, along with
+the lab id and token in effect.
+
 ---
 
 For detailed explanations on how to use our tooling and contribute to the project, please visit [our website](https://oopsie-data.com/).
