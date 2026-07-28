@@ -21,9 +21,11 @@ oopsie-data validate --path ./samples            # check episodes against the sc
 oopsie-data upload   --path ./samples            # validate, then upload to HuggingFace
 ```
 
-`init` prompts for your lab id and HuggingFace token, verifies the token, and saves them to a
-location the other commands find automatically. `annotate` asks for your annotator name if
-`--annotator-name` is not passed.
+`init` prompts for your lab id and HuggingFace token and saves them to a location the other
+commands find automatically. It checks the token against the HuggingFace API, but only warns
+if that fails and saves it regardless — so a wrong token surfaces at `oopsie-data upload`, not
+at `init`. `new-profile` writes a robot-profile skeleton you fill in; it will not load until
+you do. `annotate` asks for your annotator name if `--annotator-name` is not passed.
 
 Credentials and robot profiles are looked up separately, so the tool also works when
 installed outside a checkout of this repository.

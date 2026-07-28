@@ -7,7 +7,7 @@ This file is a step-by-step setup skill for AI tools helping a user integrate `o
 ## 1. Verify prerequisites
 
 Ask the user to confirm:
-- [ ] Python 3.8–3.12 is installed.
+- [ ] Python 3.8 or newer is installed. 3.8 is the supported floor and is tested in CI alongside 3.10 and 3.12; note 3.8 itself has been end-of-life since October 2024.
 - [ ] `uv` (preferred) or `pip` is available.
 - [ ] They have completed the registration form at https://forms.gle/9arwZHAvRjvbozoT7 and received a **lab ID** and **HuggingFace token**. If not, send them there first — nothing else works without these.
 
@@ -53,9 +53,11 @@ echo 'export OOPSIE_CONFIG_DIR=/path/to/oopsie-config' >> ~/.bashrc          # o
 echo 'export OOPSIE_ROBOT_PROFILES_DIR=/path/to/profiles' >> ~/.bashrc
 ```
 
-Every `oopsie-data` command also accepts `--config-dir <dir>` to override the credential
-location for one run. When unsure what is actually in use, run `oopsie-data show-config`: it
-prints both chains, the location that wins, and the lab id and token in effect.
+`--config-dir <dir>` overrides the credential location for one run. It is a flag on
+`oopsie-data` itself, so it goes **before** the subcommand — `oopsie-data --config-dir <dir>
+upload --path ...`. Placing it after the subcommand is rejected. When unsure what is actually
+in use, run `oopsie-data show-config`: it prints both chains, the location that wins, and the
+lab id and token in effect.
 
 Below, `<config-dir>` means the resolved credential location and `<profiles-dir>` the resolved
 profile location.
@@ -70,14 +72,20 @@ If the user is at a terminal, have them run:
 oopsie-data init
 ```
 
-It asks which config directory to use, then for the lab id and HuggingFace token, verifies the
-token against the HuggingFace API, rejects the `your_lab_id` placeholder, and writes
+It asks which config directory to use — defaulting to the per-user one, never the checkout,
+because the file holds a token and a token inside a git working tree can be committed — then
+for the lab id and HuggingFace token, rejects the `your_lab_id` placeholder, and writes
 `contributor_config.yaml` (mode 0600). `--lab-id`, `--hf-token`, `--no-verify-token` and
 `--force` skip the corresponding prompts, so it also runs unattended.
 
-It does **not** create robot profiles — section 5 stays a manual step. Use the instructions in
-section 4 when the user is not at an interactive terminal, or when you are writing the file
-yourself.
+The token check is **advisory**: a token that fails to verify is reported as a warning and
+saved anyway, and `init` still exits 0. Only the lab id is actually rejected. You find out a
+token is wrong at `oopsie-data upload`.
+
+It does **not** create robot profiles. Run `oopsie-data new-profile` to write a commented
+skeleton into `./robot_profiles/`, then fill it in — see section 5. The skeleton deliberately
+does not load until you do, so a half-edited profile cannot stamp placeholder metadata into
+recorded episodes.
 
 ---
 
@@ -98,7 +106,7 @@ huggingface_token: <HF_TOKEN>
 
 ## 5. Robot profile (`<profiles-dir>/<name>.yaml`)
 
-A robot profile captures hardware and policy metadata. Ask the user the following questions and create a new file (copy the template from `configs/robot_profiles/openpi_example_robot_profile.yaml`):
+A robot profile captures hardware and policy metadata. Start from a skeleton — `oopsie-data new-profile --name <name>` writes one into `./robot_profiles/` — then ask the user the questions below and fill it in. Do not start from one of the bundled example profiles: they describe someone else's robot, and an unnoticed leftover field is recorded into every episode's HDF5 attrs and uploaded.
 
 Make sure to list available options to the user where the choice is constrained to a set of options, and explain them if the user asks for additional detail.
 
@@ -116,16 +124,16 @@ Make sure to list available options to the user where the choice is constrained 
 ### 5b. Observation space
 | Question | YAML key | Options |
 |---|---|---|
-| Which robot state keys are recorded? | `robot_state_keys` | `joint_position`, `cartesian_position`, `gripper_position` |
+| Which robot state keys are recorded? | `robot_state_keys` | **`joint_position` and `gripper_position` are mandatory**; `cartesian_position` and `base_position` are optional additions |
 | What are the joint names (in order)? | `robot_state_joint_names` | required — e.g. `joint_1 … joint_7` |
 | If `cartesian_position` is included: what orientation representation does the robot state use? | `robot_state_orientation_representation` | `euler_xyz`, `quat`, `matrix`, `rot6d`, `rotvec` |
 
 ### 5c. Action space
 | Question | YAML key | Options |
 |---|---|---|
-| What action types does the policy output? | `action_space` | `joint_position`, `joint_velocity`, `cartesian_position`, `cartesian_velocity`, `gripper_position`, `gripper_velocity`, `gripper_binary`, `base_velocity`, `base_position` |
-| What are the joint names for arm actions? | `action_joint_names` | same order as the action vector |
-| If `cartesian_position` or `cartesian_velocity` is in the action space: what orientation representation? | `orientation_representation` | `euler_xyz`, `quat`, `matrix`, `rot6d`, `rotvec` |
+| What action types does the policy output? | `action_space` | Not a free choice — **exactly one arm action** from `joint_position`, `joint_velocity`, `cartesian_position`, `cartesian_velocity`; **at least one gripper action** from `gripper_position`, `gripper_velocity`, `gripper_binary`; **at most one base action** from `base_velocity`, `base_position`; no other keys. A profile declaring `uses_mobile_base: true` must include a base action. |
+| What are the joint names for arm actions? | `action_joint_names` | same order as the action vector. **Required** whenever `joint_position` or `joint_velocity` is in the action space — not optional. |
+| If `cartesian_position` is in the action space: what orientation representation? | `orientation_representation` | `euler_xyz`, `quat`, `matrix`, `rot6d`, `rotvec`. Applies to `cartesian_position` only — `cartesian_velocity` is recorded exactly as given, with no conversion and no shape check. |
 
 ### 5d. Optional keys
 These are not required but can be stored for reproducibility:
@@ -219,8 +227,9 @@ This validates and pushes episodes to the lab-specific HuggingFace repository. T
 data without uploading, run `oopsie-data validate --path ./samples` (or
 `oopsie-data upload --path ./samples --skip-upload` for the full pre-upload check).
 
-The `scripts/validate_and_upload/upload.py` and `validate.py` scripts remain available and
-run the same code.
+The `scripts/validate_and_upload/upload.py` and `validate.py` scripts remain available. They
+forward their arguments straight to the CLI, so they accept the same flags — including the
+older `--episode_id` / `--skip_validate` / `--skip_upload` spellings — and behave identically.
 
 ---
 
@@ -230,12 +239,15 @@ run the same code.
 - Config edited in the wrong place — e.g. editing the clone's `configs/` while `$OOPSIE_CONFIG_DIR` or `~/.config/oopsie-data` also exists, which take precedence. The error message names the file that was actually read.
 - After uploading, run `python scripts/validate_and_upload/query_submissions.py` to confirm your episodes landed in the lab HuggingFace repo.
 - Action dict keys not matching `action_space` in the robot profile → validation error at `record_step`.
-- Passing an action chunk instead of per-step actions → validation error.
-- `cartesian_position` in state/action but `orientation_representation` not set → conversion will fail.
 - Joint-space actions require `joint_position` in `robot_state_keys`; Cartesian actions require `cartesian_position`.
 - If `joint_position` is in `robot_state_keys`, `robot_state_joint_names` must be a non-empty list.
 - `robot_state_joint_names` length not matching the `joint_position` array length → HDF5 schema error.
 - Running `uv sync` without `--extra tfds` or `--extra droid` when those features are needed (note: those two extras conflict with each other).
+- Passing an action chunk instead of per-step actions → caught only for `cartesian_position`, which is shape-checked to `(7,)` or `(14,)`. For joint action spaces a `(T, chunk, dof)` array passes both the DOF and trajectory-length checks and is recorded silently, so check this yourself.
+- `cartesian_position` in state/action but `orientation_representation` not set → the value is recorded unconverted and then rejected unless it is already `[x, y, z, qx, qy, qz, qw]` with a unit quaternion. A representation that is set but does not match what the policy emits is reported by width, e.g. "QUAT orientation expects 4 value(s), got 3".
+- `robot_state_joint_names` length not matching the `joint_position` array length → `EpisodeValidationError` raised inside `finish_rollout`, before any HDF5 file is written. (`EpisodeValidationError` subclasses `AssertionError`, so `except AssertionError` still catches it.)
+- Expecting output from `scripts/dataset_conversion/` to validate directly. Those converters emit the legacy `robotic_failure_upload_data_format_v1` layout on purpose; run `scripts/migrate_hdf5_format.py` on the output first. The converters print the exact command.
+- Running one of the `examples/inference_examples/` scripts without `--robot-profile`. It is required, and deliberately has no default.
 
 ## Important mistakes that will not raise an error
 
