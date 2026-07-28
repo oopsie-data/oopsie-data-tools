@@ -8,13 +8,13 @@ over a whole session directory, and it never raises.
 
 from __future__ import annotations
 
-import glob
 import logging
-import os
 from collections import Counter
 from typing import Any
 
 import h5py
+
+from oopsie_data_tools.utils.h5 import find_episode_files
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +33,7 @@ def check_diversity(samples_dir: str) -> list[str]:
     Returns:
         A list of human-readable warning strings (empty if nothing notable).
     """
-    files = glob.glob(os.path.join(samples_dir, "**", "*.h5"), recursive=True)
-    files += glob.glob(os.path.join(samples_dir, "**", "*.hdf5"), recursive=True)
+    files = find_episode_files(samples_dir)
     if len(files) < MIN_EPISODES_FOR_CHECK:
         return []
 

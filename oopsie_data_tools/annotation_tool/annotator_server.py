@@ -35,6 +35,7 @@ from flask import Flask, abort, jsonify, request, send_file
 
 from oopsie_data_tools.annotation_tool import QUESTIONNAIRE_PATH
 from oopsie_data_tools.annotation_tool.annotation_schema import write_annotation_attrs
+from oopsie_data_tools.utils.validation.annotation_completeness import failure_trio_flags
 
 app = Flask(__name__)
 
@@ -433,22 +434,24 @@ def _read_existing_annotation_dict(ea: h5py.Group, annotator_name: str) -> dict[
 
 
 def _annotation_tick_level(ann: dict[str, Any]) -> int:
-    """0 = none, 1 = success/failure only (or incomplete failure bundle), 2 = complete."""
+    """0 = none, 1 = success/failure only (or incomplete failure bundle), 2 = complete.
+
+    "Filled" means the same thing here as it does to the validator — the rule lives in
+    :mod:`annotation_completeness`. The *threshold* is deliberately stricter: the validator
+    accepts a failure with no taxonomy at all (all-or-nothing), while this tick treats it
+    as partial so the annotator is still prompted to finish it.
+    """
     bs = str(ann.get("binary_success", "")).strip()
     if bs not in ("Success", "Failure"):
         return 0
     if bs == "Success":
         return 2
-    cat = ann.get("failure_category")
-    if isinstance(cat, (list, tuple)):
-        cat_ok = len(cat) > 0
-    else:
-        cat_ok = bool(str(cat or "").strip())
-    desc_ok = bool(str(ann.get("failure_description", "") or "").strip())
-    sev_ok = bool(str(ann.get("severity", "") or "").strip())
-    if cat_ok and desc_ok and sev_ok:
-        return 2
-    return 1
+    flags = failure_trio_flags(
+        failure_category=ann.get("failure_category"),
+        failure_description=ann.get("failure_description", ""),
+        severity=ann.get("severity", ""),
+    )
+    return 2 if all(flags) else 1
 
 
 def _h5_annotation_tick_level(h5f: h5py.File, annotator_name: str) -> int:

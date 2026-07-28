@@ -266,8 +266,10 @@ def cmd_upload(args: argparse.Namespace) -> int:
         logger.error("Not a directory: %s", samples_dir)
         return 1
 
-    # Pre-upload folder-size check (HF enforces a per-directory file limit).
-    if check_folder_size(samples_dir):
+    # Pre-upload folder-size check (HF enforces a per-directory file limit). Only relevant
+    # when something is actually going to be uploaded — with --skip-upload this is a
+    # validation run, and a layout HF would reject is not a reason to fail it.
+    if not args.skip_upload and check_folder_size(samples_dir):
         return 1
 
     if not args.skip_validate:

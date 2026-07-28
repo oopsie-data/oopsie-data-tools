@@ -18,14 +18,10 @@ from pathlib import Path
 import h5py
 import numpy as np
 
+from oopsie_data_tools.utils.h5 import decode_h5_scalar
+
 OLD_SCHEMA = "robotic_failure_upload_data_format_v1"
 NEW_SCHEMA = "oopsiedata_format_v1"
-
-
-def _decode(val) -> str:
-    if isinstance(val, (bytes, np.bytes_)):
-        return val.decode("utf-8")
-    return str(val) if val is not None else ""
 
 
 def _copy_group(src: h5py.Group, dst: h5py.Group) -> None:
@@ -48,7 +44,7 @@ def migrate_file(src_path: Path, dry_run: bool) -> None:
 
 def _migrate_file_inner(src_path: Path, tmp_path: Path, bak_path: Path, dry_run: bool) -> None:
     with h5py.File(src_path, "r") as src:
-        schema = _decode(src.attrs.get("schema", ""))
+        schema = decode_h5_scalar(src.attrs.get("schema", ""))
         if schema != OLD_SCHEMA:
             print(f"  skip (schema={schema!r})")
             return
@@ -59,13 +55,13 @@ def _migrate_file_inner(src_path: Path, tmp_path: Path, bak_path: Path, dry_run:
             # --- root attrs ---
             dst.attrs["schema"] = NEW_SCHEMA
 
-            lang = _decode(src["language_instruction"][()])
+            lang = decode_h5_scalar(src["language_instruction"][()])
             dst.attrs["language_instruction"] = lang
 
             ea = src["episode_annotations"]
-            dst.attrs["episode_id"] = _decode(ea["episode_id"][()]) if "episode_id" in ea else ""
-            dst.attrs["operator_name"] = _decode(ea["operator_name"][()]) if "operator_name" in ea else ""
-            dst.attrs["lab_id"] = _decode(ea["lab_id"][()]) if "lab_id" in ea else ""
+            dst.attrs["episode_id"] = decode_h5_scalar(ea["episode_id"][()]) if "episode_id" in ea else ""
+            dst.attrs["operator_name"] = decode_h5_scalar(ea["operator_name"][()]) if "operator_name" in ea else ""
+            dst.attrs["lab_id"] = decode_h5_scalar(ea["lab_id"][()]) if "lab_id" in ea else ""
 
             # --- observations group ---
             obs_grp = dst.create_group("observations")
@@ -73,7 +69,7 @@ def _migrate_file_inner(src_path: Path, tmp_path: Path, bak_path: Path, dry_run:
             # video paths
             vp_grp = obs_grp.create_group("video_paths")
             for cam, ds in src["image_observations"].items():
-                vp_grp.create_dataset(cam, data=_decode(ds[()]), dtype=str_dtype)
+                vp_grp.create_dataset(cam, data=decode_h5_scalar(ds[()]), dtype=str_dtype)
 
             # robot states
             rs_grp = obs_grp.create_group("robot_states")

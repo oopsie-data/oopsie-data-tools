@@ -11,6 +11,8 @@ from typing import Any
 import h5py
 import numpy as np
 
+from oopsie_data_tools.utils.h5 import decode_h5_scalar
+
 
 def _human_bytes(n: int | None) -> str:
     if n is None:
@@ -31,13 +33,6 @@ def _indent(s: str, n: int) -> str:
     return "\n".join(pad + line if line else line for line in s.splitlines())
 
 
-def _safe_decode(b: bytes) -> str:
-    try:
-        return b.decode("utf-8")
-    except Exception:
-        return b.decode("utf-8", errors="replace")
-
-
 def _fmt_scalar(v: Any) -> str:
     if isinstance(v, (np.generic,)):
         try:
@@ -45,7 +40,7 @@ def _fmt_scalar(v: Any) -> str:
         except Exception:
             pass
     if isinstance(v, bytes):
-        s = _safe_decode(v)
+        s = decode_h5_scalar(v)
         if len(s) > 200:
             s = s[:200] + "…"
         return repr(s)

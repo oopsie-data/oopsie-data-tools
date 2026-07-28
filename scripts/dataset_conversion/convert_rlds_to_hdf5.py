@@ -22,6 +22,7 @@ import h5py
 import numpy as np
 
 from oopsie_data_tools.annotation_tool.episode_recorder import write_mp4
+from oopsie_data_tools.utils.h5 import decode_h5_scalar
 
 SCHEMA_VERSION = "robotic_failure_upload_data_format_v1"
 MAX_DIM = 1080  # stays within episode_validator.MAX_IMAGE_SIZE (1280)
@@ -125,19 +126,6 @@ def _materialize_steps(episode: dict[str, Any]) -> dict[str, Any]:
     return _stack_step_records(records)
 
 
-def _decode_text(value: Any) -> str:
-    if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace")
-    if isinstance(value, np.ndarray):
-        if value.shape == ():
-            return _decode_text(value.item())
-        if value.size == 0:
-            return ""
-        first = value.reshape(-1)[0]
-        return _decode_text(first)
-    return str(value)
-
-
 def _choose_language_instruction(steps: dict[str, Any]) -> str:
     for key in (
         "language_instruction",
@@ -150,7 +138,7 @@ def _choose_language_instruction(steps: dict[str, Any]) -> str:
         if values.size == 0:
             continue
         for item in values.reshape(-1):
-            decoded = _decode_text(item).strip()
+            decoded = decode_h5_scalar(item).strip()
             if decoded:
                 return decoded
     return ""
@@ -175,7 +163,7 @@ def _sanitize_stem(text: str) -> str:
 
 
 def _episode_stem(episode_idx: int, episode_metadata: dict[str, Any]) -> str:
-    source_path = _decode_text(episode_metadata.get("file_path", ""))
+    source_path = decode_h5_scalar(episode_metadata.get("file_path", ""))
     if source_path:
         source_stem = _sanitize_stem(Path(source_path).stem)
         return f"{episode_idx:06d}_{source_stem}"
@@ -246,7 +234,7 @@ def _write_mapped_datasets(
         language_instruction = ""
         if language_values.size > 0:
             for item in language_values.reshape(-1):
-                decoded = _decode_text(item).strip()
+                decoded = decode_h5_scalar(item).strip()
                 if decoded:
                     language_instruction = decoded
                     break
@@ -320,6 +308,19 @@ def _write_episode_h5(
         )
 
 
+
+# These converters emit the legacy layout (image_observations/, action_dict/,
+# episode_annotations/ as datasets), which is what SCHEMA_VERSION honestly names. Turning
+# them into oopsiedata_format_v1 is migrate_hdf5_format.py's job, so converted data needs a
+# second step before it will validate or upload. Nothing used to say so, and the failure a
+# user hit was "Unsupported or missing schema" with no hint about what to do.
+def _print_next_step(output_dir) -> None:
+    print(
+        "\nNext: convert to oopsiedata_format_v1 before validating or uploading —\n"
+        f"    python scripts/migrate_hdf5_format.py --samples-dir {output_dir}\n"
+        f"    oopsie-data validate --path {output_dir}"
+    )
+
 def convert_rlds_to_hdf5(
     rlds_version_dir: Path,
     output_dir: Path,
@@ -374,6 +375,7 @@ def convert_rlds_to_hdf5(
             print(f"Converted {written} episodes...")
 
     print(f"Done. Wrote {written} trajectory HDF5 files to: {output_dir}")
+    _print_next_step(output_dir)
 
 
 def _parse_args() -> argparse.Namespace:

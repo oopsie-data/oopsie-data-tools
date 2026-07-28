@@ -1,44 +1,27 @@
 """Validate HDF5 episodes against the oopsiedata schema.
 
-Thin wrapper around the shared validation code — prefer the CLI:
+Prefer the CLI, which this forwards to verbatim::
 
     oopsie-data validate --path /path/to/session_dir
 
 Usage:
     python validate.py --path /path/to/session_dir          # all *.h5 in directory
     python validate.py --path /path/to/episode.h5           # single episode file
+
+The re-exports this module used to carry are gone. They existed so tests could reach the
+validation helpers through ``sys.path`` manipulation, which the tests no longer do. Import
+from ``oopsie_data_tools.utils.validation.validation_utils`` instead.
 """
 
-import argparse
-import logging
-import os
+from __future__ import annotations
+
 import sys
 
-from oopsie_data_tools.utils.hf_upload import run_validation
-
-# Re-exported for tests and existing callers that import them from this module.
-from oopsie_data_tools.utils.validation.validation_utils import (  # noqa: F401
-    validate_h5_file,
-    validate_session_dir,
-)
-
-logging.basicConfig(level=logging.INFO, format="%(message)s")
-logger = logging.getLogger(__name__)
+from oopsie_data_tools.cli import main as cli_main
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Validate oopsie episode HDF5 files",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument(
-        "--path",
-        type=str,
-        required=True,
-        help="Path to a single .h5 file or a session directory containing .h5 files",
-    )
-    args = parser.parse_args()
-    return run_validation(os.path.abspath(os.path.normpath(args.path)))
+def main(argv: list[str] | None = None) -> int:
+    return cli_main(["validate", *(sys.argv[1:] if argv is None else argv)])
 
 
 if __name__ == "__main__":

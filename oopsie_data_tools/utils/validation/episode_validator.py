@@ -13,6 +13,7 @@ from typing import Any
 
 import numpy as np
 
+from oopsie_data_tools.utils.validation.annotation_completeness import failure_trio_flags
 from oopsie_data_tools.utils.validation.episode_data import EpisodeData
 from oopsie_data_tools.utils.validation.errors import EpisodeValidationError
 
@@ -197,27 +198,27 @@ def _annotation_attr_scalar_str(val: Any) -> str:
 
 
 def _failure_trio_fill_flags(attrs: dict[str, Any]) -> tuple[bool, bool, bool]:
-    """Whether failure_category, failure_description, and severity are each considered filled."""
-    desc_ok = bool(_annotation_attr_scalar_str(attrs.get("failure_description", "")))
+    """Read the failure trio out of HDF5 annotation attrs and report what is filled.
 
+    Extraction is specific to the stored layout — category and severity live inside the
+    ``taxonomy`` JSON blob — but the "is this filled?" rule is shared with the annotation
+    server via :mod:`annotation_completeness`, so the two cannot drift apart.
+    """
+    tax: dict[str, Any] = {}
     tax_raw = _annotation_attr_scalar_str(attrs.get("taxonomy", ""))
-    cat_ok = False
-    sev_ok = False
     if tax_raw:
         try:
-            tax = json.loads(tax_raw)
+            parsed = json.loads(tax_raw)
         except json.JSONDecodeError:
-            tax = None
-        if isinstance(tax, dict):
-            fc = tax.get("failure_category")
-            if isinstance(fc, (list, tuple)):
-                cat_ok = len(fc) > 0
-            elif fc is not None:
-                cat_ok = bool(str(fc).strip())
-            sev = tax.get("severity")
-            sev_ok = bool(_annotation_attr_scalar_str(sev if sev is not None else ""))
+            parsed = None
+        if isinstance(parsed, dict):
+            tax = parsed
 
-    return cat_ok, desc_ok, sev_ok
+    return failure_trio_flags(
+        failure_category=tax.get("failure_category"),
+        failure_description=attrs.get("failure_description", ""),
+        severity=tax.get("severity"),
+    )
 
 
 def _validate_annotations(data: EpisodeData) -> None:

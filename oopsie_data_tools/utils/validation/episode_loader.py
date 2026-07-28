@@ -17,6 +17,7 @@ import cv2
 import h5py
 import numpy as np
 
+from oopsie_data_tools.utils.h5 import decode_h5_scalar
 from oopsie_data_tools.utils.robot_profile.robot_profile import robot_profile_from_json
 from oopsie_data_tools.utils.validation.episode_data import EpisodeData, VideoInfo
 from oopsie_data_tools.utils.validation.errors import EpisodeValidationError
@@ -36,22 +37,8 @@ _OOPSIE_V1_REQUIRED_ROOT_ATTRS = (
 # ── HDF5 scalar helpers ────────────────────────────────────────────────────────
 
 
-def _decode_h5_scalar(value: Any) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace")
-    if isinstance(value, str):
-        return value
-    if isinstance(value, np.generic):
-        return _decode_h5_scalar(value.item())
-    if isinstance(value, np.ndarray) and value.shape == ():
-        return _decode_h5_scalar(value.item())
-    return str(value)
-
-
 def _read_string_dataset(ds: h5py.Dataset) -> str:
-    return _decode_h5_scalar(ds[()]).strip()
+    return decode_h5_scalar(ds[()]).strip()
 
 
 # ── Video loading ──────────────────────────────────────────────────────────────
@@ -98,7 +85,7 @@ def _load_oopsie_v1(f: h5py.File, h5_dir: str) -> EpisodeData:
             raise EpisodeValidationError(f"Missing root attr: {attr}")
 
     try:
-        profile = robot_profile_from_json(_decode_h5_scalar(f.attrs["robot_profile"]))
+        profile = robot_profile_from_json(decode_h5_scalar(f.attrs["robot_profile"]))
     except ValueError as e:
         raise EpisodeValidationError(f"Invalid robot_profile JSON: {e}") from e
 
@@ -147,10 +134,10 @@ def _load_oopsie_v1(f: h5py.File, h5_dir: str) -> EpisodeData:
 
     return EpisodeData(
         robot_profile=profile,
-        language_instruction=_decode_h5_scalar(f.attrs["language_instruction"]),
-        episode_id=_decode_h5_scalar(f.attrs["episode_id"]),
-        lab_id=_decode_h5_scalar(f.attrs["lab_id"]),
-        operator_name=_decode_h5_scalar(f.attrs["operator_name"]),
+        language_instruction=decode_h5_scalar(f.attrs["language_instruction"]),
+        episode_id=decode_h5_scalar(f.attrs["episode_id"]),
+        lab_id=decode_h5_scalar(f.attrs["lab_id"]),
+        operator_name=decode_h5_scalar(f.attrs["operator_name"]),
         trajectory_length=trajectory_length,
         control_freq=float(profile.control_freq),
         observations=observations,
@@ -203,7 +190,7 @@ def load_episode_from_h5(h5_path: str) -> EpisodeData:
 
     h5_dir = os.path.dirname(resolved)
     try:
-        schema = _decode_h5_scalar(f.attrs.get("schema", ""))
+        schema = decode_h5_scalar(f.attrs.get("schema", ""))
         if schema == OOPSIE_DATA_SCHEMA_V1:
             return _load_oopsie_v1(f, h5_dir)
         else:

@@ -62,6 +62,8 @@ import h5py
 import imageio
 import numpy as np
 
+from oopsie_data_tools.utils.h5 import decode_h5_scalar
+
 DEFAULT_CONTROL_FREQ = "30"
 
 SCHEMA_VERSION = "robotic_failure_upload_data_format_v1"
@@ -95,13 +97,6 @@ def _resize_frames(frames: np.ndarray, max_dim: int = MAX_DIM) -> np.ndarray:
     return np.stack(
         [cv2.resize(f, (new_w, new_h), interpolation=cv2.INTER_AREA) for f in frames]
     )
-
-
-def _decode_attr(value) -> str:
-    """Decode an HDF5 attr value to a plain Python str."""
-    if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace")
-    return str(value)
 
 
 def _parse_fps(control_freq: str, default_fps: float = 30.0) -> float:
@@ -141,13 +136,13 @@ def convert(
     print(f"\nReading source: {source_h5}")
     with h5py.File(source_h5, "r") as src:
         # Root attrs
-        language_instruction = _decode_attr(src.attrs["language_instruction"])
+        language_instruction = decode_h5_scalar(src.attrs["language_instruction"])
 
         # Episode annotations (stored as group attrs in the new format)
         ea_attrs = src["episode_annotations"].attrs
         success = float(ea_attrs["success"])
-        failure_category = _decode_attr(ea_attrs["failure_category"])
-        failure_description = _decode_attr(ea_attrs["failure_description"])
+        failure_category = decode_h5_scalar(ea_attrs["failure_category"])
+        failure_description = decode_h5_scalar(ea_attrs["failure_description"])
         would_retry = float(ea_attrs["would_retry"])
 
         # Trajectory data
@@ -226,6 +221,19 @@ def convert(
     print(f"\nDone. Wrote {output_h5_path}")
     return output_h5_path
 
+
+
+# These converters emit the legacy layout (image_observations/, action_dict/,
+# episode_annotations/ as datasets), which is what SCHEMA_VERSION honestly names. Turning
+# them into oopsiedata_format_v1 is migrate_hdf5_format.py's job, so converted data needs a
+# second step before it will validate or upload. Nothing used to say so, and the failure a
+# user hit was "Unsupported or missing schema" with no hint about what to do.
+def _print_next_step(output_dir) -> None:
+    print(
+        "\nNext: convert to oopsiedata_format_v1 before validating or uploading —\n"
+        f"    python scripts/migrate_hdf5_format.py --samples-dir {output_dir}\n"
+        f"    oopsie-data validate --path {output_dir}"
+    )
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -326,9 +334,11 @@ def main() -> None:
                 failures += 1
         passed = len(hdf5_files) - failures
         print(f"\nDone: {passed}/{len(hdf5_files)} converted successfully.")
+        _print_next_step(args.output_dir)
     else:
         episode_id = args.episode_id if args.episode_id is not None else "000000"
         convert(source_h5=str(source), episode_id=episode_id, **shared_kwargs)
+        _print_next_step(args.output_dir)
 
 
 if __name__ == "__main__":
