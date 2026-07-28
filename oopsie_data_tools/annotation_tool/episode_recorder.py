@@ -535,11 +535,8 @@ class EpisodeRecorder:
         provided = (
             provided_video_paths if isinstance(provided_video_paths, dict) else {}
         )
-        # Both sides of every relpath below must be resolved. Measuring a resolved video
-        # against an unresolved base is what produced stored paths like
-        # "../../../private/tmp/<session>/x.mp4" for a video sitting right next to the
-        # episode, because /tmp is a symlink to /private/tmp on macOS. Those still resolve,
-        # so nothing failed — but they break the moment the session directory is moved.
+        # Both sides of every relpath below must be resolved otherwise complex
+        # relative paths can produce a path that is not actually relative to the episode
         base = Path(output_dir).resolve()
 
         for cam in self.camera_names:

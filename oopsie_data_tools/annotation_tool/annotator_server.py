@@ -1,18 +1,15 @@
 #!/usr/bin/env python3
 """Minimal web UI for instruction -> rollout -> annotate -> save.
 
-This is intentionally slimmed down compared to `annotator.py`:
-- No session wizard
-- No sample indexing / bulk annotation / overview
-- No VLM features
-
-Flow:
+Flow for in the loop annotation (with rollouts):
 1) Browser submits a language instruction.
 2) External rollout loop polls the instruction, runs policy, saves MP4s & HDF5, then
    signals this server to show the videos + questionnaire.
 3) Browser fills questionnaire + clicks Save.
 4) Rollout loop polls the saved annotation and writes it into the episode HDF5
    (via EpisodeRecorder).
+
+Tool can also be launched as a standalone module to browse and annotate existing HDF5 episodes, without any rollout loop.
 """
 
 from __future__ import annotations
