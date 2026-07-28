@@ -1,17 +1,19 @@
 """Validation + HuggingFace upload helpers.
 
-Shared by the ``oopsie-data`` CLI (``oopsie_data_tools.cli``) and the standalone
-``scripts/validate_and_upload/upload.py`` entry point so both take the exact same
-path through validation, repo creation and upload.
+Backs ``oopsie-data validate``, ``oopsie-data upload`` and ``oopsie-data submissions``
+(:mod:`oopsie_data_tools.cli`), which is the only entry point — the parallel
+``scripts/validate_and_upload/`` copies of this pipeline are gone.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+from collections import Counter
 
 from oopsie_data_tools.utils.contributor_config import read_contributor_config
 from oopsie_data_tools.utils.log import setup_logger
+from oopsie_data_tools.utils.restructure import FILE_LIMIT
 from oopsie_data_tools.utils.validation.errors import EpisodeValidationError
 from oopsie_data_tools.utils.validation.validation_utils import (
     validate_h5_file,
@@ -19,9 +21,6 @@ from oopsie_data_tools.utils.validation.validation_utils import (
 )
 
 logger = logging.getLogger(__name__)
-
-FILE_LIMIT = 10_000
-RESTRUCTURE_SCRIPT = "scripts/validate_and_upload/restructure_large_folder.py"
 
 
 # ── HuggingFace authentication ────────────────────────────────────────────────
@@ -124,8 +123,7 @@ def check_folder_size(samples_dir: str) -> list[tuple[str, int]]:
     logger.error(
         "[precheck] HuggingFace Hub enforces a per-directory file limit.\n"
         "           Restructure the folder first, then re-run the upload:\n\n"
-        "             python %s --source %s\n",
-        RESTRUCTURE_SCRIPT,
+        "             oopsie-data restructure --source %s\n",
         samples_dir,
     )
     return oversized
@@ -176,3 +174,55 @@ def upload_dataset(api, repo: str, samples_dir: str) -> None:
             )
     except Exception as e:
         logger.warning("[upload] Could not confirm upload via repo listing: %s", e)
+
+
+# ── Submissions query ─────────────────────────────────────────────────────────
+
+
+def query_submissions(lab_id: str | None = None) -> int:
+    """Report what has landed in ``OopsieData-Submissions/<lab_id>``, downloading nothing.
+
+    Args:
+        lab_id: Lab to query. Defaults to the ``lab_id`` in the contributor config.
+
+    Returns:
+        A shell-style exit code. A repo that does not exist yet is not an error — it is
+        created on the first successful upload — so that case still returns 0.
+    """
+    from huggingface_hub import HfApi
+
+    if lab_id:
+        # An explicit --lab-id must not require a filled-in contributor config, but the
+        # token still comes from it unless $HF_TOKEN overrides.
+        try:
+            _, config_token = read_contributor_config()
+        except RuntimeError:
+            config_token = ""
+    else:
+        lab_id, config_token = read_contributor_config()
+
+    hf_token = os.environ.get("HF_TOKEN", "").strip() or config_token
+    repo = f"OopsieData-Submissions/{lab_id}"
+    api = HfApi(token=hf_token or None)
+
+    try:
+        api.repo_info(repo_id=repo, repo_type="dataset")
+    except Exception:
+        logger.info("No submissions repo found yet at https://huggingface.co/datasets/%s", repo)
+        logger.info("(It is created automatically on your first successful upload.)")
+        return 0
+
+    files = api.list_repo_files(repo_id=repo, repo_type="dataset")
+    h5 = [f for f in files if f.endswith(".h5") or f.endswith(".hdf5")]
+    mp4 = [f for f in files if f.endswith(".mp4")]
+    by_dir = Counter(f.split("/")[0] if "/" in f else "(root)" for f in h5)
+
+    logger.info("Repo:           https://huggingface.co/datasets/%s", repo)
+    logger.info("Episodes (.h5): %d", len(h5))
+    logger.info("Videos (.mp4):  %d", len(mp4))
+    logger.info("Total files:    %d", len(files))
+    if by_dir:
+        logger.info("Episodes by top-level folder:")
+        for name, count in sorted(by_dir.items()):
+            logger.info("  %-32s %d", name, count)
+    return 0

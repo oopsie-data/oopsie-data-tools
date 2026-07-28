@@ -227,9 +227,9 @@ This validates and pushes episodes to the lab-specific HuggingFace repository. T
 data without uploading, run `oopsie-data validate --path ./samples` (or
 `oopsie-data upload --path ./samples --skip-upload` for the full pre-upload check).
 
-The `scripts/validate_and_upload/upload.py` and `validate.py` scripts remain available. They
-forward their arguments straight to the CLI, so they accept the same flags — including the
-older `--episode_id` / `--skip_validate` / `--skip_upload` spellings — and behave identically.
+If upload refuses because a directory holds more than 10,000 files (a HuggingFace limit),
+run `oopsie-data restructure --source ./samples` and upload the restructured copy. It copies
+rather than moves, so the original is left untouched until you delete it yourself.
 
 ---
 
@@ -237,7 +237,7 @@ older `--episode_id` / `--skip_validate` / `--skip_upload` spellings — and beh
 
 - `lab_id` unset, blank (`lab_id:`), or still the placeholder in `contributor_config.yaml` → a clear `RuntimeError` (pointing to the registration form) at `EpisodeRecorder.__init__` and when running `oopsie-data upload`. Capitalisation must match exactly the value you were given.
 - Config edited in the wrong place — e.g. editing the clone's `configs/` while `$OOPSIE_CONFIG_DIR` or `~/.config/oopsie-data` also exists, which take precedence. The error message names the file that was actually read.
-- After uploading, run `python scripts/validate_and_upload/query_submissions.py` to confirm your episodes landed in the lab HuggingFace repo.
+- After uploading, run `oopsie-data submissions` to confirm your episodes landed in the lab HuggingFace repo.
 - Action dict keys not matching `action_space` in the robot profile → validation error at `record_step`.
 - Joint-space actions require `joint_position` in `robot_state_keys`; Cartesian actions require `cartesian_position`.
 - If `joint_position` is in `robot_state_keys`, `robot_state_joint_names` must be a non-empty list.
@@ -246,7 +246,7 @@ older `--episode_id` / `--skip_validate` / `--skip_upload` spellings — and beh
 - Passing an action chunk instead of per-step actions → caught only for `cartesian_position`, which is shape-checked to `(7,)` or `(14,)`. For joint action spaces a `(T, chunk, dof)` array passes both the DOF and trajectory-length checks and is recorded silently, so check this yourself.
 - `cartesian_position` in state/action but `orientation_representation` not set → the value is recorded unconverted and then rejected unless it is already `[x, y, z, qx, qy, qz, qw]` with a unit quaternion. A representation that is set but does not match what the policy emits is reported by width, e.g. "QUAT orientation expects 4 value(s), got 3".
 - `robot_state_joint_names` length not matching the `joint_position` array length → `EpisodeValidationError` raised inside `finish_rollout`, before any HDF5 file is written. (`EpisodeValidationError` subclasses `AssertionError`, so `except AssertionError` still catches it.)
-- Expecting output from `scripts/dataset_conversion/` to validate directly. Those converters emit the legacy `robotic_failure_upload_data_format_v1` layout on purpose; run `scripts/migrate_hdf5_format.py` on the output first. The converters print the exact command.
+- Running `uv sync` without the `droid` extra when using `examples/inference_examples/`. It is the only extra; everything the CLI does works off a bare `uv sync`.
 - Running one of the `examples/inference_examples/` scripts without `--robot-profile`. It is required, and deliberately has no default.
 
 ## Important mistakes that will not raise an error

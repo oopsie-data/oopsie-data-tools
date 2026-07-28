@@ -8,9 +8,12 @@ Single entry point for the contributor workflow::
     oopsie-data annotate --samples-dir ./samples --annotator-name "your_name"
     oopsie-data validate --path ./samples
     oopsie-data upload   --path ./samples
+    oopsie-data submissions                          # what has landed on HuggingFace
+    oopsie-data inspect episode.h5                   # dump an episode's structure
+    oopsie-data restructure --source ./samples       # split a folder HF would reject
 
-Each subcommand delegates to the same library code the standalone scripts use, so
-behaviour is identical whichever entry point is chosen.
+This is the only entry point; every capability lives here rather than in a parallel
+collection of scripts.
 
 Credentials and robot profiles are looked up through separate chains (see
 oopsie_data_tools.utils.paths); --config-dir overrides the credential location for one
@@ -309,6 +312,37 @@ def cmd_upload(args: argparse.Namespace) -> int:
     return 0
 
 
+# ── submissions ───────────────────────────────────────────────────────────────
+
+
+def cmd_submissions(args: argparse.Namespace) -> int:
+    from oopsie_data_tools.utils.hf_upload import query_submissions
+
+    return query_submissions(args.lab_id.strip() if args.lab_id else None)
+
+
+# ── inspect ───────────────────────────────────────────────────────────────────
+
+
+def cmd_inspect(args: argparse.Namespace) -> int:
+    from oopsie_data_tools.utils.h5_inspect import inspect_h5
+
+    if not os.path.isfile(args.path):
+        logger.error("Not a file: %s", args.path)
+        return 1
+    inspect_h5(args.path)
+    return 0
+
+
+# ── restructure ───────────────────────────────────────────────────────────────
+
+
+def cmd_restructure(args: argparse.Namespace) -> int:
+    from oopsie_data_tools.utils.restructure import run_restructure
+
+    return run_restructure(args.source, args.output, assume_yes=args.yes)
+
+
 # ── parser ────────────────────────────────────────────────────────────────────
 
 
@@ -331,7 +365,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(
         dest="command",
         required=True,
-        metavar="{init,show-config,new-profile,annotate,validate,upload}",
+        metavar=(
+            "{init,show-config,new-profile,annotate,validate,upload,"
+            "submissions,inspect,restructure}"
+        ),
     )
 
     # init
@@ -491,6 +528,61 @@ def build_parser() -> argparse.ArgumentParser:
         help="Treat low task/annotation diversity warnings as a hard error",
     )
     p_upload.set_defaults(func=cmd_upload)
+
+    # submissions
+    p_submissions = sub.add_parser(
+        "submissions",
+        help="Show what your lab has already uploaded to HuggingFace",
+        description=(
+            "Report episode, video and file counts in OopsieData-Submissions/<lab_id> without "
+            "downloading anything. A repo that does not exist yet is not an error — it is "
+            "created on your first successful upload."
+        ),
+    )
+    p_submissions.add_argument(
+        "--lab-id",
+        default=None,
+        help="Lab id to query (default: the lab_id in your contributor config)",
+    )
+    p_submissions.set_defaults(func=cmd_submissions)
+
+    # inspect
+    p_inspect = sub.add_parser(
+        "inspect",
+        help="Dump the structure of an HDF5 episode",
+        description=(
+            "Print every group, dataset, shape, dtype and attribute in an HDF5 file. This is a "
+            "debugging aid, not a validator: it makes no assumptions about the schema, so it "
+            "works just as well on a file that 'oopsie-data validate' rejects."
+        ),
+    )
+    p_inspect.add_argument("path", help="Path to a .h5 / .hdf5 file")
+    p_inspect.set_defaults(func=cmd_inspect)
+
+    # restructure
+    p_restructure = sub.add_parser(
+        "restructure",
+        help="Split an oversized session directory into numbered subfolders",
+        description=(
+            "Copy a session directory into numbered subfolders of at most 500 episodes each, so "
+            "it stays under the HuggingFace per-directory file limit that 'oopsie-data upload' "
+            "checks for. Non-destructive: the source is never modified, and video paths inside "
+            "the HDF5 copies are rewritten to point at the copied videos."
+        ),
+    )
+    p_restructure.add_argument(
+        "--source", "-s", type=Path, required=True,
+        help="Directory to restructure (must contain .h5 / .hdf5 files at its root)",
+    )
+    p_restructure.add_argument(
+        "--output", "-o", type=Path, default=None,
+        help="Destination for the restructured copy (default: <source>_restructured alongside it)",
+    )
+    p_restructure.add_argument(
+        "--yes", "-y", action="store_true",
+        help="Skip the confirmation prompt (this copies the whole dataset)",
+    )
+    p_restructure.set_defaults(func=cmd_restructure)
 
     return parser
 

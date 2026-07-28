@@ -95,7 +95,11 @@ def test_folder_size_check_flags_a_directory_over_the_limit(tmp_path, monkeypatc
 
     assert [count for _, count in oversized] == [5]
     assert "exceed" in caplog.text
-    assert hf_upload.RESTRUCTURE_SCRIPT in caplog.text, "tell the user how to fix it"
+    # The remedy must be a subcommand, not a path into the source checkout. It used to name
+    # scripts/validate_and_upload/restructure_large_folder.py, which does not exist for anyone
+    # who pip-installed the package — leaving the precheck's only fix unreachable.
+    assert "oopsie-data restructure --source" in caplog.text, "tell the user how to fix it"
+    assert "scripts/" not in caplog.text
 
 
 def test_folder_size_result_is_falsy_when_fine(tmp_path):
