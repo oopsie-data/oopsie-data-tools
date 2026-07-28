@@ -25,13 +25,69 @@ Confirm the install succeeded before proceeding.
 
 ---
 
-## 3. Contributor config (`configs/contributor_config.yaml`)
+## 3. Where configs live
+
+The two configs are looked up through **separate chains**, because they belong to different
+things. In each chain the first location that exists wins.
+
+**Credentials** (`contributor_config.yaml`) belong to the user and are shared by every project:
+
+1. `$OOPSIE_CONFIG_DIR` — explicit override
+2. `~/.config/oopsie-data` (or `$XDG_CONFIG_HOME/oopsie-data`)
+3. the repository's `configs/` directory — only when working from a clone
+
+**Robot profiles** belong to the robot code that loads them, and are *never* looked up in the
+user config directory:
+
+1. `$OOPSIE_ROBOT_PROFILES_DIR` — explicit override
+2. `./robot_profiles` or `./configs/robot_profiles`, relative to the working directory
+3. the repository's `configs/robot_profiles` — only when working from a clone
+
+So: write the contributor config to `configs/` when working from a clone, otherwise to
+`~/.config/oopsie-data/`. Put the robot profile next to the user's robot code (a
+`robot_profiles/` directory beside their eval script is the normal choice) and load it by
+explicit path. To keep either somewhere custom, have them persist it in their shell rc file:
+
+```bash
+echo 'export OOPSIE_CONFIG_DIR=/path/to/oopsie-config' >> ~/.bashrc          # or ~/.zshrc
+echo 'export OOPSIE_ROBOT_PROFILES_DIR=/path/to/profiles' >> ~/.bashrc
+```
+
+Every `oopsie-data` command also accepts `--config-dir <dir>` to override the credential
+location for one run. When unsure what is actually in use, run `oopsie-data show-config`: it
+prints both chains, the location that wins, and the lab id and token in effect.
+
+Below, `<config-dir>` means the resolved credential location and `<profiles-dir>` the resolved
+profile location.
+
+---
+
+## 3b. Fast path for section 4: `oopsie-data init`
+
+If the user is at a terminal, have them run:
+
+```bash
+oopsie-data init
+```
+
+It asks which config directory to use, then for the lab id and HuggingFace token, verifies the
+token against the HuggingFace API, rejects the `your_lab_id` placeholder, and writes
+`contributor_config.yaml` (mode 0600). `--lab-id`, `--hf-token`, `--no-verify-token` and
+`--force` skip the corresponding prompts, so it also runs unattended.
+
+It does **not** create robot profiles — section 5 stays a manual step. Use the instructions in
+section 4 when the user is not at an interactive terminal, or when you are writing the file
+yourself.
+
+---
+
+## 4. Contributor config (`<config-dir>/contributor_config.yaml`)
 
 Ask the user:
 1. **What is your lab ID?** (exact string provided at registration — capitalization matters; a wrong value will block access to the lab-specific HuggingFace repo)
 2. **What is your HuggingFace token?**
 
-Then write/update `configs/contributor_config.yaml`:
+Then write/update `<config-dir>/contributor_config.yaml`:
 
 ```yaml
 lab_id: <EXACT_LAB_ID>
@@ -40,13 +96,13 @@ huggingface_token: <HF_TOKEN>
 
 ---
 
-## 4. Robot profile (`configs/robot_profiles/<name>.yaml`)
+## 5. Robot profile (`<profiles-dir>/<name>.yaml`)
 
 A robot profile captures hardware and policy metadata. Ask the user the following questions and create a new file (copy the template from `configs/robot_profiles/openpi_example_robot_profile.yaml`):
 
 Make sure to list available options to the user where the choice is constrained to a set of options, and explain them if the user asks for additional detail.
 
-### 4a. Robot & policy identity
+### 5a. Robot & policy identity
 | Question | YAML key | Example |
 |---|---|---|
 | What is the policy name? | `policy_name` | `pi0.5`, `act_plus_plus` |
@@ -57,21 +113,21 @@ Make sure to list available options to the user where the choice is constrained 
 | What is the control frequency (Hz)? | `control_freq` | `10`, `50` |
 | What are the camera names? (list) | `camera_names` | `[left, right, wrist]` |
 
-### 4b. Observation space
+### 5b. Observation space
 | Question | YAML key | Options |
 |---|---|---|
 | Which robot state keys are recorded? | `robot_state_keys` | `joint_position`, `cartesian_position`, `gripper_position` |
-| What are the joint names (in order)? | `robot_state_joint_names` | e.g. `joint_1 … joint_7` |
+| What are the joint names (in order)? | `robot_state_joint_names` | required — e.g. `joint_1 … joint_7` |
 | If `cartesian_position` is included: what orientation representation does the robot state use? | `robot_state_orientation_representation` | `euler_xyz`, `quat`, `matrix`, `rot6d`, `rotvec` |
 
-### 4c. Action space
+### 5c. Action space
 | Question | YAML key | Options |
 |---|---|---|
 | What action types does the policy output? | `action_space` | `joint_position`, `joint_velocity`, `cartesian_position`, `cartesian_velocity`, `gripper_position`, `gripper_velocity`, `gripper_binary`, `base_velocity`, `base_position` |
 | What are the joint names for arm actions? | `action_joint_names` | same order as the action vector |
 | If `cartesian_position` or `cartesian_velocity` is in the action space: what orientation representation? | `orientation_representation` | `euler_xyz`, `quat`, `matrix`, `rot6d`, `rotvec` |
 
-### 4d. Optional keys
+### 5d. Optional keys
 These are not required but can be stored for reproducibility:
 - `controller` — e.g. `OSC`, `joint_position`, `joint_velocity`
 - `gains` — controller gain parameters (see template)
@@ -79,7 +135,7 @@ These are not required but can be stored for reproducibility:
 
 ---
 
-## 5. Validate the config
+## 6. Validate the config
 
 Run the test suite to catch config errors early:
 
@@ -91,7 +147,7 @@ DO not modify the project as this can cause issues later on. Instead, ask the us
 
 ---
 
-## 6. Choose a data collection workflow
+## 7. Choose a data collection workflow
 
 Ask the user which workflow they need:
 
@@ -103,15 +159,19 @@ For **A**, the annotation server will be launched as part of the robot script.
 
 For **B**, run this command needs to be run after.
 ```bash
-python -m oopsie_data_tools.annotation_tool.annotator_server \
+oopsie-data annotate \
   --samples-dir ./samples \
   --annotator-name <YOUR_NAME> \
   --port 5001
 ```
 
+Omitting `--annotator-name` makes the command prompt for it. The equivalent long form is
+`python -m oopsie_data_tools.annotation_tool.annotator_server --samples-dir ./samples
+--annotator-name <YOUR_NAME> --port 5001`.
+
 ---
 
-## 7. Integrate `EpisodeRecorder` into the robot script
+## 8. Integrate `EpisodeRecorder` into the robot script
 
 Ask the user:
 - Where is their robot control loop? (file path)
@@ -125,7 +185,7 @@ Minimal integration pattern:
 from oopsie_data_tools.annotation_tool.episode_recorder import EpisodeRecorder
 from oopsie_data_tools.utils.robot_profile.robot_profile import load_robot_profile
 
-profile = load_robot_profile("configs/robot_profiles/<your_profile>.yaml")
+profile = load_robot_profile("<profiles-dir>/<your_profile>.yaml")
 recorder = EpisodeRecorder(
     robot_profile=profile,
     data_root_dir="./samples",
@@ -148,20 +208,26 @@ Verify that the keys are consistent between the robot profile and the ones passe
 
 ---
 
-## 8. Upload data
+## 9. Upload data
 
 After annotation is complete:
 ```bash
-python scripts/validate_and_upload/upload.py --path ./samples
+oopsie-data upload --path ./samples
 ```
 
-This validates and pushes episodes to the lab-specific HuggingFace repository.
+This validates and pushes episodes to the lab-specific HuggingFace repository. To check the
+data without uploading, run `oopsie-data validate --path ./samples` (or
+`oopsie-data upload --path ./samples --skip-upload` for the full pre-upload check).
+
+The `scripts/validate_and_upload/upload.py` and `validate.py` scripts remain available and
+run the same code.
 
 ---
 
 ## Common mistakes to catch
 
-- `lab_id` unset, blank (`lab_id:`), or still the placeholder in `configs/contributor_config.yaml` → a clear `RuntimeError` (pointing to the registration form) at `EpisodeRecorder.__init__` and when running `upload.py`. Capitalisation must match exactly the value you were given.
+- `lab_id` unset, blank (`lab_id:`), or still the placeholder in `contributor_config.yaml` → a clear `RuntimeError` (pointing to the registration form) at `EpisodeRecorder.__init__` and when running `oopsie-data upload`. Capitalisation must match exactly the value you were given.
+- Config edited in the wrong place — e.g. editing the clone's `configs/` while `$OOPSIE_CONFIG_DIR` or `~/.config/oopsie-data` also exists, which take precedence. The error message names the file that was actually read.
 - After uploading, run `python scripts/validate_and_upload/query_submissions.py` to confirm your episodes landed in the lab HuggingFace repo.
 - Action dict keys not matching `action_space` in the robot profile → validation error at `record_step`.
 - Passing an action chunk instead of per-step actions → validation error.

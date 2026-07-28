@@ -9,6 +9,7 @@ from typing import Any
 
 import yaml
 
+from oopsie_data_tools.utils.paths import robot_profiles_dir
 from oopsie_data_tools.utils.robot_profile.rotation_utils import RotOption
 
 ACTION_SPACE_SET_1 = {
@@ -39,6 +40,9 @@ REQUIRED_KEYS = frozenset(
         "uses_mobile_base",
         "camera_names",
         "robot_state_keys",
+        # Read unconditionally below, so list it here to get the friendly "missing keys"
+        # error instead of a bare KeyError.
+        "robot_state_joint_names",
         "action_space",
     }
 )
@@ -102,8 +106,8 @@ def robot_profile_to_json(profile: RobotProfile) -> str:
 
 
 def robot_profile_config_dir() -> Path:
-    """Directory containing bundled ``*.yaml`` robot profiles."""
-    return Path(__file__).resolve().parent.parent.parent.parent / "configs" / "robot_profiles"
+    """Directory containing ``*.yaml`` robot profiles (see ``utils.paths.config_dir``)."""
+    return robot_profiles_dir()
 
 
 def default_robot_profile_path() -> Path:

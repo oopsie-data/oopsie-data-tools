@@ -10,12 +10,11 @@ from pathlib import Path
 
 import yaml
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-_DEFAULT_CONFIG_PATH = _REPO_ROOT / "configs" / "contributor_config.yaml"
+from oopsie_data_tools.utils.paths import contributor_config_path
 
 _REGISTER_HINT = (
     "Register at https://forms.gle/9arwZHAvRjvbozoT7 to obtain your lab_id and "
-    "HuggingFace token, then set them in configs/contributor_config.yaml:\n"
+    "HuggingFace token, then set them in the contributor config:\n"
     "    lab_id: <YOUR_LAB_ID>\n"
     "    huggingface_token: <YOUR_HF_TOKEN>\n"
     "Use the exact lab_id you were given (capitalization matters)."
@@ -35,7 +34,7 @@ def read_contributor_config(config_path: Path | str | None = None) -> tuple[str,
         RuntimeError: If the file is missing/unparseable, or ``lab_id`` is unset or
             still the placeholder — always with an actionable message.
     """
-    path = Path(config_path) if config_path is not None else _DEFAULT_CONFIG_PATH
+    path = Path(config_path) if config_path is not None else contributor_config_path()
     if not path.exists():
         raise RuntimeError(f"Contributor config not found at {path}.\n{_REGISTER_HINT}")
 
