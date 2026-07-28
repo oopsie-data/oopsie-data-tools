@@ -1,7 +1,12 @@
-"""Tests for scripts/validate_and_upload/validate.py against oopsiedata_format_v1.
+"""Tests for episode validation against oopsiedata_format_v1.
 
 Fixtures are generated once per session via conftest.py (tmp_path_factory) and
 cleaned up automatically.  Per-test files use the built-in ``tmp_path`` fixture.
+
+Every ``pytest.raises`` here names the message it expects. Without that, an invalid
+fixture that fails for an unrelated reason still passes its test — which is what happened
+for a long time: the fixtures declared videos nobody wrote, so most of them failed on
+"Video file does not exist" and never reached the defect they were named for.
 
 Sections
 --------
@@ -18,18 +23,16 @@ TestValidateSessionDir    – directory-level validation
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import h5py
 import pytest
 
-_VALIDATE_DIR = Path(__file__).resolve().parents[2] / "scripts" / "validate_and_upload"
-sys.path.insert(0, str(_VALIDATE_DIR))
-
-from validate import validate_h5_file, validate_session_dir  # noqa: E402
-
-from oopsie_data_tools.test.fixtures.make_valid import write_valid_episode  # noqa: E402
+from oopsie_data_tools.test.fixtures.make_valid import write_valid_episode
+from oopsie_data_tools.utils.validation.validation_utils import (
+    validate_h5_file,
+    validate_session_dir,
+)
 
 # ---------------------------------------------------------------------------
 # Happy path
@@ -58,11 +61,12 @@ class TestReadable:
             validate_h5_file(str(tmp_path / "ghost.h5"))
 
     def test_not_h5_raises(self, invalid_fixtures):
-        with pytest.raises((AssertionError, Exception)):
+        # (AssertionError, Exception) is just Exception, i.e. "something went wrong".
+        with pytest.raises(AssertionError, match="not readable"):
             validate_h5_file(str(invalid_fixtures["invalid_not_h5"]))
 
     def test_empty_h5_raises(self, invalid_fixtures):
-        with pytest.raises(AssertionError):
+        with pytest.raises(AssertionError, match="Unsupported or missing schema"):
             validate_h5_file(str(invalid_fixtures["invalid_empty_h5"]))
 
 
@@ -94,22 +98,27 @@ class TestRobotProfile:
             validate_h5_file(str(invalid_fixtures["invalid_malformed_profile"]))
 
     @pytest.mark.parametrize(
-        "fixture_key",
+        "fixture_key,match",
         [
-            "invalid_profile_missing_key",
-            "invalid_profile_no_gripper",
-            "invalid_profile_joint_no_names",
-            "invalid_profile_unsupported_action",
-            "invalid_profile_missing_rs_key",
-            "invalid_profile_empty_cameras",
+            ("invalid_profile_missing_key", "Robot profile missing keys"),
+            ("invalid_profile_no_gripper", "Invalid action_space"),
+            ("invalid_profile_joint_no_names", "action_joint_names is required"),
+            ("invalid_profile_unsupported_action", "Invalid action_space"),
+            ("invalid_profile_missing_rs_key", "missing robot state keys"),
+            # An empty camera_names list is not itself rejected; the episode fails because
+            # it then carries no video group. Worth knowing which rule is doing the work.
+            ("invalid_profile_empty_cameras", "Missing group: observations/video_paths"),
         ],
     )
-    def test_invalid_profile_semantics_raise(self, invalid_fixtures, fixture_key):
-        with pytest.raises(AssertionError):
+    def test_invalid_profile_semantics_raise(self, invalid_fixtures, fixture_key, match):
+        with pytest.raises(AssertionError, match=match):
             validate_h5_file(str(invalid_fixtures[fixture_key]))
 
     def test_invalid_control_freq_zero_raises(self, invalid_fixtures):
-        with pytest.raises(AssertionError, match="control_freq"):
+        # "control_freq" alone used to match the fixture's own *filename* in the
+        # "Video file does not exist: .../invalid_control_freq_zero_front.mp4" message,
+        # so this passed without the check under test ever running.
+        with pytest.raises(AssertionError, match=r"control_freq must be > 0"):
             validate_h5_file(str(invalid_fixtures["invalid_control_freq_zero"]))
 
 # ---------------------------------------------------------------------------
@@ -147,12 +156,12 @@ class TestTrajectoryLengths:
             validate_h5_file(str(invalid_fixtures["invalid_mismatched_steps"]))
 
     def test_zero_steps_raises(self, invalid_fixtures):
-        with pytest.raises(AssertionError):
+        with pytest.raises(AssertionError, match="episode duration 0.00s out of range"):
             validate_h5_file(str(invalid_fixtures["invalid_zero_steps"]))
 
     def test_zero_trajectory_via_tmp_path(self, tmp_path):
         h5_path = write_valid_episode(tmp_path, "zero", n=0)
-        with pytest.raises(AssertionError):
+        with pytest.raises(AssertionError, match="No trajectory data|out of range"):
             validate_h5_file(str(h5_path), strict_annotation_check=True)
 
 
@@ -170,19 +179,28 @@ class TestVideos:
         with pytest.raises(AssertionError, match="does not exist"):
             validate_h5_file(str(invalid_fixtures["invalid_image_obs_float"]))
 
+    # Both of these used to allow "|Video too small" as an alternative, and every fixture
+    # video was 64px against a 180px minimum — so that branch always won and neither
+    # frame-count check ran even once.
     def test_inconsistent_video_lengths_raise(self, invalid_fixtures):
-        with pytest.raises(
-            AssertionError,
-            match="Inconsistent frame counts|Video too small",
-        ):
+        with pytest.raises(AssertionError, match=r"Frame count / trajectory mismatch"):
             validate_h5_file(str(invalid_fixtures["invalid_inconsistent_video_lengths"]))
 
     def test_video_length_step_mismatch_raises(self, invalid_fixtures):
-        with pytest.raises(
-            AssertionError,
-            match=r"Frame count.*trajectory mismatch|Video too small",
-        ):
+        with pytest.raises(AssertionError, match=r"Frame count / trajectory mismatch"):
             validate_h5_file(str(invalid_fixtures["invalid_video_length_step_mismatch"]))
+
+    def test_video_below_the_minimum_size_is_rejected(self, tmp_path):
+        """The check that used to mask every other video assertion, now on its own."""
+        from oopsie_data_tools.test.fixtures.make_invalid import _write_video
+
+        h5_path = write_valid_episode(tmp_path, "tiny")
+        with h5py.File(h5_path, "r") as f:
+            rel = f["observations/video_paths/front"][()].decode("utf-8")
+        _write_video(tmp_path / rel, (10, 10, 10), size=64)
+
+        with pytest.raises(AssertionError, match="Video too small"):
+            validate_h5_file(str(h5_path), strict_annotation_check=True)
 
 
 # ---------------------------------------------------------------------------
@@ -231,6 +249,40 @@ class TestProfileFileConsistency:
 # ---------------------------------------------------------------------------
 
 
+class TestKnownValidationGaps:
+    """Fixtures whose defect the validator does not actually detect.
+
+    Each of these was written to demonstrate a rule that turns out not to exist. They only
+    fail the strict-annotation gate, so they were passing their old bare
+    ``pytest.raises(AssertionError)`` for entirely the wrong reason.
+
+    They are pinned here rather than deleted, so the gap is visible in the suite instead of
+    silently disappearing. If you add one of these rules, this test will fail — move the
+    fixture into the section above and assert the new message.
+    """
+
+    @pytest.mark.parametrize(
+        "fixture_key,missing_rule",
+        [
+            ("invalid_gripper_pos_wrong_dof", "gripper_position DOF is never checked"),
+            ("invalid_robot_state_wrong_dtype", "robot_state dtypes are never checked"),
+            ("invalid_robot_state_extra_key", "extra robot_state keys are accepted"),
+            ("invalid_profile_biarm_mismatch", "is_biarm is never checked against joint DOF"),
+        ],
+    )
+    def test_structurally_valid_despite_the_defect(
+        self, invalid_fixtures, fixture_key, missing_rule
+    ):
+        # Passes every structural check; only the annotation gate stops it.
+        with pytest.raises(AssertionError, match="Annotations dict is empty"):
+            validate_h5_file(str(invalid_fixtures[fixture_key]), strict_annotation_check=True)
+
+        assert validate_h5_file(str(invalid_fixtures[fixture_key])) is True, (
+            f"{fixture_key} now fails a structural check — {missing_rule} may have been "
+            "fixed. Move it out of TestKnownValidationGaps and assert the real message."
+        )
+
+
 class TestValidateSessionDir:
     """Return codes follow the shell convention: 0 = all passed, 1 = failure."""
 
@@ -264,6 +316,7 @@ class TestBetterErrors:
         # Regression: upload.py passes log_path to validate_h5_file for single files.
         log_path = tmp_path / "validate.log"
         assert validate_h5_file(str(valid_success_episode), log_path=str(log_path)) is True
+        assert log_path.exists(), "a log path that is accepted but never written is not a log"
 
     def test_robot_state_joint_dof_message(self, invalid_fixtures):
         with pytest.raises(
@@ -276,6 +329,9 @@ class TestBetterErrors:
             AssertionError, match="action_joint_names count does not match"
         ):
             validate_h5_file(str(invalid_fixtures["invalid_action_names_length_mismatch"]))
+
+
+# ---------------------------------------------------------------------------
 # Annotation semantics (#29 qualified success, #26 multi/non-human annotators)
 # ---------------------------------------------------------------------------
 

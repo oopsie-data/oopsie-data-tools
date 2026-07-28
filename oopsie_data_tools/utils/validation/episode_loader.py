@@ -148,10 +148,22 @@ def _load_annotations_oopsie_v1(f: h5py.File) -> dict[str, dict[str, Any]] | Non
     if "episode_annotations" not in f:
         return None
     ea = f["episode_annotations"]
-    return {
-        annotator: {k: ea[annotator].attrs[k] for k in ea[annotator].attrs}
-        for annotator in ea.keys()
-    }
+    # Everything in this layer reports failure as AssertionError. A file storing
+    # episode_annotations as a dataset used to reach .keys() and raise AttributeError,
+    # which escapes that contract and surfaces as an "unexpected error" with no
+    # indication of what is actually wrong with the file.
+    assert isinstance(ea, h5py.Group), (
+        "episode_annotations must be a group of per-annotator subgroups, got "
+        f"{type(ea).__name__}"
+    )
+    annotations: dict[str, dict[str, Any]] = {}
+    for annotator in ea.keys():
+        subgroup = ea[annotator]
+        assert isinstance(subgroup, h5py.Group), (
+            f"episode_annotations/{annotator} must be a group, got {type(subgroup).__name__}"
+        )
+        annotations[annotator] = {k: subgroup.attrs[k] for k in subgroup.attrs}
+    return annotations
 
 
 def load_episode_from_h5(h5_path: str) -> EpisodeData:
