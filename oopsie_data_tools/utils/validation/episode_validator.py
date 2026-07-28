@@ -88,6 +88,19 @@ def _validate_profile_consistency(data: EpisodeData) -> None:
                 f"Missing video for camera required by profile: {cam}. Got {list(data.videos.keys())}, required by profile.camera_names={profile.camera_names}"
             )
 
+    # The reverse direction. The profile is the episode's documentation, so anything present
+    # but undeclared has no joint names, no units and no DOF to check against, and cannot be
+    # interpreted by anyone downstream. EpisodeRecorder cannot produce this — it writes
+    # exactly profile.robot_state_keys — so this only ever catches hand-built or externally
+    # converted files.
+    _reject_undeclared(
+        "observations/robot_states", data.observations, profile.robot_state_keys,
+        "profile.robot_state_keys",
+    )
+    _reject_undeclared("actions", data.actions, profile.action_space, "profile.action_space")
+
+    _validate_cartesian_arm_count(data)
+
     jp_obs = data.observations.get("joint_position")
     if jp_obs is not None and jp_obs.ndim >= 2:
         if len(profile.robot_state_joint_names) != jp_obs.shape[-1]:
@@ -111,6 +124,44 @@ def _validate_profile_consistency(data: EpisodeData) -> None:
                         "(last axis). Fix action_joint_names in the robot profile (or the recorded "
                         "actions) so the two counts match."
                     )
+
+
+def _reject_undeclared(
+    group: str, present: dict[str, Any], declared: list[str], declared_by: str
+) -> None:
+    """Every dataset in ``group`` must be declared by the profile."""
+    undeclared = sorted(set(present) - set(declared))
+    if undeclared:
+        raise EpisodeValidationError(
+            f"{group} contains {len(undeclared)} key(s) the robot profile does not declare: "
+            f"{undeclared}. The profile is what documents an episode, so undeclared data has "
+            f"no joint names, units or expected DOF, and nothing downstream can interpret it. "
+            f"Add the key(s) to {declared_by}, or stop recording them. "
+            f"{declared_by}={list(declared)}"
+        )
+
+
+def _validate_cartesian_arm_count(data: EpisodeData) -> None:
+    """A cartesian pose must carry one arm's worth of DOF per arm the profile declares.
+
+    ``[x, y, z, qx, qy, qz, qw]`` is 7 values, so a bimanual robot records 14. Joint counts
+    cannot be constrained this way — two arms need not have the same DOF, and a 7+6 pair is
+    legitimate — but the end-effector pose is fixed by its representation.
+    """
+    expected = 14 if data.robot_profile.is_biarm else 7
+    arms = "biarm" if data.robot_profile.is_biarm else "single-arm"
+
+    for group, arrays in (("observations", data.observations), ("actions", data.actions)):
+        arr = arrays.get("cartesian_position")
+        if arr is None or arr.ndim < 2:
+            continue
+        if arr.shape[-1] != expected:
+            raise EpisodeValidationError(
+                f"{group}/cartesian_position has {arr.shape[-1]} DOF, but the profile "
+                f"declares a {arms} robot (is_biarm={data.robot_profile.is_biarm}), which "
+                f"means {expected} — [x, y, z, qx, qy, qz, qw] per arm. Either the pose is "
+                f"missing an arm or is_biarm is wrong."
+            )
 
 
 def _validate_trajectory_lengths(data: EpisodeData) -> None:
