@@ -153,7 +153,8 @@ This validates and pushes episodes to the lab-specific HuggingFace repository.
 
 ## Common mistakes to catch
 
-- `lab_id` capitalisation mismatch → `RuntimeError` at `EpisodeRecorder.__init__`.
+- `lab_id` unset, blank (`lab_id:`), or still the placeholder in `configs/contributor_config.yaml` → a clear `RuntimeError` (pointing to the registration form) at `EpisodeRecorder.__init__` and when running `upload.py`. Capitalisation must match exactly the value you were given.
+- After uploading, run `python scripts/validate_and_upload/query_submissions.py` to confirm your episodes landed in the lab HuggingFace repo.
 - Action dict keys not matching `action_space` in the robot profile → validation error at `record_step`.
 - Passing an action chunk instead of per-step actions → validation error.
 - `cartesian_position` in state/action but `orientation_representation` not set → conversion will fail.

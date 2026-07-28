@@ -18,42 +18,30 @@ from __future__ import annotations
 
 import logging
 import sys
-import yaml
 import os
 import argparse
 from pathlib import Path
+from oopsie_tools.utils.contributor_config import read_contributor_config
+from oopsie_tools.utils.log import setup_logger
+from oopsie_tools.utils.validation.diversity import check_diversity
 from oopsie_tools.utils.validation.validation_utils import validate_h5_file, validate_session_dir
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
-# ── Config ────────────────────────────────────────────────────────────────────
-
-# Read lab_id from configs/contributor_config.yaml
-try:
-    config_path = (
-        Path(__file__).resolve().parent.parent.parent
-        / "configs"
-        / "contributor_config.yaml"
-    )
-    with open(config_path, "r") as f:
-        config = yaml.safe_load(f)
-        lab_id = config.get("lab_id", "").strip()
-        huggingface_token = config.get("huggingface_token", "").strip()
-        if not lab_id:
-            raise ValueError(
-                "lab_id must be set in configs/contributor_config.yaml"
-            )
-except Exception as e:
-    raise RuntimeError(
-        f"Could not read lab_id from configs/contributor_config.yaml: {e}"
-    )
-
-LAB_ID = lab_id
-HF_TOKEN = huggingface_token
-HF_REPO = f"OopsieData-Submissions/{LAB_ID}"
-
 # ── Step 1: HuggingFace authentication ────────────────────────────────────────
+
+
+def _resolve_hf_target() -> tuple[str, str]:
+    """Resolve ``(hf_token, repo_id)`` lazily.
+
+    Read only when actually uploading so validation, ``--skip_upload`` and ``--help``
+    work on a fresh checkout without a filled-in contributor config. ``HF_TOKEN`` in the
+    environment overrides the config token (as documented in the module docstring).
+    """
+    lab_id, config_token = read_contributor_config()
+    token = os.environ.get("HF_TOKEN", "").strip() or config_token
+    return token, f"OopsieData-Submissions/{lab_id}"
 
 
 def hf_login(token: str):
@@ -75,6 +63,10 @@ def _validate_import_path():
 
 
 def run_validation(base_path: str, episode_id: str, log_path: str | None=None) -> bool:
+    # Route this module's pass/fail lines to the log file too, so --log-path captures
+    # the single-file path (validate_session_dir already logs through its own logger).
+    if log_path is not None:
+        setup_logger(__name__, log_path)
     target = os.path.join(base_path, f"{episode_id}.h5") if episode_id else base_path
     if os.path.isfile(target):
         try:
@@ -95,17 +87,14 @@ def run_validation(base_path: str, episode_id: str, log_path: str | None=None) -
 # ── Step 3: create repo (if needed) ───────────────────────────────────────────
 
 
-def ensure_repo():
-    from huggingface_hub import HfApi
-
-    api = HfApi(token=HF_TOKEN)
+def ensure_repo(api, repo: str):
     try:
-        api.repo_info(repo_id=HF_REPO, repo_type="dataset")
-        logger.info("[hf]    Repo already exists: https://huggingface.co/datasets/%s", HF_REPO)
+        api.repo_info(repo_id=repo, repo_type="dataset")
+        logger.info("[hf]    Repo already exists: https://huggingface.co/datasets/%s", repo)
     except Exception:
-        logger.info("[hf]    Creating repo: %s", HF_REPO)
-        api.create_repo(repo_id=HF_REPO, repo_type="dataset", private=False)
-        logger.info("[hf]    Created: https://huggingface.co/datasets/%s", HF_REPO)
+        logger.info("[hf]    Creating repo: %s", repo)
+        api.create_repo(repo_id=repo, repo_type="dataset", private=False)
+        logger.info("[hf]    Created: https://huggingface.co/datasets/%s", repo)
 
 
 # ── Step 4: upload ────────────────────────────────────────────────────────────
@@ -138,12 +127,8 @@ def check_folder_size(samples_dir: str) -> None:
     sys.exit(1)
 
 
-def upload_dataset(samples_dir: str, commit_message: str):
-    from huggingface_hub import HfApi
-
-    api = HfApi(token=HF_TOKEN)
-
-    logger.info("[upload] Uploading %s → %s", samples_dir, HF_REPO)
+def upload_dataset(api, repo: str, samples_dir: str):
+    logger.info("[upload] Uploading %s → %s", samples_dir, repo)
     logger.info("[upload] Files to upload:")
     total_bytes = 0
     for root, _, files in os.walk(samples_dir):
@@ -159,12 +144,34 @@ def upload_dataset(samples_dir: str, commit_message: str):
 
     api.upload_large_folder(
         folder_path=samples_dir,
-        repo_id=HF_REPO,
+        repo_id=repo,
         repo_type="dataset",
     )
 
     logger.info("[upload] Done!")
-    logger.info("[upload] Dataset URL: https://huggingface.co/datasets/%s", HF_REPO)
+    logger.info("[upload] Dataset URL: https://huggingface.co/datasets/%s", repo)
+
+    # Post-upload confirmation: read the repo back so the user sees their data landed.
+    try:
+        remote_h5 = [
+            f for f in api.list_repo_files(repo_id=repo, repo_type="dataset")
+            if f.endswith(".h5")
+        ]
+        local_h5 = sum(
+            1 for _r, _d, files in os.walk(samples_dir) for fn in files if fn.endswith(".h5")
+        )
+        logger.info(
+            "[upload] Confirmed: %d episode(s) now in the repo (from %d local .h5).",
+            len(remote_h5), local_h5,
+        )
+        if local_h5 and len(remote_h5) < local_h5:
+            logger.warning(
+                "[upload] Remote episode count (%d) is below local (%d) — "
+                "re-run the upload if this is unexpected.",
+                len(remote_h5), local_h5,
+            )
+    except Exception as e:
+        logger.warning("[upload] Could not confirm upload via repo listing: %s", e)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -202,21 +209,18 @@ def main():
         default=None,
         help="Path to log file"
     )
+    parser.add_argument(
+        "--strict-diversity",
+        action="store_true",
+        help="Treat low task/annotation diversity warnings as a hard error (non-zero exit)",
+    )
     args = parser.parse_args()
 
     logger.info("=" * 60)
     logger.info("  Robotic Failure Dataset — End-to-End Upload Pipeline")
     logger.info("=" * 60)
 
-    # 1. Auth
-    hf_login(HF_TOKEN)
-
     samples_dir = os.path.abspath(os.path.normpath(args.path))
-    if args.episode_id is None:
-        dir_name = os.path.basename(samples_dir.rstrip(os.sep)) or samples_dir
-        commit_message = f"Add {dir_name}"
-    else:
-        commit_message = f"Add episode {args.episode_id}"
 
     # 2. Pre-upload folder-size check
     if not args.skip_upload:
@@ -231,10 +235,22 @@ def main():
     else:
         logger.info("[validate] Skipped.")
 
-    # 4 + 5. Create repo and upload
+    # 3b. Low-diversity warning (advisory unless --strict-diversity). Reads attrs only.
+    diversity_warnings = check_diversity(samples_dir)
+    if diversity_warnings and args.strict_diversity:
+        logger.error("Aborting: low-diversity warnings present and --strict-diversity is set.")
+        sys.exit(1)
+
+    # 4 + 5. Authenticate, create repo, and upload (config + auth only needed to upload,
+    # so validation / --skip_upload / --help work without a filled-in contributor config).
     if not args.skip_upload:
-        ensure_repo()
-        upload_dataset(samples_dir, commit_message)
+        from huggingface_hub import HfApi
+
+        hf_token, hf_repo = _resolve_hf_target()
+        hf_login(hf_token)
+        api = HfApi(token=hf_token)
+        ensure_repo(api, hf_repo)
+        upload_dataset(api, hf_repo, samples_dir)
     else:
         logger.info("[upload] Skipped (--skip_upload).")
 

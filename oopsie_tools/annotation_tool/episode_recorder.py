@@ -13,6 +13,8 @@ import imageio
 import numpy as np
 import datetime
 import yaml
+from oopsie_tools.utils.contributor_config import read_contributor_config
+from oopsie_tools.annotation_tool.annotation_schema import write_annotation_attrs
 from oopsie_tools.utils.robot_profile.robot_profile import RobotProfile, robot_profile_to_json
 from oopsie_tools.utils.robot_profile.rotation_utils import ActionQuatConversion
 from oopsie_tools.utils.validation.episode_data import EpisodeData, VideoInfo
@@ -121,24 +123,7 @@ class EpisodeRecorder:
         # Timestep data buffer
         self.timesteps: list[dict[str, Any]] = []
 
-        # Read lab_id from configs/contributor_config.yaml
-        try:
-            config_path = (
-                Path(__file__).resolve().parent.parent.parent
-                / "configs"
-                / "contributor_config.yaml"
-            )
-            with open(config_path, "r") as f:
-                config = yaml.safe_load(f)
-                self.lab_id = config.get("lab_id", "").strip()
-                if not self.lab_id:
-                    raise ValueError(
-                        "lab_id must be set in configs/contributor_config.yaml"
-                    )
-        except Exception as e:
-            raise RuntimeError(
-                f"Could not read lab_id from configs/contributor_config.yaml: {e}"
-            )
+        self.lab_id, _ = read_contributor_config()
 
     def reset_episode_recorder(self) -> None:
         """Reset the buffers for a new episode."""
@@ -679,38 +664,12 @@ class EpisodeRecorder:
         if not h5_path.exists():
             raise FileNotFoundError(str(h5_path))
 
-        success: float | None = None
-        bs = str(annotation.get("binary_success", "")).strip().lower()
-        if bs == "success":
-            success = 1.0
-        elif bs == "failure":
-            success = 0.0
-
         with h5py.File(h5_path, "r+") as f:
             episode_annotations = f.require_group("episode_annotations")
             annotation_group = episode_annotations.require_group(
                 annotation["annotator"]
             )
-            annotation_group.attrs["schema"] = annotation.get("schema", "oopsie_failure_taxonomy_v1")
-            annotation_group.attrs["source"] = "human"
-            annotation_group.attrs["timestamp"] = annotation["annotated_at"]
-            annotation_group.attrs["success"] = success
-            annotation_group.attrs["failure_description"] = annotation[
-                "failure_description"
-            ]
-            annotation_group.attrs["taxonomy_schema"] = "oopsiedata_taxonomy_schema_v1"
-            failure_taxonomy = {
-                "failure_category": annotation["failure_category"],
-                "severity": annotation["severity"],
-            }
-            annotation_group.attrs["taxonomy"] = json.dumps(
-                failure_taxonomy, ensure_ascii=False
-            )
-            annotation_group.attrs["additional_notes"] = annotation["additional_notes"]
-
-            # annotation_group.attrs["failure_annotation"] = json.dumps(
-            #     dict(annotation), ensure_ascii=False
-            # )
+            write_annotation_attrs(annotation_group, annotation)
 
     @property
     def num_steps(self) -> int:

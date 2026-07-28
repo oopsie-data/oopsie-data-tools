@@ -8,15 +8,33 @@ questions:
       - "Success"
       - "Failure"
 
+  - id: success_category
+    type: radio
+    label: "Success quality"
+    required: false
+    show_when:
+      binary_success: ["Success"]
+    options:
+      - name: "Clean success"
+        long_form: "Task completed correctly with no notable side-effects or inefficiencies."
+      - name: "Success with side-effects"
+        long_form: "Task completed, but with unintended side-effects (e.g. knocked over a nearby object, minor collision) that did not prevent completion."
+      - name: "Suboptimal execution"
+        long_form: "Task completed, but inefficiently or awkwardly (e.g. many retries, a very indirect path, near-misses)."
+
   - id: failure_description
     type: textarea
     label: "Describe what went wrong"
     required: false
+    show_when:
+      binary_success: ["Failure"]
 
   - id: failure_category
     type: checkbox
     label: "Failure categories (select all that apply)"
     required: false
+    show_when:
+      binary_success: ["Failure"]
     options:
       - name: "Reaching failure (pre contact)"
         long_form: "Failure to reach the target object or location, resulting in no contact being made. If a grasp just barely misses the object, please count this as a grasp failure rather than a reaching failure."
@@ -37,8 +55,10 @@ questions:
 
   - id: severity
     type: radio
-    label: "How severe is this failure?"
+    label: "Severity (failure impact, or success side-effects)"
     required: false
+    show_when:
+      binary_success: ["Failure", "Success"]
     options:
       - "Low severity - no damage, can be reset and reattempted"
       - "Medium severity - some damage or risk of damage or significant reset required, but can be reattempted"

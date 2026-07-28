@@ -32,6 +32,29 @@ from oopsie_tools.test.fixtures.make_invalid import (
 __all__ = ["write_valid_episode"]
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _test_contributor_config():
+    """Supply a test lab_id everywhere the contributor config is read.
+
+    Lets the suite run on a fresh checkout without a filled-in
+    ``configs/contributor_config.yaml`` (whose blank lab_id would otherwise fail
+    ``EpisodeRecorder`` construction), without touching the committed file.
+    """
+    import oopsie_tools.utils.contributor_config as _cc
+    import oopsie_tools.annotation_tool.episode_recorder as _recorder
+
+    def _fake(config_path=None) -> tuple[str, str]:
+        return ("test_lab", "test_token")
+
+    originals = (_cc.read_contributor_config, _recorder.read_contributor_config)
+    _cc.read_contributor_config = _fake
+    _recorder.read_contributor_config = _fake
+    try:
+        yield
+    finally:
+        _cc.read_contributor_config, _recorder.read_contributor_config = originals
+
+
 # ---------------------------------------------------------------------------
 # Session-scoped fixtures: valid episodes
 # ---------------------------------------------------------------------------

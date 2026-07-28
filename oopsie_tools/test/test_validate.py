@@ -17,9 +17,11 @@ TestValidateSessionDir    – directory-level validation
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
+import h5py
 import pytest
 
 _VALIDATE_DIR = Path(__file__).resolve().parents[2] / "scripts" / "validate_and_upload"
@@ -151,7 +153,7 @@ class TestTrajectoryLengths:
     def test_zero_trajectory_via_tmp_path(self, tmp_path):
         h5_path = write_valid_episode(tmp_path, "zero", n=0)
         with pytest.raises(AssertionError):
-            validate_h5_file(str(h5_path))
+            validate_h5_file(str(h5_path), strict_annotation_check=True)
 
 
 # ---------------------------------------------------------------------------
@@ -248,3 +250,77 @@ class TestValidateSessionDir:
         write_valid_episode(tmp_path, "ep_a")
         write_valid_episode(tmp_path, "ep_b")
         assert validate_session_dir(str(tmp_path)) == 1
+
+
+# ---------------------------------------------------------------------------
+# Better error messaging (#21)
+# ---------------------------------------------------------------------------
+
+
+class TestBetterErrors:
+    def test_validate_accepts_log_path(self, valid_success_episode, tmp_path):
+        # Regression: upload.py passes log_path to validate_h5_file for single files.
+        log_path = tmp_path / "validate.log"
+        assert validate_h5_file(str(valid_success_episode), log_path=str(log_path)) is True
+
+    def test_robot_state_joint_dof_message(self, invalid_fixtures):
+        with pytest.raises(
+            AssertionError, match="robot_state_joint_names count does not match"
+        ):
+            validate_h5_file(str(invalid_fixtures["invalid_joint_names_length_mismatch"]))
+
+    def test_action_joint_dof_message(self, invalid_fixtures):
+        with pytest.raises(
+            AssertionError, match="action_joint_names count does not match"
+        ):
+            validate_h5_file(str(invalid_fixtures["invalid_action_names_length_mismatch"]))
+# Annotation semantics (#29 qualified success, #26 multi/non-human annotators)
+# ---------------------------------------------------------------------------
+
+
+class TestAnnotationSemantics:
+    def test_success_with_standalone_severity_passes(self, tmp_path: Path) -> None:
+        """A qualified success may set severity without the failure trio (#29)."""
+        h5_path = write_valid_episode(tmp_path, stem="ep")
+        with h5py.File(h5_path, "r+") as f:
+            g = f["episode_annotations"]["test_annotator"]
+            g.attrs["success"] = 1.0
+            g.attrs["taxonomy"] = json.dumps(
+                {
+                    "failure_category": [],
+                    "severity": "Low severity - no damage, can be reset and reattempted",
+                    "success_category": "Success with side-effects",
+                }
+            )
+        assert validate_h5_file(str(h5_path), strict_annotation_check=True) is True
+
+    def test_failure_still_requires_full_trio(self, tmp_path: Path) -> None:
+        """A failure with only severity (partial trio) is still rejected."""
+        h5_path = write_valid_episode(tmp_path, stem="ep")
+        with h5py.File(h5_path, "r+") as f:
+            g = f["episode_annotations"]["test_annotator"]
+            g.attrs["success"] = 0.0
+            g.attrs["failure_description"] = ""
+            g.attrs["taxonomy"] = json.dumps(
+                {"failure_category": [], "severity": "Low severity - no damage, can be reset and reattempted"}
+            )
+        with pytest.raises(AssertionError, match="all filled or all empty"):
+            validate_h5_file(str(h5_path), strict_annotation_check=True)
+
+    def test_incomplete_extra_subgroup_fails(self, tmp_path: Path) -> None:
+        """Every annotator subgroup must be complete: a stray incomplete one fails the episode."""
+        h5_path = write_valid_episode(tmp_path, stem="ep")
+        with h5py.File(h5_path, "r+") as f:
+            extra = f["episode_annotations"].require_group("cosmos-7b")
+            extra.attrs["source"] = "cosmos-7b"  # no 'success' → incomplete subgroup
+        with pytest.raises(AssertionError, match="missing 'success'"):
+            validate_h5_file(str(h5_path), strict_annotation_check=True)
+
+    def test_extra_complete_subgroup_passes(self, tmp_path: Path) -> None:
+        """An additional fully-annotated subgroup (any source) is fine."""
+        h5_path = write_valid_episode(tmp_path, stem="ep")
+        with h5py.File(h5_path, "r+") as f:
+            extra = f["episode_annotations"].require_group("cosmos-7b")
+            extra.attrs["source"] = "cosmos-7b"
+            extra.attrs["success"] = 1.0
+        assert validate_h5_file(str(h5_path), strict_annotation_check=True) is True

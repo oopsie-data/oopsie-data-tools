@@ -19,12 +19,17 @@ from oopsie_tools.utils.validation.episode_validator import validate_episode
 logger = logging.getLogger(__name__)
 
 
-def validate_h5_file(h5_path: str, strict_annotation_check: bool = False) -> bool:
+def validate_h5_file(
+    h5_path: str,
+    strict_annotation_check: bool = False,
+    log_path: str | Path | None = None,
+) -> bool:
     """Validate a single HDF5 episode file.
 
     Args:
         h5_path: Path to the .h5 file.
         strict_annotation_check: If True, require that annotations are present and non-empty.
+        log_path: Optional file to also write log output to (mirrors ``validate_session_dir``).
 
     Returns:
         True if all checks pass.
@@ -32,6 +37,8 @@ def validate_h5_file(h5_path: str, strict_annotation_check: bool = False) -> boo
     Raises:
         AssertionError: On the first validation failure.
     """
+    if log_path is not None:
+        setup_logger(__name__, log_path)
     data = load_episode_from_h5(h5_path)
     validate_episode(data, strict_annotation_check=strict_annotation_check)
     return True
