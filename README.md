@@ -15,6 +15,7 @@ Installing the package (`uv sync`, or `pip install -e .`) provides the `oopsie-d
 ```bash
 oopsie-data init                                 # first-time setup (lab id + HF token)
 oopsie-data show-config                          # where configs are read from, and what is in them
+oopsie-data new-profile                          # starter robot profile to fill in
 oopsie-data annotate --samples-dir ./samples     # launch the web annotation UI
 oopsie-data validate --path ./samples            # check episodes against the schema
 oopsie-data upload   --path ./samples            # validate, then upload to HuggingFace
@@ -40,8 +41,10 @@ config directory:
 2. `./robot_profiles` or `./configs/robot_profiles`, relative to where you run the command
 3. this repository's `configs/robot_profiles`
 
-In practice a profile is usually loaded by explicit path — `load_robot_profile("path/to.yaml")` —
-and the lookup above only backs the bundled examples. Pass
+In practice a profile is usually loaded by explicit path — `load_robot_profile("path/to.yaml")`.
+Nothing is ever read out of the installed package: config that lives in `site-packages` is
+read-only, invisible to you, and would silently shadow your own. Run `oopsie-data new-profile` to
+write a starter profile into `./robot_profiles/` and fill it in from there. Pass
 `oopsie-data --config-dir <dir> <command>` to override the credential location for a single run.
 
 Run `oopsie-data show-config` to see which of these locations is actually being used, along with

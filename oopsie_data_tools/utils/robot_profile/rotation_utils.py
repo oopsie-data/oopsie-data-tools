@@ -1,6 +1,7 @@
-from scipy.spatial.transform import Rotation as R
-import numpy as np
 from enum import Enum
+
+import numpy as np
+from scipy.spatial.transform import Rotation as R
 
 
 class RotOption(Enum):

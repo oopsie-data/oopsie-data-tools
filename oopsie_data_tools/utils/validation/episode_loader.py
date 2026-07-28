@@ -17,8 +17,8 @@ import cv2
 import h5py
 import numpy as np
 
-from oopsie_data_tools.utils.validation.episode_data import EpisodeData, VideoInfo
 from oopsie_data_tools.utils.robot_profile.robot_profile import robot_profile_from_json
+from oopsie_data_tools.utils.validation.episode_data import EpisodeData, VideoInfo
 
 OOPSIE_DATA_SCHEMA_V1 = "oopsiedata_format_v1"
 ROBOTIC_FAILURE_UPLOAD_SCHEMA_V1 = "robotic_failure_upload_data_format_v1"
@@ -91,7 +91,7 @@ def _load_oopsie_v1(f: h5py.File, h5_dir: str) -> EpisodeData:
     try:
         profile = robot_profile_from_json(_decode_h5_scalar(f.attrs["robot_profile"]))
     except ValueError as e:
-        raise AssertionError(f"Invalid robot_profile JSON: {e}")
+        raise AssertionError(f"Invalid robot_profile JSON: {e}") from e
 
     assert "observations" in f, "Missing group: observations"
     assert "robot_states" in f["observations"], "Missing group: observations/robot_states"
@@ -168,7 +168,7 @@ def load_episode_from_h5(h5_path: str) -> EpisodeData:
     try:
         f = h5py.File(resolved, "r")
     except Exception as e:
-        raise AssertionError(f"H5 file is not readable: {resolved}. Error: {e}")
+        raise AssertionError(f"H5 file is not readable: {resolved}. Error: {e}") from e
 
     h5_dir = os.path.dirname(resolved)
     try:

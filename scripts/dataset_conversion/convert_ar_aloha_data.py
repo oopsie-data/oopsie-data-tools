@@ -62,7 +62,6 @@ import h5py
 import imageio
 import numpy as np
 
-
 DEFAULT_CONTROL_FREQ = "30"
 
 SCHEMA_VERSION = "robotic_failure_upload_data_format_v1"

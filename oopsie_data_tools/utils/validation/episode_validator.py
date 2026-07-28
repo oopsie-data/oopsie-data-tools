@@ -212,11 +212,11 @@ def _validate_annotations(data: EpisodeData) -> None:
         )
         try:
             success = float(attrs["success"])
-        except (TypeError, ValueError):
+        except (TypeError, ValueError) as e:
             raise AssertionError(
                 f"episode_annotations/{annotator}/success is not numeric: "
                 f"{attrs['success']!r}"
-            )
+            ) from e
         assert not np.isnan(success), (
             f"episode_annotations/{annotator}/success is NaN — "
             "episode has not been fully annotated yet"

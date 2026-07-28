@@ -20,13 +20,13 @@ ACTION_SPACE_SET_1 = {
 }
 
 ACTION_SPACE_SET_2 = {
-    "gripper_position", 
-    "gripper_velocity", 
+    "gripper_position",
+    "gripper_velocity",
     "gripper_binary",
 }
 
 ACTION_SPACE_SET_3 = {
-    "base_velocity", 
+    "base_velocity",
     "base_position",
 }
 
@@ -140,7 +140,7 @@ def robot_profile_from_json(payload: str) -> RobotProfile:
     try:
         raw = json.loads(payload)
     except Exception as e:
-        raise ValueError(f"Invalid robot_profile JSON: {e}")
+        raise ValueError(f"Invalid robot_profile JSON: {e}") from e
     return robot_profile_from_raw(raw)
 
 

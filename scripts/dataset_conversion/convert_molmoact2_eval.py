@@ -28,7 +28,6 @@ from oopsie_data_tools.utils.robot_profile.robot_profile import (
     robot_profile_to_json,
 )
 
-
 DEFAULT_REPO_ID = "allenai/eval_molmoact_candy_sorting_ood"
 DEFAULT_REVISION = "main"
 DEFAULT_SPLIT = "train"

@@ -18,7 +18,6 @@ from pathlib import Path
 import h5py
 import numpy as np
 
-
 OLD_SCHEMA = "robotic_failure_upload_data_format_v1"
 NEW_SCHEMA = "oopsiedata_format_v1"
 
@@ -99,7 +98,7 @@ def _migrate_file_inner(src_path: Path, tmp_path: Path, bak_path: Path, dry_run:
 
     if dry_run:
         tmp_path.unlink(missing_ok=True)
-        print(f"  dry-run OK")
+        print("  dry-run OK")
         return
 
     shutil.copy2(src_path, bak_path)

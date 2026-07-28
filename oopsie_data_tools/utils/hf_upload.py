@@ -12,7 +12,10 @@ import os
 
 from oopsie_data_tools.utils.contributor_config import read_contributor_config
 from oopsie_data_tools.utils.log import setup_logger
-from oopsie_data_tools.utils.validation.validation_utils import validate_h5_file, validate_session_dir
+from oopsie_data_tools.utils.validation.validation_utils import (
+    validate_h5_file,
+    validate_session_dir,
+)
 
 logger = logging.getLogger(__name__)
 
