@@ -17,6 +17,7 @@ TestRequiredGroups        – missing top-level or nested groups
 TestTrajectoryLengths     – mismatched / zero trajectory lengths
 TestVideos                – missing or too-small video files
 TestValidEpisodes         – happy-path: all registered tests pass
+TestProfileDocumentsTheEpisode – profile and file must agree in both directions
 TestValidateSessionDir    – directory-level validation
 """
 
@@ -26,6 +27,7 @@ import json
 from pathlib import Path
 
 import h5py
+import numpy as np
 import pytest
 
 from oopsie_data_tools.test.fixtures.make_valid import write_valid_episode
@@ -249,6 +251,40 @@ class TestProfileFileConsistency:
 # ---------------------------------------------------------------------------
 
 
+class TestPreviouslyUnreferencedFixtures:
+    """Fixtures that were generated every session and asserted on by nothing.
+
+    All four detect a real defect; they simply had no test. The annotation-dataset one is
+    the sharpest: it was written to catch ``episode_annotations`` stored as a dataset, which
+    used to escape as ``AttributeError`` from ``.keys()`` rather than as a validation error.
+    """
+
+    @pytest.mark.parametrize(
+        "fixture_key,match",
+        [
+            (
+                "invalid_annotation_dataset",
+                "episode_annotations must be a group of per-annotator subgroups",
+            ),
+            (
+                "invalid_joint_pos_wrong_dof",
+                "robot_state_joint_names count does not match",
+            ),
+            (
+                "invalid_joint_vel_wrong_dof",
+                "action_joint_names count does not match",
+            ),
+            (
+                "invalid_taxonomy_not_json",
+                "must be all filled or all empty",
+            ),
+        ],
+    )
+    def test_fixture_fails_on_its_own_defect(self, invalid_fixtures, fixture_key, match):
+        with pytest.raises(AssertionError, match=match):
+            validate_h5_file(str(invalid_fixtures[fixture_key]), strict_annotation_check=True)
+
+
 class TestProfileDocumentsTheEpisode:
     """The profile is what documents an episode, so the two must agree in both directions."""
 
@@ -277,41 +313,27 @@ class TestProfileDocumentsTheEpisode:
 
         assert validate_h5_file(str(h5_path), strict_annotation_check=True) is True
 
+    @pytest.mark.parametrize("gripper_dof", [1, 2, 3])
+    def test_gripper_dof_is_whatever_the_profile_owner_records(self, tmp_path, gripper_dof):
+        """Deliberately not a rule.
 
-class TestKnownValidationGaps:
-    """Fixtures whose defect the validator does not actually detect.
+        Nothing in RobotProfile declares how many gripper DOF to expect — only
+        ``gripper_name`` — so there is nothing to check against. Inferring 1-or-2 from
+        ``is_biarm`` would reject a multi-finger hand, which ``gripper_name`` explicitly
+        anticipates (``robotiq_3f`` and friends). Constraining this needs a
+        ``gripper_joint_names`` field mirroring ``robot_state_joint_names``; until then the
+        recorded width is accepted as given.
+        """
+        h5_path = write_valid_episode(tmp_path, f"gripper{gripper_dof}")
+        with h5py.File(h5_path, "r+") as f:
+            group = f["observations/robot_states"]
+            n = group["gripper_position"].shape[0]
+            del group["gripper_position"]
+            group.create_dataset(
+                "gripper_position", data=np.zeros((n, gripper_dof), dtype=np.float64)
+            )
 
-    Each of these was written to demonstrate a rule that turns out not to exist. They only
-    fail the strict-annotation gate, so they were passing their old bare
-    ``pytest.raises(AssertionError)`` for entirely the wrong reason.
-
-    They are pinned here rather than deleted, so the gap is visible in the suite instead of
-    silently disappearing. If you add one of these rules, this test will fail — move the
-    fixture into the section above and assert the new message.
-    """
-
-    @pytest.mark.parametrize(
-        "fixture_key,missing_rule",
-        [
-            # Cannot be checked without a schema change: nothing in RobotProfile declares how
-            # many gripper DOF to expect, and inferring 1-or-2 from is_biarm would wrongly
-            # reject a multi-finger hand, which gripper_name explicitly anticipates. Needs a
-            # gripper_joint_names field mirroring robot_state_joint_names.
-            ("invalid_gripper_pos_wrong_dof", "gripper_position DOF is never checked"),
-            ("invalid_robot_state_wrong_dtype", "robot_state dtypes are never checked"),
-        ],
-    )
-    def test_structurally_valid_despite_the_defect(
-        self, invalid_fixtures, fixture_key, missing_rule
-    ):
-        # Passes every structural check; only the annotation gate stops it.
-        with pytest.raises(AssertionError, match="Annotations dict is empty"):
-            validate_h5_file(str(invalid_fixtures[fixture_key]), strict_annotation_check=True)
-
-        assert validate_h5_file(str(invalid_fixtures[fixture_key])) is True, (
-            f"{fixture_key} now fails a structural check — {missing_rule} may have been "
-            "fixed. Move it out of TestKnownValidationGaps and assert the real message."
-        )
+        assert validate_h5_file(str(h5_path), strict_annotation_check=True) is True
 
 
 class TestValidateSessionDir:
