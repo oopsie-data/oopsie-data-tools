@@ -18,6 +18,11 @@ jobs:
         with:
           enable-cache: true
       - run: uv run ruff check oopsie_data_tools/ scripts/ examples/
+      # tyro and friends resolve dataclass annotations at runtime, where PEP 604
+      # unions raise TypeError on the 3.8 floor. Ruff cannot see this; the examples
+      # cannot be imported in CI (droid/openpi_client are not on PyPI), so it is
+      # checked statically.
+      - run: uv run python scripts/checks/check_dataclass_annotations.py
 
   test:
     strategy:
