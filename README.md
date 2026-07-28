@@ -50,6 +50,30 @@ write a starter profile into `./robot_profiles/` and fill it in from there. Pass
 Run `oopsie-data show-config` to see which of these locations is actually being used, along with
 the lab id and token in effect.
 
+### Upgrading: `configs/contributor_config.yaml` is no longer tracked
+
+That file holds your HuggingFace token, and it used to be committed to the repository — which
+meant `.gitignore` did not apply to it and your token showed up in `git status`. It is now
+untracked and ignored.
+
+If you have an existing clone with your credentials filled in, `git pull` may refuse:
+
+```
+error: Your local changes to the following files would be overwritten by merge:
+        configs/contributor_config.yaml
+```
+
+Your credentials are safe; git is just protecting the file. Move them out of the working tree:
+
+```bash
+oopsie-data init            # writes to ~/.config/oopsie-data, verifies nothing is lost
+rm configs/contributor_config.yaml
+git pull
+```
+
+Nothing else changes — that location is still searched, so an existing setup keeps working. You
+will see a warning pointing here until you move it.
+
 ---
 
 For detailed explanations on how to use our tooling and contribute to the project, please visit [our website](https://oopsie-data.com/).

@@ -126,9 +126,13 @@ def ask_choice(prompt: str, options: Sequence[str], default: str | None = None) 
 def choose_target_dir() -> Path:
     """Pick the directory to write the config into.
 
-    ``$OOPSIE_CONFIG_DIR`` (set directly or via ``--config-dir``) wins outright. Inside a
-    checkout we ask, defaulting to the checkout's ``configs/``; otherwise the per-user
-    config directory is used without a prompt.
+    ``$OOPSIE_CONFIG_DIR`` (set directly or via ``--config-dir``) wins outright. Otherwise
+    the per-user config directory is the default everywhere; inside a checkout we still
+    offer the checkout's ``configs/``, but never pick it for you.
+
+    The default deliberately points away from the checkout. The file holds a HuggingFace
+    token, and a token inside a git working tree is one ``git add -A`` away from being
+    published — which is exactly how it used to be committed.
     """
     env_dir = paths.env_config_dir()
     if env_dir is not None:
@@ -137,17 +141,16 @@ def choose_target_dir() -> Path:
 
     repo_dir = paths.repo_config_dir()
     user_dir = paths.user_config_dir()
-    if repo_dir is None:
+    if repo_dir is None or not sys.stdin.isatty():
         logger.info("Using config directory: %s", user_dir)
         return user_dir
-    if not sys.stdin.isatty():
-        # Non-interactive inside a checkout: take the documented default rather than fail.
-        return repo_dir
 
+    user_option = f"{user_dir}  (your user config directory)"
+    repo_option = f"{repo_dir}  (this checkout — holds a token inside a git working tree)"
     choice = ask_choice(
         "Where should your config be saved? Both are found automatically.",
-        [f"{repo_dir}  (this checkout)", f"{user_dir}  (your user config directory)"],
-        default=f"{repo_dir}  (this checkout)",
+        [user_option, repo_option],
+        default=user_option,
     )
     return repo_dir if choice.startswith(str(repo_dir)) else user_dir
 

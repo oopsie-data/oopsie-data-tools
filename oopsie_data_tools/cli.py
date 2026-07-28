@@ -30,9 +30,6 @@ from oopsie_data_tools.utils.paths import ENV_CONFIG_DIR
 
 logger = logging.getLogger(__name__)
 
-# Set by ``annotate`` so the Flask reloader's child process reuses the answered prompt.
-ENV_ANNOTATOR_NAME = "OOPSIE_ANNOTATOR_NAME"
-
 
 # ── show-config ───────────────────────────────────────────────────────────────
 
@@ -220,16 +217,9 @@ def _prompt_annotator_name() -> str | None:
 def cmd_annotate(args: argparse.Namespace) -> int:
     from oopsie_data_tools.annotation_tool.annotator_server import run_server
 
-    annotator_name = (
-        (args.annotator_name or "").strip()
-        or os.environ.get(ENV_ANNOTATOR_NAME, "").strip()
-        or _prompt_annotator_name()
-    )
+    annotator_name = (args.annotator_name or "").strip() or _prompt_annotator_name()
     if not annotator_name:
         return 1
-    # The Flask debug reloader re-executes this process; hand the answer down through the
-    # environment (which werkzeug passes to the child) so the user is only asked once.
-    os.environ[ENV_ANNOTATOR_NAME] = annotator_name
 
     return run_server(
         samples_dir=args.samples_dir,

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import threading
 import webbrowser
@@ -783,10 +784,15 @@ def run_server(
     port: int = 5001,
     open_browser: bool = True,
     with_rollouts: bool = False,
+    debug: bool = False,
 ) -> int:
     """Configure the runtime and serve the annotation UI (blocks until interrupted).
 
     Shared by this module's ``main()`` and the ``oopsie-data annotate`` CLI command.
+
+    ``debug`` is off by default and should stay off outside development: it enables the
+    Werkzeug debugger, whose interactive console executes arbitrary Python on request, and
+    the reloader, which re-executes this process and so loses any state answered at startup.
     """
     samples_dir = Path(samples_dir).resolve()
     samples_dir.mkdir(parents=True, exist_ok=True)
@@ -796,15 +802,14 @@ def run_server(
         browse_only=bool(not with_rollouts),
     )
 
+    # WERKZEUG_RUN_MAIN marks the reloader's child process; only the parent should open a
+    # browser. Only reachable with debug=True, but harmless and correct either way.
     if open_browser and os.environ.get("WERKZEUG_RUN_MAIN") != "true":
         webbrowser.open(f"http://localhost:{port}/")
 
-    # To suppress the werkzeug server logs
-    import logging
+    logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
-    logging.getLogger("werkzeug").setLevel(logging.WARNING)  # or logging.ERROR
-
-    app.run(host="localhost", port=port, debug=True)
+    app.run(host="localhost", port=port, debug=debug)
     return 0
 
 
@@ -829,6 +834,14 @@ def main() -> int:
         action="store_true",
         help="HDF5 browser + questionnaire + rollouts",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help=(
+            "Development only: enable the Werkzeug reloader and debugger. The debugger's "
+            "console executes arbitrary Python on request — never use it on a shared machine."
+        ),
+    )
     args = parser.parse_args()
 
     return run_server(
@@ -837,6 +850,7 @@ def main() -> int:
         port=args.port,
         open_browser=not args.no_browser,
         with_rollouts=args.with_rollouts,
+        debug=args.debug,
     )
 
 
