@@ -5,8 +5,20 @@ Backs ``oopsie-data restructure``. HuggingFace Hub enforces a per-directory file
 one MP4 per camera, per episode. ``hf_upload.check_folder_size`` refuses the upload and
 points here.
 
-This is a NON-DESTRUCTIVE operation: files are COPIED to a new output folder and the
-source is never modified. After verifying the output you must delete the original yourself.
+This is a NON-DESTRUCTIVE operation: files are COPIED to a new output folder and the source
+is never modified — not even the HDF5 files, whose stored video paths are rewritten only in
+the copy. After verifying the output you must delete the original yourself.
+
+The output is a complete copy of the source tree in which **every** oversized directory has
+been split: a directory holding 12,000 episodes appears in the output at the same relative
+path but as ``0000/``, ``0500/``, … underneath it, while directories that are already small
+enough are copied through unchanged. Nesting therefore works, including re-running this on
+output it produced.
+
+Detection and repair used to disagree — oversized directories were found recursively but
+only the source *root* was ever split, so a source with episodes at the root and an
+oversized subdirectory would restructure the wrong directory and report success, leaving
+the upload just as blocked. Both halves walk the tree now.
 
 Video paths stored inside the HDF5 files are resolved to absolute paths before copying, so
 relative paths, absolute paths, and paths containing ``..`` all work. Each video is copied
@@ -80,20 +92,47 @@ def write_video_paths(h5_path: Path, new_paths: dict[str, str]) -> None:
             vp.create_dataset(cam, data=rel, dtype=str_dtype)
 
 
-def estimate_bytes(h5_files: list[Path]) -> int:
-    """Total bytes that would be copied (HDF5 files plus referenced videos).
+def dirs_to_split(source: Path) -> tuple[list[Path], list[Path]]:
+    """Split the oversized directories under *source* into fixable and unfixable.
+
+    Batching is keyed on HDF5 files, so an oversized directory holding none of them cannot
+    be split by this command — a videos-only folder, say. Those are returned separately so
+    the caller can say so out loud rather than silently leaving them oversized.
+
+    Returns:
+        ``(splittable, unfixable)``, both sorted.
+    """
+    splittable, unfixable = [], []
+    for directory, _count in sorted(oversized_dirs(source)):
+        (splittable if collect_h5_files(directory) else unfixable).append(directory)
+    return splittable, unfixable
+
+
+def estimate_bytes(source: Path, h5_files: list[Path]) -> int:
+    """Total bytes the output would occupy: the whole source tree, plus any video it
+    references from outside it.
+
+    The output is a full copy of *source*, not just of the episodes being split, so
+    estimating from the HDF5 files alone would badly undercount a tree that also holds
+    directories small enough to pass through untouched.
 
     Each unique absolute path is counted once even if several HDF5 files reference it.
     """
     total = 0
     seen: set[Path] = set()
+
+    for dirpath, _dirnames, filenames in os.walk(source):
+        for name in filenames:
+            p = Path(dirpath) / name
+            if p not in seen and p.is_file():
+                total += p.stat().st_size
+                seen.add(p)
+
+    # Videos can live outside the source tree entirely (stored paths may contain "..").
     for h5 in h5_files:
-        if h5.exists() and h5 not in seen:
-            total += h5.stat().st_size
-            seen.add(h5)
         for stored in read_video_paths(h5).values():
             abs_v = resolve_video_path(stored, h5.parent)
-            if abs_v.exists() and abs_v not in seen:
+            if abs_v not in seen and abs_v.is_file():
                 total += abs_v.stat().st_size
                 seen.add(abs_v)
     return total
@@ -138,7 +177,14 @@ def _unique_video_dest(
     return candidate
 
 
-def restructure(output: Path, h5_files: list[Path]) -> None:
+def restructure(output: Path, h5_files: list[Path]) -> set[Path]:
+    """Batch *h5_files* into numbered subfolders under *output*.
+
+    Returns:
+        The absolute source paths consumed — the HDF5 files and every video they
+        reference. :func:`copy_through` skips these so nothing is copied twice.
+    """
+    consumed: set[Path] = set()
     n = len(h5_files)
     n_batches = (n + BATCH_SIZE - 1) // BATCH_SIZE
     logger.info(
@@ -163,6 +209,7 @@ def restructure(output: Path, h5_files: list[Path]) -> None:
             # Copy the HDF5 first so the destination exists before we patch it.
             h5_dst = sub / h5_src.name
             shutil.copy2(h5_src, h5_dst)
+            consumed.add(h5_src)
 
             # Resolve each video to an absolute path, copy it flat into the subfolder, and
             # record what the new relative path will be.
@@ -180,6 +227,7 @@ def restructure(output: Path, h5_files: list[Path]) -> None:
 
                 dest_name = _unique_video_dest(abs_video, cam, h5_src.stem, used_filenames)
                 shutil.copy2(abs_video, sub / dest_name)
+                consumed.add(abs_video)
                 # Stored relative to the HDF5 location, which is now the same folder.
                 new_rel_paths[cam] = dest_name
 
@@ -189,6 +237,34 @@ def restructure(output: Path, h5_files: list[Path]) -> None:
                 write_video_paths(h5_dst, new_rel_paths)
 
             logger.info("    [%d/%d] %s", i, len(batch), h5_src.name)
+
+    return consumed
+
+
+def copy_through(source: Path, output: Path, consumed: set[Path]) -> int:
+    """Copy every file under *source* that the split did not already place into *output*.
+
+    Preserves each file's path relative to *source*, so directories that were already small
+    enough come through untouched and the output is a complete dataset rather than only the
+    episodes that needed splitting.
+
+    Returns:
+        The number of files copied.
+    """
+    copied = 0
+    for dirpath, dirnames, filenames in os.walk(source):
+        here = Path(dirpath)
+        # Never descend into the output, in case it was placed inside the source.
+        dirnames[:] = [d for d in dirnames if (here / d).resolve() != output]
+        for name in filenames:
+            src = here / name
+            if src in consumed:
+                continue
+            dst = output / src.relative_to(source)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+            copied += 1
+    return copied
 
 
 def run_restructure(source: Path, output: Path | None, assume_yes: bool) -> int:
@@ -219,39 +295,57 @@ def run_restructure(source: Path, output: Path | None, assume_yes: bool) -> int:
     for d, n in over:
         logger.info("          %s  (%d files)", d, n)
 
-    # ── Step 2: collect HDF5 files ────────────────────────────────────────────
-    # Only files directly inside the source root are processed. If the oversized directory
-    # is a subdirectory, run the command against that subdirectory instead.
-    h5_files = collect_h5_files(source)
-    if not h5_files:
+    # ── Step 2: work out which of them we can actually split ──────────────────
+    splittable, unfixable = dirs_to_split(source)
+    if unfixable:
+        logger.warning(
+            "[check] These are oversized but hold no HDF5 files, so they cannot be split\n"
+            "        by episode and are copied through as they are:"
+        )
+        for d in unfixable:
+            logger.warning("          %s", d)
+    if not splittable:
         logger.error(
-            "[check] No HDF5 files found at the root of %s\n"
-            "        If an oversized subdirectory needs restructuring, pass it as --source.",
+            "[check] No oversized directory under %s contains HDF5 files, so there is\n"
+            "        nothing to split. Reorganise these by hand.",
             source,
         )
         return 1
 
-    logger.info("[check] Found %d HDF5 file(s) at root of %s", len(h5_files), source)
+    h5_by_dir = {d: collect_h5_files(d) for d in splittable}
+    all_h5 = [h5 for files in h5_by_dir.values() for h5 in files]
+    for d, files in h5_by_dir.items():
+        logger.info("[check] %d HDF5 file(s) to split in %s", len(files), d)
+
+    if output == source or source in output.parents:
+        logger.error(
+            "Output must not be inside the source (%s is under %s); "
+            "pick a destination outside it.",
+            output, source,
+        )
+        return 1
 
     # ── Step 3: estimate copy size ────────────────────────────────────────────
     logger.info(
         "\n[size]  Estimating copy size "
         "(resolving video paths from all HDF5 files — may take a moment) ..."
     )
-    total_bytes = estimate_bytes(h5_files)
+    total_bytes = estimate_bytes(source, all_h5)
     logger.info("[size]  Estimated copy size: %.2f GB", total_bytes / 1e9)
 
     # ── Step 4: explicit consent ──────────────────────────────────────────────
-    n_batches = (len(h5_files) + BATCH_SIZE - 1) // BATCH_SIZE
+    n_batches = sum((len(f) + BATCH_SIZE - 1) // BATCH_SIZE for f in h5_by_dir.values())
     logger.info("\n" + "=" * 60)
     logger.info("  ACTION REQUIRED — please read carefully before proceeding")
     logger.info("=" * 60)
     logger.info(
         "\nThis will CREATE a new folder:\n"
         "  %s\n"
-        "\nIt will contain %d subfolder(s) named by starting HDF5 index\n"
-        "(e.g. 000/, 500/, 1000/, …), each holding up to %d HDF5 files\n"
-        "and the video files they reference.\n"
+        "\nIt will hold a complete copy of the source tree. Each of the %d\n"
+        "oversized director(ies) above is replaced by %d subfolder(s) in total,\n"
+        "named by starting HDF5 index (e.g. 000/, 500/, 1000/, …), each holding\n"
+        "up to %d HDF5 files and the video files they reference. Directories\n"
+        "already under the limit are copied through unchanged.\n"
         "\nVideo paths stored inside each HDF5 file will be rewritten to\n"
         "point to the copied video location.\n"
         "\nEstimated disk space needed:  %.2f GB\n"
@@ -260,7 +354,7 @@ def run_restructure(source: Path, output: Path | None, assume_yes: bool) -> int:
         "MANUALLY DELETE the original source to reclaim space:\n"
         "  %s\n"
         "  (approx. %.2f GB to free)",
-        output, n_batches, BATCH_SIZE,
+        output, len(splittable), n_batches, BATCH_SIZE,
         total_bytes / 1e9,
         source, total_bytes / 1e9,
     )
@@ -283,9 +377,17 @@ def run_restructure(source: Path, output: Path | None, assume_yes: bool) -> int:
             logger.info("\nAborted. No files were written.")
             return 0
 
-    # ── Step 5: restructure ───────────────────────────────────────────────────
+    # ── Step 5: split each oversized directory, then copy the rest through ────
     output.mkdir(parents=True, exist_ok=True)
-    restructure(output, h5_files)
+    consumed: set[Path] = set()
+    for directory, files in h5_by_dir.items():
+        # Each split lands at the directory's own position in the output tree, so the
+        # result mirrors the source rather than flattening it.
+        logger.info("\n[restructure] %s", directory)
+        consumed |= restructure(output / directory.relative_to(source), files)
+
+    copied = copy_through(source, output, consumed)
+    logger.info("\n[copy]  %d file(s) copied through unchanged.", copied)
 
     logger.info("\n" + "=" * 60)
     logger.info("  Done!")

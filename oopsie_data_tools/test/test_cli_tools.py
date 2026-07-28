@@ -147,6 +147,104 @@ def test_restructure_copies_a_shared_video_once(tmp_path, monkeypatch):
         assert (h5_path.parent / rel).is_file(), "every rewritten path must resolve"
 
 
+def test_restructure_splits_a_nested_oversized_directory(tmp_path, monkeypatch, info_log):
+    """Detection is recursive, so repair must be too.
+
+    This used to detect the nested directory, restructure the *root* instead, and report
+    success — leaving the upload just as blocked as before.
+    """
+    # Limit 2 puts the root exactly at the limit (one .h5 + one .mp4) while the nested
+    # directory is over it. This is the shape that used to misfire: the old code saw an
+    # oversized directory, then acted on the root because that is where it looked for
+    # episodes.
+    monkeypatch.setattr(restructure, "FILE_LIMIT", 2)
+    source = tmp_path / "session"
+    nested = source / "day_two"
+    nested.mkdir(parents=True)
+    write_valid_episode(source, "ep_root")
+    write_valid_episode(nested, "ep_nested_a")
+    write_valid_episode(nested, "ep_nested_b")
+    output = tmp_path / "out"
+
+    assert restructure.oversized_dirs(source) == [(nested, 4)], "only the nested dir is over"
+
+    assert main(
+        ["restructure", "--source", str(source), "--output", str(output), "--yes"]
+    ) == 0
+
+    # The nested directory keeps its position in the tree and gains numbered subfolders.
+    nested_out = output / "day_two"
+    assert nested_out.is_dir()
+    assert sorted(p.name for p in nested_out.rglob("*.h5")) == [
+        "ep_nested_a.h5",
+        "ep_nested_b.h5",
+    ]
+    assert [p for p in nested_out.iterdir() if p.is_dir()], "the oversized dir is batched"
+
+    # The root was within the limit, so it is copied through rather than reorganised.
+    assert (output / "ep_root.h5").is_file(), "an in-limit root must not be restructured"
+
+    # Every episode in the output still resolves its own video.
+    for h5_path in output.rglob("*.h5"):
+        with h5py.File(h5_path, "r") as f:
+            stored = f["observations/video_paths/front"][()]
+        rel = stored.decode() if isinstance(stored, bytes) else stored
+        assert (h5_path.parent / rel).is_file(), f"{h5_path} lost its video"
+
+    # Nothing is left behind: the root episode is in the output exactly once.
+    assert len(list(output.rglob("ep_root.h5"))) == 1
+
+
+def test_restructure_copies_untouched_directories_through(tmp_path, monkeypatch):
+    """The output is a full copy, not just the episodes that needed splitting."""
+    monkeypatch.setattr(restructure, "FILE_LIMIT", 2)
+    source = tmp_path / "session"
+    big = source / "big"
+    big.mkdir(parents=True)
+    write_valid_episode(big, "ep_a")
+    write_valid_episode(big, "ep_b")  # 4 files > limit of 2
+    small = source / "small"
+    small.mkdir()
+    write_valid_episode(small, "ep_small")
+    (source / "NOTES.md").write_text("keep me", encoding="utf-8")
+    output = tmp_path / "out"
+
+    assert main(
+        ["restructure", "--source", str(source), "--output", str(output), "--yes"]
+    ) == 0
+
+    assert (output / "NOTES.md").read_text(encoding="utf-8") == "keep me"
+    assert (output / "small" / "ep_small.h5").is_file(), "small dirs pass through as-is"
+    assert (output / "small" / "ep_small_front.mp4").is_file()
+    assert not list((output / "small").glob("0*")), "an in-limit dir must not be batched"
+    assert list((output / "big").glob("*/ep_a.h5")), "the oversized dir is batched"
+
+
+def test_restructure_refuses_an_output_inside_the_source(tmp_path, monkeypatch, caplog):
+    """Otherwise the pass-through copy would walk into its own output."""
+    monkeypatch.setattr(restructure, "FILE_LIMIT", 1)
+    source = tmp_path / "session"
+    source.mkdir()
+    write_valid_episode(source, "ep_a")
+
+    assert main(
+        ["restructure", "--source", str(source), "--output", str(source / "out"), "--yes"]
+    ) == 1
+    assert "must not be inside the source" in caplog.text
+
+
+def test_restructure_reports_an_oversized_dir_it_cannot_split(tmp_path, monkeypatch, caplog):
+    """A videos-only folder cannot be batched by episode; say so rather than claiming success."""
+    monkeypatch.setattr(restructure, "FILE_LIMIT", 1)
+    source = tmp_path / "session"
+    source.mkdir()
+    for i in range(3):
+        (source / f"clip{i}.mp4").write_bytes(b"x")
+
+    assert main(["restructure", "--source", str(source), "--yes"]) == 1
+    assert "nothing to split" in caplog.text
+
+
 def test_restructure_rejects_a_source_that_is_not_a_directory(tmp_path, caplog):
     episode = write_valid_episode(tmp_path, "ep_a")
     assert main(["restructure", "--source", str(episode), "--yes"]) == 1

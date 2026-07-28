@@ -31,8 +31,9 @@ at `init`. `new-profile` writes a robot-profile skeleton you fill in; it will no
 you do. `annotate` asks for your annotator name if `--annotator-name` is not passed.
 `inspect` is a plain structure dump, so it also works on a file `validate` rejects.
 `restructure` is only needed if `upload` stops you: HuggingFace enforces a per-directory
-file limit, and it copies your session into numbered subfolders that stay under it, never
-modifying the original.
+file limit, and it writes a copy of your session in which every directory over that limit
+has been split into numbered subfolders. Directories already under it are copied through
+unchanged, and the original is never modified.
 
 Credentials and robot profiles are looked up separately, so the tool also works when
 installed outside a checkout of this repository.
