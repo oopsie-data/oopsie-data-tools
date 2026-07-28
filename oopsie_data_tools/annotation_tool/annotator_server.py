@@ -110,9 +110,14 @@ class Runtime:
             self.task_state["status"] = "idle"
             self.task_state["current_sample"] = None
 
-    def save_annotation(
-        self, sample_id: str, payload: dict[str, Any]
-    ) -> dict[str, Any]:
+    def stamp_annotation(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Attach annotator, timestamp and schema to a questionnaire payload.
+
+        Split out from :meth:`save_annotation` because the two annotation routes persist
+        very differently: the rollout route parks the result in memory for the rollout loop
+        to collect, while the HDF5 browser writes straight into the file and needs no
+        in-memory entry at all.
+        """
         reserved = {"annotated_at", "annotator", "source", "schema", "__annotation_skipped__"}
         annotation = {k: v for k, v in payload.items() if k not in reserved}
         annotation.update(
@@ -123,6 +128,11 @@ class Runtime:
                 "schema": "oopsie_failure_taxonomy_v1",
             }
         )
+        return annotation
+
+    def save_annotation(self, sample_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Stamp an annotation and hold it for the rollout loop polling ``sample_id``."""
+        annotation = self.stamp_annotation(payload)
         with self._lock:
             self.annotations[sample_id] = annotation
         return annotation
@@ -240,15 +250,6 @@ def api_save_annotation_json() -> Any:
     return jsonify({"status": "saved", "annotation": ann})
 
 
-@app.post("/api/annotations/<sample_id>")
-def api_save_annotation(sample_id: str):
-    payload = _json_payload()
-    if not isinstance(payload, dict):
-        return jsonify({"error": "invalid JSON body"}), 400
-    ann = _get_runtime().save_annotation(sample_id, payload)
-    return jsonify({"status": "saved", "annotation": ann})
-
-
 @app.get("/videos-path/<path:video_path>")
 def serve_video_by_path(video_path: str):
     rt = _get_runtime()
@@ -263,11 +264,6 @@ def serve_video_by_path(video_path: str):
     if target_path.suffix.lower() == ".mp4":
         return send_file(target_path, mimetype="video/mp4")
     return send_file(target_path)
-
-
-def _video_url_for_path(samples_dir: Path, abs_path: Path) -> str:
-    rel = abs_path.resolve().relative_to(samples_dir.resolve()).as_posix()
-    return f"/videos-path/{quote(rel, safe='/')}"
 
 
 def _relative_to_samples_dir(samples_root: Path, path: Path) -> str | None:
@@ -728,7 +724,10 @@ def api_h5_save_annotation():
     if not isinstance(payload, dict):
         return jsonify({"error": "invalid JSON body"}), 400
 
-    ann = rt.save_annotation(sample_id=str(h5_path), payload=payload)
+    # Stamp only. The annotation's home is the HDF5 file written below; keying the
+    # in-memory rollout dict by an absolute path would put two unrelated kinds of key
+    # into it for no reader.
+    ann = rt.stamp_annotation(payload)
 
     try:
         with h5py.File(h5_path, "r+") as f:

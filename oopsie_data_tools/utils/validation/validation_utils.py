@@ -23,7 +23,6 @@ def validate_h5_file(
     h5_path: str,
     strict_annotation_check: bool = False,
     log_path: str | Path | None = None,
-    expected_lab_id: str | None = None,
 ) -> bool:
     """Validate a single HDF5 episode file.
 
@@ -31,7 +30,6 @@ def validate_h5_file(
         h5_path: Path to the .h5 file.
         strict_annotation_check: If True, require that annotations are present and non-empty.
         log_path: Optional file to also write log output to (mirrors ``validate_session_dir``).
-        expected_lab_id: If set, require that the file's lab_id matches this value.
 
     Returns:
         True if all checks pass.
@@ -42,11 +40,7 @@ def validate_h5_file(
     if log_path is not None:
         setup_logger(__name__, log_path)
     data = load_episode_from_h5(h5_path)
-    validate_episode(
-        data,
-        strict_annotation_check=strict_annotation_check,
-        expected_lab_id=expected_lab_id,
-    )
+    validate_episode(data, strict_annotation_check=strict_annotation_check)
     return True
 
 
@@ -54,7 +48,6 @@ def validate_session_dir(
     session_dir: str,
     strict_annotation_check: bool = False,
     log_path: str | Path | None = None,
-    expected_lab_id: str | None = None,
 ) -> int:
     """Validate every ``*.h5`` / ``*.hdf5`` file in a session directory.
 
@@ -86,11 +79,7 @@ def validate_session_dir(
         name = os.path.basename(path)
         logger.info("[%d/%d] %s", i, len(h5_files), name)
         try:
-            validate_h5_file(
-                path,
-                strict_annotation_check=strict_annotation_check,
-                expected_lab_id=expected_lab_id,
-            )
+            validate_h5_file(path, strict_annotation_check=strict_annotation_check)
             logger.info("%s passed", name)
         except AssertionError as e:
             failures += 1

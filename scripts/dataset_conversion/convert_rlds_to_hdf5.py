@@ -270,7 +270,6 @@ def _write_episode_h5(
     policy_id: str,
     robot_id: str,
     control_freq: str,
-    compression_level: int,
     store_episode_annotations: bool,
 ) -> None:
     str_dtype = h5py.string_dtype(encoding="utf-8")
@@ -331,7 +330,6 @@ def convert_rlds_to_hdf5(
     policy_id: str,
     robot_id: str,
     control_freq: str,
-    compression_level: int,
     store_episode_annotations: bool,
     overwrite: bool,
 ) -> None:
@@ -369,7 +367,6 @@ def convert_rlds_to_hdf5(
             policy_id=policy_id,
             robot_id=robot_id,
             control_freq=control_freq,
-            compression_level=compression_level,
             store_episode_annotations=store_episode_annotations,
         )
         written += 1
@@ -432,12 +429,6 @@ def _parse_args() -> argparse.Namespace:
         help="Value for episode_annotations/control_freq.",
     )
     parser.add_argument(
-        "--compression-level",
-        type=int,
-        default=4,
-        help="gzip compression level for image datasets (0-9).",
-    )
-    parser.add_argument(
         "--no-store-episode-annotations",
         dest="store_episode_annotations",
         action="store_false",
@@ -454,8 +445,6 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = _parse_args()
-    if not (0 <= args.compression_level <= 9):
-        raise ValueError("--compression-level must be in [0, 9].")
 
     convert_rlds_to_hdf5(
         rlds_version_dir=args.rlds_version_dir,
@@ -467,7 +456,6 @@ def main() -> None:
         policy_id=args.policy_id,
         robot_id=args.robot_id,
         control_freq=args.control_freq,
-        compression_level=args.compression_level,
         store_episode_annotations=args.store_episode_annotations,
         overwrite=args.overwrite,
     )

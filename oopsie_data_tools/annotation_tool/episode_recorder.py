@@ -239,10 +239,9 @@ class EpisodeRecorder:
         if len(self.timesteps) == 0:
             raise ValueError("No steps recorded. Call record_step() first.")
 
-        # # TODO: Check if this function is needed
-        # normalized_metadata = self._normalize_metadata(md_in)
-
-        # TODO: Check if this function is needed (most likely it is needed)
+        # Converts the absolute paths finish_rollout() hands over into paths relative to
+        # the episode file, which is what the HDF5 stores. Batch 4 folds this together with
+        # _save_videos so there is one writer.
         data["video_paths"] = self._resolve_video_paths(
             output_dir=self.session_dir,
             provided_video_paths=data.get("video_paths", {}),
@@ -476,86 +475,6 @@ class EpisodeRecorder:
                         dtype=np.float64,
                     )
 
-    def _normalize_metadata(self, metadata: dict[str, Any] | None) -> dict[str, Any]:
-        """Validate and normalize user-provided metadata.
-
-        Args:
-            metadata (dict[str, Any] | None): Raw metadata dictionary or
-                ``None``.
-
-        Returns:
-            dict[str, Any]: Normalized metadata containing allowed top-level
-                keys only.
-
-        Raises:
-            TypeError: If metadata or nested fields have invalid types.
-            ValueError: If unsupported metadata keys are present.
-        """
-        if metadata is None:
-            metadata = {}
-        if not isinstance(metadata, dict):
-            raise TypeError("metadata must be a dict")
-
-        allowed_metadata_keys = {
-            "language_instruction",
-            "episode_annotations",
-            "video_paths",
-        }
-        unknown_metadata_keys = set(metadata.keys()) - allowed_metadata_keys
-        if unknown_metadata_keys:
-            raise ValueError(
-                "Unsupported metadata keys: "
-                + ", ".join(sorted(unknown_metadata_keys))
-                + ". Allowed keys: language_instruction, episode_annotations, video_paths"
-            )
-
-        episode_annotations = metadata.get("episode_annotations", {})
-        if episode_annotations is None:
-            episode_annotations = {}
-        if not isinstance(episode_annotations, dict):
-            raise TypeError(
-                "metadata['episode_annotations'] must be a dict when provided"
-            )
-
-        allowed_annotation_keys = {
-            "episode_id",
-            "lab_id",
-            "operator_name",
-            "annotator_name",
-            "success",
-            "failure_annotation",
-        }
-        unknown_annotation_keys = (
-            set(episode_annotations.keys()) - allowed_annotation_keys
-        )
-        if unknown_annotation_keys:
-            raise ValueError(
-                "Unsupported episode_annotations keys: "
-                + ", ".join(sorted(unknown_annotation_keys))
-                + ". Allowed keys: "
-                + ", ".join(sorted(allowed_annotation_keys))
-            )
-
-        failure_annotation = episode_annotations.get("failure_annotation")
-        if failure_annotation is not None and not isinstance(
-            failure_annotation, (dict, str)
-        ):
-            raise TypeError(
-                "metadata['episode_annotations']['failure_annotation'] must be a dict or str"
-            )
-
-        video_paths = metadata.get("video_paths", {})
-        if video_paths is None:
-            video_paths = {}
-        if not isinstance(video_paths, dict):
-            raise TypeError("metadata['video_paths'] must be a dict when provided")
-
-        return {
-            "language_instruction": str(metadata.get("language_instruction", "")),
-            "episode_annotations": dict(episode_annotations),
-            "video_paths": dict(video_paths),
-        }
-
     def _resolve_video_paths(
         self,
         output_dir: Path,
@@ -679,65 +598,3 @@ class EpisodeRecorder:
             int: Number of timesteps currently buffered.
         """
         return len(self.timesteps)
-
-
-class InteractiveAnnotator:
-    """Command-line helper that prompts users for episode annotations."""
-
-    def prompt(self, language_instruction: str = "") -> dict[str, Any]:
-        """Prompt for annotation fields and return recorder-ready metadata.
-
-        Args:
-            language_instruction (str): Optional pre-filled instruction string.
-
-        Returns:
-            dict[str, Any]: Metadata dictionary compatible with
-                ``EpisodeRecorder.save``.
-        """
-        print("\n" + "=" * 50)
-        print("Episode Annotation")
-        print("=" * 50)
-
-        # Language instruction
-        if language_instruction:
-            print(f"\nInstruction: {language_instruction}")
-            edit = input("Edit instruction? [y/N]: ").strip().lower()
-            if edit == "y":
-                language_instruction = input("New instruction: ").strip()
-        else:
-            language_instruction = input("Language instruction: ").strip()
-
-        # Success
-        while True:
-            success_input = input("\nSuccess score (0.0-1.0): ").strip()
-            try:
-                success = float(success_input)
-                if 0.0 <= success <= 1.0:
-                    break
-                print("Please enter a value between 0.0 and 1.0")
-            except ValueError:
-                print("Please enter a valid number")
-
-        # Questionnaire reply payload
-        print(
-            "\nQuestionnaire response (describe what happened, press Enter twice to finish):"
-        )
-        lines = []
-        while True:
-            line = input()
-            if line == "":
-                break
-            lines.append(line)
-        question = "\n".join(lines)
-
-        print("=" * 50 + "\n")
-
-        return {
-            "language_instruction": language_instruction,
-            "episode_annotations": {
-                "success": success,
-                "failure_annotation": {
-                    "question": question,
-                },
-            },
-        }

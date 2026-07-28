@@ -33,11 +33,11 @@ class EpisodeData:
     """Normalized episode data, independent of source schema.
 
     Populated by episode_loader (from HDF5) or constructed directly by the
-    recorder for pre-save validation.  robot_profile is None for legacy schemas
-    that do not embed a profile JSON.
+    recorder for pre-save validation. Both always supply a robot profile:
+    episode_loader rejects any schema that does not embed one.
     """
 
-    robot_profile: Optional[RobotProfile]
+    robot_profile: RobotProfile
     language_instruction: str
     episode_id: str
     lab_id: str
