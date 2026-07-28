@@ -15,6 +15,7 @@ from pathlib import Path
 from oopsie_data_tools.utils.log import setup_logger
 from oopsie_data_tools.utils.validation.episode_loader import load_episode_from_h5
 from oopsie_data_tools.utils.validation.episode_validator import validate_episode
+from oopsie_data_tools.utils.validation.errors import EpisodeValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,8 @@ def validate_h5_file(
         True if all checks pass.
 
     Raises:
-        AssertionError: On the first validation failure.
+        EpisodeValidationError: On the first validation failure. It subclasses
+            ``AssertionError``, so ``except AssertionError`` still catches it.
     """
     if log_path is not None:
         setup_logger(__name__, log_path)
@@ -81,10 +83,12 @@ def validate_session_dir(
         try:
             validate_h5_file(path, strict_annotation_check=strict_annotation_check)
             logger.info("%s passed", name)
-        except AssertionError as e:
+        except EpisodeValidationError as e:
             failures += 1
             logger.error("%s failed: %s", name, e)
         except Exception as e:
+            # Anything else is a bug in the validator rather than a bad episode, so it is
+            # reported differently on purpose.
             failures += 1
             logger.error("%s unexpected error: %s", name, e)
 

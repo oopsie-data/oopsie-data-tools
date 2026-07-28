@@ -19,6 +19,7 @@ import numpy as np
 
 from oopsie_data_tools.utils.robot_profile.robot_profile import robot_profile_from_json
 from oopsie_data_tools.utils.validation.episode_data import EpisodeData, VideoInfo
+from oopsie_data_tools.utils.validation.errors import EpisodeValidationError
 
 OOPSIE_DATA_SCHEMA_V1 = "oopsiedata_format_v1"
 
@@ -33,6 +34,7 @@ _OOPSIE_V1_REQUIRED_ROOT_ATTRS = (
 
 
 # ── HDF5 scalar helpers ────────────────────────────────────────────────────────
+
 
 def _decode_h5_scalar(value: Any) -> str:
     if value is None:
@@ -54,71 +56,85 @@ def _read_string_dataset(ds: h5py.Dataset) -> str:
 
 # ── Video loading ──────────────────────────────────────────────────────────────
 
+
 def load_video_info(mp4_path: str) -> VideoInfo:
-    """Open an MP4 and extract frame metadata. Raises AssertionError on any failure."""
-    assert os.path.exists(mp4_path), f"Video file does not exist: {mp4_path}"
-    assert os.path.isfile(mp4_path), f"Video path is not a file: {mp4_path}"
+    """Open an MP4 and extract frame metadata. Raises EpisodeValidationError on any failure."""
+    if not os.path.exists(mp4_path):
+        raise EpisodeValidationError(f"Video file does not exist: {mp4_path}")
+    if not os.path.isfile(mp4_path):
+        raise EpisodeValidationError(f"Video path is not a file: {mp4_path}")
 
     cap = cv2.VideoCapture(mp4_path)
     try:
-        assert cap.isOpened(), f"Could not open video: {mp4_path}"
+        if not cap.isOpened():
+            raise EpisodeValidationError(f"Could not open video: {mp4_path}")
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = cap.get(cv2.CAP_PROP_FPS)
         frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        assert width > 0 and height > 0, (
-            f"Invalid dimensions ({width}x{height}): {mp4_path}"
-        )
-        assert fps > 0, f"Invalid FPS ({fps}): {mp4_path}"
-        assert frame_count > 0, f"Invalid frame count ({frame_count}): {mp4_path}"
+        if not (width > 0 and height > 0):
+            raise EpisodeValidationError(f"Invalid dimensions ({width}x{height}): {mp4_path}")
+        if not (fps > 0):
+            raise EpisodeValidationError(f"Invalid FPS ({fps}): {mp4_path}")
+        if not (frame_count > 0):
+            raise EpisodeValidationError(f"Invalid frame count ({frame_count}): {mp4_path}")
         return VideoInfo(frame_count=frame_count, fps=fps, width=width, height=height)
     finally:
         cap.release()
 
 
 def _resolve_video_path(rel: str, h5_dir: str, label: str) -> str:
-    assert rel, f"Empty video path for {label}"
+    if not rel:
+        raise EpisodeValidationError(f"Empty video path for {label}")
     return os.path.normpath(os.path.join(h5_dir, rel))
 
 
 # ── Schema-specific loaders ────────────────────────────────────────────────────
 
+
 def _load_oopsie_v1(f: h5py.File, h5_dir: str) -> EpisodeData:
     for attr in _OOPSIE_V1_REQUIRED_ROOT_ATTRS:
-        assert attr in f.attrs, f"Missing root attr: {attr}"
+        if attr not in f.attrs:
+            raise EpisodeValidationError(f"Missing root attr: {attr}")
 
     try:
         profile = robot_profile_from_json(_decode_h5_scalar(f.attrs["robot_profile"]))
     except ValueError as e:
-        raise AssertionError(f"Invalid robot_profile JSON: {e}") from e
+        raise EpisodeValidationError(f"Invalid robot_profile JSON: {e}") from e
 
-    assert "observations" in f, "Missing group: observations"
-    assert "robot_states" in f["observations"], "Missing group: observations/robot_states"
-    assert "actions" in f, "Missing group: actions"
+    if "observations" not in f:
+        raise EpisodeValidationError("Missing group: observations")
+    if "robot_states" not in f["observations"]:
+        raise EpisodeValidationError("Missing group: observations/robot_states")
+    if "actions" not in f:
+        raise EpisodeValidationError("Missing group: actions")
 
     rs = f["observations/robot_states"]
     for key in profile.robot_state_keys:
-        assert key in rs, f"Missing observations/robot_states/{key}"
+        if key not in rs:
+            raise EpisodeValidationError(f"Missing observations/robot_states/{key}")
     observations = {k: rs[k][()] for k in rs.keys()}
 
     action_group = f["actions"]
     for key in profile.action_space:
-        assert key in action_group, f"Missing actions/{key}"
+        if key not in action_group:
+            raise EpisodeValidationError(f"Missing actions/{key}")
         ds = action_group[key]
-        assert ds.shape is not None, (
-            f"actions/{key} is in profile.action_space but stored as h5py.Empty"
-        )
+        if ds.shape is None:
+            raise EpisodeValidationError(
+                f"actions/{key} is in profile.action_space but stored as h5py.Empty"
+            )
     # Load only non-empty action datasets.
     actions: dict[str, np.ndarray] = {
-        k: action_group[k][()]
-        for k in action_group.keys()
-        if action_group[k].shape is not None
+        k: action_group[k][()] for k in action_group.keys() if action_group[k].shape is not None
     }
 
-    assert "video_paths" in f["observations"], "Missing group: observations/video_paths"
+    if "video_paths" not in f["observations"]:
+        raise EpisodeValidationError("Missing group: observations/video_paths")
     vp_group = f["observations/video_paths"]
     for cam in profile.camera_names:
-        assert cam in vp_group, f"Missing observations/video_paths/{cam}"
+        if cam not in vp_group:
+            raise EpisodeValidationError(f"Missing observations/video_paths/{cam}")
     videos: dict[str, VideoInfo] = {}
     for cam in vp_group.keys():
         rel = _read_string_dataset(vp_group[cam])
@@ -148,20 +164,22 @@ def _load_annotations_oopsie_v1(f: h5py.File) -> dict[str, dict[str, Any]] | Non
     if "episode_annotations" not in f:
         return None
     ea = f["episode_annotations"]
-    # Everything in this layer reports failure as AssertionError. A file storing
+    # Everything in this layer reports failure as EpisodeValidationError. A file storing
     # episode_annotations as a dataset used to reach .keys() and raise AttributeError,
     # which escapes that contract and surfaces as an "unexpected error" with no
     # indication of what is actually wrong with the file.
-    assert isinstance(ea, h5py.Group), (
-        "episode_annotations must be a group of per-annotator subgroups, got "
-        f"{type(ea).__name__}"
-    )
+    if not isinstance(ea, h5py.Group):
+        raise EpisodeValidationError(
+            "episode_annotations must be a group of per-annotator subgroups, got "
+            f"{type(ea).__name__}"
+        )
     annotations: dict[str, dict[str, Any]] = {}
     for annotator in ea.keys():
         subgroup = ea[annotator]
-        assert isinstance(subgroup, h5py.Group), (
-            f"episode_annotations/{annotator} must be a group, got {type(subgroup).__name__}"
-        )
+        if not isinstance(subgroup, h5py.Group):
+            raise EpisodeValidationError(
+                f"episode_annotations/{annotator} must be a group, got {type(subgroup).__name__}"
+            )
         annotations[annotator] = {k: subgroup.attrs[k] for k in subgroup.attrs}
     return annotations
 
@@ -169,17 +187,19 @@ def _load_annotations_oopsie_v1(f: h5py.File) -> dict[str, dict[str, Any]] | Non
 def load_episode_from_h5(h5_path: str) -> EpisodeData:
     """Load an episode HDF5 file into a schema-agnostic EpisodeData.
 
-    Raises AssertionError with a descriptive message if the file is unreadable,
+    Raises EpisodeValidationError with a descriptive message if the file is unreadable,
     structurally invalid, or references missing/corrupt video files.
     """
     resolved = os.path.abspath(os.path.normpath(h5_path))
-    assert os.path.exists(resolved), f"H5 file does not exist: {resolved}"
-    assert os.path.isfile(resolved), f"H5 path is not a file: {resolved}"
+    if not os.path.exists(resolved):
+        raise EpisodeValidationError(f"H5 file does not exist: {resolved}")
+    if not os.path.isfile(resolved):
+        raise EpisodeValidationError(f"H5 path is not a file: {resolved}")
 
     try:
         f = h5py.File(resolved, "r")
     except Exception as e:
-        raise AssertionError(f"H5 file is not readable: {resolved}. Error: {e}") from e
+        raise EpisodeValidationError(f"H5 file is not readable: {resolved}. Error: {e}") from e
 
     h5_dir = os.path.dirname(resolved)
     try:
@@ -187,7 +207,7 @@ def load_episode_from_h5(h5_path: str) -> EpisodeData:
         if schema == OOPSIE_DATA_SCHEMA_V1:
             return _load_oopsie_v1(f, h5_dir)
         else:
-            raise AssertionError(
+            raise EpisodeValidationError(
                 f"Unsupported or missing schema: '{schema}' in file: {resolved}"
             )
     finally:

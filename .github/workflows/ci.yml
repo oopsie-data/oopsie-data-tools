@@ -42,6 +42,20 @@ jobs:
       - run: uv sync --python ${{ matrix.python }}
       - run: uv run --python ${{ matrix.python }} pytest -q
 
+  # `python -O` strips assert statements. Validation used to be built entirely out of
+  # them, so the schema check silently evaporated under an optimised interpreter — for the
+  # gate in front of a public dataset. It raises EpisodeValidationError now; this keeps it
+  # that way. The -W filter silences pytest's own notice that it cannot rewrite assertions.
+  optimised-interpreter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync
+      - run: uv run python -O -m pytest -q -W ignore::pytest.PytestConfigWarning
+
   # Ruff's target-version only tunes autofixes; it does not reject newer syntax, and it
   # cannot see runtime-only breakage at all (a PEP 604 annotation resolved by
   # typing.get_type_hints, a 3.9+ stdlib call). Importing every module on the floor
