@@ -28,8 +28,8 @@ _VALIDATE_DIR = Path(__file__).resolve().parents[2] / "scripts" / "validate_and_
 sys.path.insert(0, str(_VALIDATE_DIR))
 
 from validate import validate_h5_file, validate_session_dir  # noqa: E402
-from oopsie_data_tools.test.fixtures.make_valid import write_valid_episode  # noqa: E402
 
+from oopsie_data_tools.test.fixtures.make_valid import write_valid_episode  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Happy path

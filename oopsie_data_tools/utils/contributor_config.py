@@ -41,7 +41,7 @@ def read_contributor_config(config_path: Path | str | None = None) -> tuple[str,
     try:
         config = yaml.safe_load(path.read_text(encoding="utf-8"))
     except yaml.YAMLError as e:
-        raise RuntimeError(f"Could not parse {path}: {e}\n{_REGISTER_HINT}")
+        raise RuntimeError(f"Could not parse {path}: {e}\n{_REGISTER_HINT}") from e
     if not isinstance(config, dict):
         config = {}
 

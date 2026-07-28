@@ -27,7 +27,6 @@ from validate import validate_session_dir  # noqa: E402
 from oopsie_data_tools.annotation_tool.episode_recorder import EpisodeRecorder
 from oopsie_data_tools.utils.robot_profile.robot_profile import RobotProfile
 
-
 # ── Robot configuration ───────────────────────────────────────────────────────
 
 PROFILE = RobotProfile(

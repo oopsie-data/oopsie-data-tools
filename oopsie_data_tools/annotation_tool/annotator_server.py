@@ -29,7 +29,6 @@ from typing import Any
 from urllib.parse import quote, unquote
 
 import h5py
-import numpy as np
 import yaml
 from flask import Flask, abort, jsonify, request, send_file
 
@@ -344,8 +343,8 @@ def _safe_h5_path_from_query(samples_root: Path) -> Path:
     target = (samples_root.resolve() / rel).resolve()
     try:
         target.relative_to(samples_root.resolve())
-    except ValueError:
-        raise H5PathError("path escapes samples directory", 403)
+    except ValueError as e:
+        raise H5PathError("path escapes samples directory", 403) from e
     if target.suffix.lower() != ".h5":
         raise H5PathError("path must refer to an .h5 file", 400)
     if not target.exists() or not target.is_file():

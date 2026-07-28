@@ -135,7 +135,7 @@ def _unique_video_dest(
 ) -> str:
     """Return a filename (no directory) for *abs_video* that is unique in *used*."""
     basename = abs_video.name
-    
+
     fallback = f"{h5_stem}_{cam}{abs_video.suffix}"
     used[fallback] = abs_video
     return fallback

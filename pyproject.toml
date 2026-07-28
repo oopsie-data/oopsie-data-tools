@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "oopsie-data-tools"
 version = "0.2.0"
-description = "Add your description here"
+description = "Collect, annotate, validate and upload robotic manipulation rollout data."
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
@@ -16,10 +16,16 @@ dependencies = [
     "imageio-ffmpeg>=0.5.1",
     "numpy>=1.20.0",
     "opencv-python>=4.11.0.86",
-    "pytest>=8.3.5",
     "pyyaml>=6.0.0",
     "scipy>=1.10.1",
     "moviepy>=1.0.3,<2.0",
+]
+
+# Installed by a bare `uv sync`; not shipped to users of the published wheel.
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+    "ruff>=0.6",
 ]
 
 [project.scripts]
@@ -60,4 +66,33 @@ conflicts = [
         { extra = "tfds" },
         { extra = "droid" },
     ],
+]
+
+[tool.ruff]
+target-version = "py38"
+line-length = 100
+
+[tool.ruff.lint]
+# E501 (line length) is deliberately out: the existing wrapping is close enough that
+# enforcing it would bury the real findings under hundreds of reflow diffs.
+select = ["E4", "E7", "E9", "F", "W", "I", "B", "FA"]
+
+[tool.ruff.lint.per-file-ignores]
+# Each exemption below is temporary and names the batch that removes it. Do not add to
+# this list without the same treatment, and never re-introduce a blanket `# ruff: noqa`.
+# Batch 7 (scripts consolidation):
+"scripts/dataset_conversion/*" = ["F841"]
+"scripts/inspect_h5.py" = ["F841"]
+"scripts/validate_and_upload/restructure_large_folder.py" = ["F841"]
+# Batch 8 (examples repair) — F821 is a genuine undefined name in run_policy_browser.py:
+"examples/*" = ["E711", "E722", "E731", "F821", "F841"]
+
+[tool.pytest.ini_options]
+testpaths = ["oopsie_data_tools/test"]
+addopts = "--strict-markers --strict-config"
+filterwarnings = [
+    "error",
+    # moviepy 1.x and imageio-ffmpeg emit these on import under Python 3.8.
+    "default::DeprecationWarning",
+    "default::ImportWarning",
 ]

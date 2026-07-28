@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv run ruff check oopsie_data_tools/ scripts/ examples/
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 3.8 is the declared floor (requires-python = ">=3.8") and what .python-version
+          # pins locally. It needs ubuntu-22.04: setup-python cannot install 3.8 on 24.04,
+          # which is what ubuntu-latest now resolves to.
+          - python: "3.8"
+            os: ubuntu-22.04
+          - python: "3.10"
+            os: ubuntu-latest
+          - python: "3.12"
+            os: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --python ${{ matrix.python }}
+      - run: uv run --python ${{ matrix.python }} pytest -q
+
+  # Ruff's target-version only tunes autofixes; it does not reject newer syntax, and it
+  # cannot see runtime-only breakage at all (a PEP 604 annotation resolved by
+  # typing.get_type_hints, a 3.9+ stdlib call). Importing every module on the floor
+  # version is the only check that actually enforces it.
+  import-on-floor:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --python 3.8
+      - name: Import every module under oopsie_data_tools/
+        run: |
+          uv run --python 3.8 python - <<'PY'
+          import importlib, pathlib, sys
+
+          failures = []
+          for path in sorted(pathlib.Path("oopsie_data_tools").rglob("*.py")):
+              if "__pycache__" in path.parts:
+                  continue
+              module = ".".join(path.with_suffix("").parts)
+              if module.endswith(".__init__"):
+                  module = module[: -len(".__init__")]
+              try:
+                  importlib.import_module(module)
+              except Exception as e:
+                  failures.append("{}: {}: {}".format(module, type(e).__name__, e))
+
+          for line in failures:
+              print("FAIL", line)
+          print("{} modules imported, {} failed".format(
+              len(list(pathlib.Path("oopsie_data_tools").rglob("*.py"))), len(failures)))
+          sys.exit(1 if failures else 0)
+          PY

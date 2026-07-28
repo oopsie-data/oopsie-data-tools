@@ -23,9 +23,6 @@ import webbrowser
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-from moviepy.editor import ImageSequenceClip
-
 from oopsie_data_tools.annotation_tool.episode_recorder import EpisodeRecorder
 from oopsie_data_tools.utils.robot_profile.robot_profile import RobotProfile
 
@@ -173,7 +170,7 @@ class WebRolloutAnnotator:
         # IMPORTANT: ensure camera_names is populated so EpisodeRecorder writes
         # `image_observations/<cam>` datasets pointing at MP4 filepaths.
         # This will create an un-submittable file, as the success annotation is not yet
-        # available, but it allows the UI to show the videos immediately without waiting 
+        # available, but it allows the UI to show the videos immediately without waiting
         # for annotation.
         if not getattr(active_recorder, "camera_names", None):
             active_recorder.camera_names = list(video_paths.keys())

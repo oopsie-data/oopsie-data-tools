@@ -33,6 +33,11 @@ ENV_CONFIG_DIR = "OOPSIE_CONFIG_DIR"
 ENV_PROFILES_DIR = "OOPSIE_ROBOT_PROFILES_DIR"
 
 _PACKAGE_ROOT = Path(__file__).resolve().parent.parent
+# Deliberately only the checkout's configs/. Nothing in either lookup chain resolves into
+# an installed package: config that lives in site-packages is read-only, invisible to the
+# user, and would silently shadow their own. Installed users get None here and fall through
+# to a location they control. ``oopsie-data new-profile`` covers the "I have no checkout to
+# copy a template from" case.
 _REPO_CONFIG_DIR = _PACKAGE_ROOT.parent / "configs"
 
 PROFILES_DIR_NAME = "robot_profiles"

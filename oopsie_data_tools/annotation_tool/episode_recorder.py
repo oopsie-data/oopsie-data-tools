@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-import os
+import datetime
 import json
+import os
 from pathlib import Path
 from typing import Any
-from moviepy.editor import ImageSequenceClip
 
 import h5py
 import imageio
 import numpy as np
-import datetime
-import yaml
-from oopsie_data_tools.utils.contributor_config import read_contributor_config
+from moviepy.editor import ImageSequenceClip
+
 from oopsie_data_tools.annotation_tool.annotation_schema import write_annotation_attrs
+from oopsie_data_tools.utils.contributor_config import read_contributor_config
 from oopsie_data_tools.utils.robot_profile.robot_profile import RobotProfile, robot_profile_to_json
 from oopsie_data_tools.utils.robot_profile.rotation_utils import ActionQuatConversion
 from oopsie_data_tools.utils.validation.episode_data import EpisodeData, VideoInfo
@@ -443,7 +443,7 @@ class EpisodeRecorder:
                         start=path.parent.resolve(),
                     )
 
-                dataset = video_paths_group.create_dataset(
+                video_paths_group.create_dataset(
                     cam,
                     data=rel_video_path.replace(os.sep, "/"),
                     dtype=str_dtype,

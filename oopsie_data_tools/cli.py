@@ -4,6 +4,7 @@ Single entry point for the contributor workflow::
 
     oopsie-data init                                 # first-time setup
     oopsie-data show-config                          # where configs are read from
+    oopsie-data new-profile                          # starter robot profile to fill in
     oopsie-data annotate --samples-dir ./samples --annotator-name "your_name"
     oopsie-data validate --path ./samples
     oopsie-data upload   --path ./samples
@@ -169,6 +170,36 @@ def cmd_init(args: argparse.Namespace) -> int:
     )
 
 
+# ── new-profile ───────────────────────────────────────────────────────────────
+
+
+def cmd_new_profile(args: argparse.Namespace) -> int:
+    """Write a starter robot profile next to the user's robot code."""
+    from oopsie_data_tools.utils import paths
+    from oopsie_data_tools.utils.robot_profile.template import PROFILE_TEMPLATE
+
+    target_dir = Path(args.dir) if args.dir is not None else paths.write_profiles_dir()
+    target = target_dir / f"{args.name}.yaml"
+
+    if target.exists() and not args.force:
+        logger.error("%s already exists. Pass --force to overwrite it.", target)
+        return 1
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target.write_text(PROFILE_TEMPLATE, encoding="utf-8")
+
+    logger.info("Wrote %s", target)
+    logger.info(
+        "\nEvery required field is blank, so the profile will not load until you fill it in —\n"
+        "that is deliberate, so a half-edited profile cannot stamp placeholder metadata into\n"
+        "your recorded episodes. Check your work with:\n\n"
+        "    python -c \"from oopsie_data_tools.utils.robot_profile.robot_profile import "
+        'load_robot_profile; load_robot_profile(\'%s\')"',
+        target,
+    )
+    return 0
+
+
 # ── annotate ──────────────────────────────────────────────────────────────────
 
 
@@ -306,7 +337,9 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     sub = parser.add_subparsers(
-        dest="command", required=True, metavar="{init,show-config,annotate,validate,upload}"
+        dest="command",
+        required=True,
+        metavar="{init,show-config,new-profile,annotate,validate,upload}",
     )
 
     # init
@@ -347,6 +380,31 @@ def build_parser() -> argparse.ArgumentParser:
         "--show-token", action="store_true", help="Print the HuggingFace token in full"
     )
     p_config.set_defaults(func=cmd_show_config)
+
+    # new-profile
+    p_new_profile = sub.add_parser(
+        "new-profile",
+        help="Write a starter robot profile you can fill in",
+        description=(
+            "Write a commented robot-profile skeleton into your project, by default "
+            "./robot_profiles/. Profiles belong next to the robot code that loads them, not in "
+            "your user config directory, and are never read out of the installed package. The "
+            "skeleton does not load until you fill in the required fields — that is deliberate."
+        ),
+    )
+    p_new_profile.add_argument(
+        "--name", default="robot_profile", help="File name without .yaml (default: robot_profile)"
+    )
+    p_new_profile.add_argument(
+        "--dir",
+        type=Path,
+        default=None,
+        help="Directory to write into (default: ./robot_profiles, or $OOPSIE_ROBOT_PROFILES_DIR)",
+    )
+    p_new_profile.add_argument(
+        "--force", action="store_true", help="Overwrite an existing profile of the same name"
+    )
+    p_new_profile.set_defaults(func=cmd_new_profile)
 
     # annotate
     p_annotate = sub.add_parser(

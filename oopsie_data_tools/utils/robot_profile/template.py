@@ -1,4 +1,16 @@
-# Any config related to the robot setup, observation, action will be stored here.
+"""The starter robot profile emitted by ``oopsie-data new-profile``.
+
+Lives in Python rather than as packaged data on purpose: nothing in this toolkit
+reads configuration out of an installed package (see ``utils.paths``). The checked-in
+``configs/robot_profiles/template.yaml`` is a copy of this string kept for browsing on
+GitHub, and ``test_new_profile.py`` fails if the two drift apart.
+
+The skeleton is deliberately **not** loadable as written. Every required field is blank,
+so ``load_robot_profile`` rejects it until a human fills it in — recording an episode
+against a half-edited profile would stamp placeholder metadata into uploaded data.
+"""
+
+PROFILE_TEMPLATE = """# Any config related to the robot setup, observation, action will be stored here.
 
 
 # ===============================
@@ -19,9 +31,7 @@ camera_names: # list of str (Required) (Example: ["left", "right", "wrist"])
 # ===== Observation Related =====
 # ===============================
 
-# Observation keys. Options: "joint_position", "gripper_position", "cartesian_position", "base_position"
-# "gripper_position" is always required.
-# Joint-space actions require "joint_position"; Cartesian actions require "cartesian_position".
+# Observation keys. Options: "joint_position" (Required), "gripper_position" (Required), "cartesian_position", "base_position"
 robot_state_keys: # list of str
   - # str
 
@@ -63,11 +73,6 @@ orientation_representation: # str
 # ===== Optional Keys =====
 # ==========================
 
-# Required when "joint_position" is in robot_state_keys.
-# Identifies what each index in robot_state["joint_position"] corresponds to.
-robot_state_joint_names: # list of str
-  - # str
-
 # For knowing what each index in the action["joint_position"] corresponds to
 action_joint_names: # list of str
   - # str
@@ -96,4 +101,4 @@ intrinsic_calibration_matrix:
 extrinsic_calibration_matrix:
   <str>: # camera name str
     - # 4 x list of four floats (camera extrinsics in the form of a transformation matrix)
-# ========================
+# ========================"""

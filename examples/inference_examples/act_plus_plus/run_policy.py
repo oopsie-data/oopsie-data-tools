@@ -1,24 +1,23 @@
 import argparse
-from copy import deepcopy
-from itertools import repeat
 import os
 import pickle
 import time
+from copy import deepcopy
+from itertools import repeat
 
-from aloha.constants import FPS, FOLLOWER_GRIPPER_JOINT_OPEN, TASK_CONFIGS
-from einops import rearrange
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import wandb
+from aloha.constants import FOLLOWER_GRIPPER_JOINT_OPEN, FPS, TASK_CONFIGS
+from detr.models.latent_model import Latent_Model_Transformer
+from einops import rearrange
+from policy import ACTPolicy, CNNMLPPolicy, DiffusionPolicy
 from torchvision import transforms
 from tqdm import tqdm
-import wandb
-
-from detr.models.latent_model import Latent_Model_Transformer
-from policy import ACTPolicy, CNNMLPPolicy, DiffusionPolicy
 from utils import (
-    load_data,
     compute_dict_mean,
+    load_data,
     set_seed,
 )
 
@@ -299,12 +298,12 @@ def eval_bc(config, ckpt_name, save_episode=True, num_rollouts=50):
 
     from aloha.real_env import make_real_env  # requires aloha
     from aloha.robot_utils import move_grippers  # requires aloha
+    from interbotix_common_modules.common_robot.exceptions import InterbotixException
     from interbotix_common_modules.common_robot.robot import (
         create_interbotix_global_node,
         get_interbotix_global_node,
         robot_startup,
     )
-    from interbotix_common_modules.common_robot.exceptions import InterbotixException
 
     try:
         node = get_interbotix_global_node()

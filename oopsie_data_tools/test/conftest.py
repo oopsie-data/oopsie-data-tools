@@ -16,17 +16,17 @@ from pathlib import Path
 
 import pytest
 
+from oopsie_data_tools.test.fixtures.make_invalid import (
+    _MAKERS_SIMPLE,
+    _MAKERS_WITH_VIDEO,
+    _write_video,
+)
 from oopsie_data_tools.test.fixtures.make_valid import (
     make_failure,
     make_multi_camera,
     make_success,
     make_unannotated,
     write_valid_episode,  # re-exported for per-test use in test modules
-)
-from oopsie_data_tools.test.fixtures.make_invalid import (
-    _MAKERS_SIMPLE,
-    _MAKERS_WITH_VIDEO,
-    _write_video,
 )
 
 __all__ = ["write_valid_episode"]
@@ -40,8 +40,8 @@ def _test_contributor_config():
     ``configs/contributor_config.yaml`` (whose blank lab_id would otherwise fail
     ``EpisodeRecorder`` construction), without touching the committed file.
     """
-    import oopsie_data_tools.utils.contributor_config as _cc
     import oopsie_data_tools.annotation_tool.episode_recorder as _recorder
+    import oopsie_data_tools.utils.contributor_config as _cc
 
     def _fake(config_path=None) -> tuple[str, str]:
         return ("test_lab", "test_token")
