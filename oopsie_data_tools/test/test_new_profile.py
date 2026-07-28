@@ -69,7 +69,9 @@ def test_emitted_profile_does_not_load_until_filled_in(project):
     assert cli.main(["new-profile"]) == 0
     written = project / paths.PROFILES_DIR_NAME / "robot_profile.yaml"
 
-    with pytest.raises(ValueError, match="robot state keys|missing keys"):
+    # Which check fires first is an ordering detail of robot_profile_from_raw; all that
+    # matters here is that a blank skeleton is rejected rather than silently loaded.
+    with pytest.raises(ValueError, match="Invalid action_space|robot state keys|missing keys"):
         load_robot_profile(written)
 
 

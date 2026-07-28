@@ -28,7 +28,9 @@ oopsie-data upload   --path ./samples         # validates again, then publishes
 Recording is the step that produces the episodes everything after it consumes; it is code the
 user adds to their own control loop, not a CLI command. See `reference/setup.md`.
 
-Note that some users prefer to convert pre-recorded data. Look for general instructions in `references/setup.md` and `references/conversion.md`.
+Some users prefer to convert pre-recorded data instead of recording through `EpisodeRecorder`.
+That path writes the HDF5 directly rather than going through the recorder, so it bypasses every
+recording-time check — see `reference/conversion.md`.
 
 Supporting commands: `show-config` (which config files are in effect), `submissions` (what the
 lab has already uploaded), `inspect <file.h5>` (dump one episode's structure — a debugging aid
@@ -74,7 +76,7 @@ config confusion there, and see `reference/setup.md` for the resolution order.
 
 ## Reference files
 
-Read the one you need; do not read all four.
+Read the one you need; do not read all five.
 
 - `reference/setup.md` — installing, where configs live, `init`, choosing an annotation
   workflow, and wiring `EpisodeRecorder` into a robot control loop. The onboarding path.
@@ -82,6 +84,8 @@ Read the one you need; do not read all four.
   and the questions to ask the user when filling one in.
 - `reference/format.md` — the `oopsiedata_format_v1` HDF5 layout and every rule the validator
   enforces. Read before theorizing about why an episode was rejected.
+- `reference/conversion.md` — the same schema from the writing side, for converting an existing
+  dataset into `oopsiedata_format_v1` instead of recording it.
 - `reference/troubleshooting.md` — common errors, and the mistakes that pass validation
   silently and must be checked by a human.
 

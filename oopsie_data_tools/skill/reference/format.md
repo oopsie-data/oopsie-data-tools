@@ -50,7 +50,8 @@ Profile consistency — the profile documents the episode, so both directions ar
 - Every `robot_state_keys`, `action_space` and `camera_names` entry must be present.
 - Nothing may be present that the profile does not declare, for either
   `observations/robot_states` or `actions`.
-- `len(robot_state_joint_names)` must equal the last axis of `observations/joint_position`.
+- `len(robot_state_joint_names)` must equal the last axis of `observations/joint_position`, when
+  `joint_position` is recorded at all.
 - `len(action_joint_names)` must equal the last axis of `actions/joint_position` /
   `joint_velocity`, when set.
 - `cartesian_position` (state or action) must be exactly 7 DOF, or 14 when `is_biarm` — it is
@@ -69,8 +70,11 @@ Videos:
 - Video duration within 0.5 s of `T / control_freq`.
 - Frame counts across cameras within 1 of each other.
 
-Annotations — **off by default**. `strict_annotation_check` defaults to `False`, so a plain
-`validate` or `upload` run does not check annotation content at all. When enabled:
+Annotations — **always checked by `validate` and `upload`.** The `strict_annotation_check`
+*parameter* defaults to `False`, but `run_validation` — what both CLI commands call — passes
+`True` unconditionally, so an episode with no `episode_annotations` group fails with
+`Annotations dict is empty, must be provided for upload`. Record an episode first and annotate
+it second; it is only between those two steps that an unannotated episode is legal.
 
 - Every annotator subgroup needs a numeric, non-NaN `success` in `[0.0, 1.0]`.
 - For failures only (`success < 0.5`), the failure trio — `failure_category` and `severity`
@@ -82,8 +86,10 @@ Annotations — **off by default**. `strict_annotation_check` defaults to `False
 `record_step` requires:
 
 - `observation` to be a dict with both `robot_state` and `image_observation`;
-- `robot_state` to contain every `robot_state_keys` entry, and `image_observation` every
-  `camera_names` entry (frames are looked up as `<cam>`, `image_<cam>` or `<cam>_image`);
+- `robot_state` to contain every `robot_state_keys` entry, and `image_observation` a key named
+  exactly `<cam>` for every `camera_names` entry — the alternative spellings `image_<cam>` and
+  `<cam>_image` are recognized when the frame is read, but the presence check runs first and
+  rejects the step, so they are not a usable substitute for the plain name;
 - `action` keys to equal `action_space` exactly, with no `None` values.
 
 `cartesian_position` is converted to `(x, y, z, qx, qy, qz, qw)` via
@@ -91,7 +97,9 @@ Annotations — **off by default**. `strict_annotation_check` defaults to `False
 `[3:7]` (tolerance 1e-2). Everything else is recorded as given.
 
 `finish_rollout` validates *before* writing videos or HDF5, so a rejected episode leaves nothing
-on disk. It raises `EpisodeValidationError`, which subclasses `AssertionError` — so an existing
+on disk. It runs the same checks as `validate` **except** the annotation ones — this is the one
+path that uses the lenient default — which is why `finish_rollout(instruction=...)` without
+`success` is allowed, and why the resulting episode does not pass `validate` until annotated. It raises `EpisodeValidationError`, which subclasses `AssertionError` — so an existing
 `except AssertionError` still catches it. One exception: a camera with zero buffered frames
 raises a plain `ValueError` from `VideoInfo.from_frames`, which neither catches.
 

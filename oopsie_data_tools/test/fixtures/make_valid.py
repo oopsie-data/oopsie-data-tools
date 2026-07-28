@@ -7,10 +7,11 @@ annotator server, and any downstream readers can be exercised without real data.
 
 Scenarios created
 -----------------
-episode_unannotated     – valid episode, no annotation group
-episode_success         – annotated as success by "test_annotator"
+episode_unannotated     – minimally annotated success; the general-purpose "valid episode"
+episode_no_annotations  – no annotation group at all: passes lenient validation, fails strict
+episode_success         – annotated as success by "test_annotator", with notes
 episode_failure         – annotated as failure with taxonomy by "test_annotator"
-episode_multi_camera    – two cameras (left + wrist), no annotation
+episode_multi_camera    – two cameras (left + wrist), annotated as success
 
 Usage
 -----
@@ -204,6 +205,10 @@ def write_valid_episode(
 
 
 def make_unannotated(out_dir: Path) -> None:
+    # Despite the name, this *is* annotated — a minimal success. It is the general-purpose
+    # "valid episode" behind the `valid_episode` fixture, and validation through the CLI
+    # checks annotations unconditionally, so it has to carry one to be usable as such.
+    # For an episode with no annotation group, use make_no_annotations below.
     _write_video(out_dir / "episode_unannotated_front.mp4", color=(80, 120, 200))
     with h5py.File(out_dir / "episode_unannotated.h5", "w") as f:
         _write_base_h5(
@@ -219,6 +224,23 @@ def make_unannotated(out_dir: Path) -> None:
             failure_description="",
             failure_category=[],
             severity="none",
+        )
+
+
+def make_no_annotations(out_dir: Path) -> None:
+    """A structurally valid episode carrying no ``episode_annotations`` group.
+
+    This is what a freshly recorded, not-yet-annotated episode looks like: it satisfies
+    every structural rule, so it passes lenient validation, and fails the strict check
+    that ``oopsie-data validate`` and ``upload`` actually run.
+    """
+    _write_video(out_dir / "episode_no_annotations_front.mp4", color=(80, 120, 200))
+    with h5py.File(out_dir / "episode_no_annotations.h5", "w") as f:
+        _write_base_h5(
+            f,
+            episode_id="episode_no_annotations",
+            language_instruction="pick up the red block",
+            camera_video_paths={"front": "episode_no_annotations_front.mp4"},
         )
 
 
@@ -306,7 +328,13 @@ def main() -> None:
     out: Path = args.output_dir
     out.mkdir(parents=True, exist_ok=True)
 
-    for maker in [make_unannotated, make_success, make_failure, make_multi_camera]:
+    for maker in [
+        make_unannotated,
+        make_no_annotations,
+        make_success,
+        make_failure,
+        make_multi_camera,
+    ]:
         name = maker.__name__.replace("make_", "")
         print(f"  writing {name}...", end=" ", flush=True)
         maker(out)

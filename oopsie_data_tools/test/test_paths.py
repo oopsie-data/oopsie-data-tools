@@ -27,10 +27,10 @@ def test_user_config_dir_follows_xdg(isolated_home):
     assert paths.user_config_dir() == isolated_home
 
 
-def test_credentials_fall_back_to_repo_when_user_dir_is_empty(isolated_home):
-    repo_dir = paths.repo_config_dir()
-    assert repo_dir is not None, "these tests run from a checkout"
-    assert paths.contributor_config_path() == repo_dir / "contributor_config.yaml"
+# The repo-fallback leg of the credential chain is deliberately not tested here: it only
+# triggers when configs/contributor_config.yaml exists, and that file is gitignored (it holds
+# a token), so any such test passes or fails according to whether the developer happens to
+# have created one. What the chain does with a config that *is* present is covered below.
 
 
 def test_user_dir_wins_over_repo_for_credentials(isolated_home):

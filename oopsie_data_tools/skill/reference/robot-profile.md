@@ -11,7 +11,7 @@ options and explain them if asked.
 
 ## Required fields
 
-All ten must be present or `load_robot_profile` raises `Robot profile missing keys: [...]`.
+All nine must be present or `load_robot_profile` raises `Robot profile missing keys: [...]`.
 
 | Question | YAML key | Example / rule |
 |---|---|---|
@@ -23,18 +23,33 @@ All ten must be present or `load_robot_profile` raises `Robot profile missing ke
 | Control frequency (Hz)? | `control_freq` | `10`, `50` — must be > 0 |
 | Camera names? | `camera_names` | `[left, right, wrist]` |
 | Which robot state keys are recorded? | `robot_state_keys` | see below |
-| Joint names, in order? | `robot_state_joint_names` | e.g. `joint_1 … joint_7` |
 | What does the policy output? | `action_space` | see below |
 
 ### `robot_state_keys`
 
-`joint_position` and `gripper_position` are **mandatory**. `cartesian_position` and
-`base_position` are optional additions. Nothing else may be recorded: an observation key the
-profile does not declare fails validation, because it has no joint names, units or expected DOF
-and nothing downstream can interpret it.
+`gripper_position` is **always mandatory**. Beyond that, the state must observe whatever space
+the action controls — checked at profile load:
 
-`robot_state_joint_names` must have exactly as many entries as the last axis of the recorded
-`joint_position` array. The mismatch is caught at validation, not at profile load.
+| If `action_space` contains | `robot_state_keys` must contain |
+|---|---|
+| `joint_position` or `joint_velocity` | `joint_position` |
+| `cartesian_position` or `cartesian_velocity` | `cartesian_position` |
+
+Velocity control requires *position* state: you observe where the arm is, you command how fast
+it moves. The requirement is a union over the action space, so an `action_space` mixing joint
+and Cartesian actions needs both keys. `base_position` is an optional addition — no base action
+currently requires it.
+
+`base_position` aside, nothing else may be recorded: an observation key the profile does not
+declare fails validation, because it has no joint names, units or expected DOF and nothing
+downstream can interpret it.
+
+### `robot_state_joint_names`
+
+**Required when — and only when — `joint_position` is in `robot_state_keys`**; a profile whose
+robot is controlled purely in Cartesian space omits it. When present it must have exactly as
+many entries as the last axis of the recorded `joint_position` array. The emptiness is caught at
+profile load; the length mismatch at validation.
 
 ### `action_space`
 
@@ -57,6 +72,7 @@ subset, not a superset.
 
 | Question | YAML key | Rule |
 |---|---|---|
+| Joint names for the robot state, in order? | `robot_state_joint_names` | **Required** whenever `joint_position` is in `robot_state_keys` — see above. Not one of the nine unconditional keys, so a purely Cartesian profile omits it entirely. |
 | Joint names for arm actions? | `action_joint_names` | **Required** whenever `joint_position` or `joint_velocity` is in `action_space`. Same order as the action vector; its length is checked against the recorded DOF. |
 | Orientation representation for cartesian actions? | `orientation_representation` | Needed whenever `cartesian_position` is in `action_space` and the policy does not already emit scalar-last quaternions. |
 | Orientation representation for cartesian state? | `robot_state_orientation_representation` | Same, for `cartesian_position` in `robot_state_keys`. |

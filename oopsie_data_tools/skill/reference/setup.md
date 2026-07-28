@@ -176,7 +176,9 @@ for _ in range(num_episodes):
     recorder.record_step(observation=obs, action=action)
 
     # After the rollout ends. `instruction` is required; `success` is optional
-    # (omit it to leave the episode unannotated for the web annotator).
+    # (omit it to leave the episode for the web annotator — but note that an episode
+    # with no annotation at all fails `oopsie-data validate`, so it must be annotated
+    # before it can be uploaded).
     recorder.finish_rollout(instruction="pick up the red block", success=success)
 ```
 

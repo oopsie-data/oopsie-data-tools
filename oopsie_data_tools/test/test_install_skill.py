@@ -34,7 +34,13 @@ def test_payload_ships_inside_the_package():
 def test_payload_ships_the_reference_files_skill_md_points_at():
     """SKILL.md is a router; the pages it defers to have to be there to be read."""
     reference = claude_skill.bundled_skill_dir() / "reference"
-    linked = {"setup.md", "robot-profile.md", "format.md", "troubleshooting.md"}
+    linked = {
+        "setup.md",
+        "robot-profile.md",
+        "format.md",
+        "conversion.md",
+        "troubleshooting.md",
+    }
 
     assert {p.name for p in reference.glob("*.md")} == linked
 

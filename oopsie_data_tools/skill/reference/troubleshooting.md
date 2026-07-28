@@ -13,6 +13,16 @@ names the file that was actually read; `oopsie-data show-config` shows the whole
 **Action dict keys not matching `action_space`.** Raised at `record_step`. The two must be equal
 as sets, not merely overlapping.
 
+**"missing robot state keys required by its action_space".** Raised at `load_robot_profile`. The
+state must observe the space the action controls: add `joint_position` to `robot_state_keys` for a
+`joint_position`/`joint_velocity` action space, or `cartesian_position` for a
+`cartesian_position`/`cartesian_velocity` one. `gripper_position` is required either way.
+
+**"robot_state_joint_names is required when joint_position is included in robot_state_keys".**
+Also at `load_robot_profile`. Name every joint, in the order the `joint_position` array uses. The
+key is needed *only* in that case — drop it from a purely Cartesian profile rather than leaving it
+blank.
+
 **`robot_state_joint_names` length ≠ `joint_position` DOF.** `EpisodeValidationError` inside
 `finish_rollout`, before any file is written.
 
@@ -23,6 +33,11 @@ width, e.g. `QUAT orientation expects 4 value(s), got 3`.
 
 **Episode duration out of range.** `[1, 600]` seconds, computed as `trajectory_length /
 control_freq` — not a step count. Short test rollouts trip this constantly.
+
+**"Annotations dict is empty, must be provided for upload".** The episode has no
+`episode_annotations` group. `validate` and `upload` both check annotations unconditionally, so a
+freshly recorded episode fails until someone has annotated it — run `oopsie-data annotate` first.
+This is expected between recording and annotation, not a malformed file.
 
 **Undeclared keys.** `observations/robot_states contains N key(s) the robot profile does not
 declare`. Add them to the profile or stop recording them; an extra diagnostic channel is not
@@ -61,9 +76,9 @@ pose only produces a `logger.warning` from a heuristic, never an error.
 shape-checked, to `(7,)` or `(14,)`. For joint action spaces a `(T, chunk, dof)` array satisfies
 both the DOF and trajectory-length checks and is recorded silently.
 
-**Annotation content.** `strict_annotation_check` is off by default, so a plain `validate` or
-`upload` run never inspects annotation quality — including whether failure descriptions actually
-describe what happened.
+**Annotation *quality*.** The presence and shape of annotations *is* checked (see above), but
+nothing judges what they say — whether a failure description actually describes what happened,
+or whether the category fits, is unverifiable by the toolkit.
 
 **`cartesian_velocity` of any shape.** It is recorded exactly as given, with no conversion and
 no shape check.

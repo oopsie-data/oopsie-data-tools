@@ -31,6 +31,8 @@ import numpy as np
 import pytest
 
 from oopsie_data_tools.test.fixtures.make_valid import write_valid_episode
+from oopsie_data_tools.utils.hf_upload import run_validation
+from oopsie_data_tools.utils.validation.errors import EpisodeValidationError
 from oopsie_data_tools.utils.validation.validation_utils import (
     validate_h5_file,
     validate_session_dir,
@@ -42,8 +44,31 @@ from oopsie_data_tools.utils.validation.validation_utils import (
 
 
 class TestValidEpisodes:
-    def test_unannotated_episode_passes(self, valid_episode):
+    def test_minimally_annotated_episode_passes(self, valid_episode):
         assert validate_h5_file(str(valid_episode)) is True
+
+    def test_minimally_annotated_episode_passes_strict(self, valid_episode):
+        assert validate_h5_file(str(valid_episode), strict_annotation_check=True) is True
+
+    def test_episode_without_annotations_passes_lenient(self, episode_without_annotations):
+        """No annotation group is structurally fine — this is a just-recorded episode."""
+        assert validate_h5_file(str(episode_without_annotations)) is True
+
+    def test_episode_without_annotations_fails_strict(self, episode_without_annotations):
+        """...but the CLI always checks annotations, so it cannot be uploaded yet.
+
+        This pins the asymmetry between EpisodeRecorder.finish_rollout (lenient, so an
+        episode can be saved before anyone has annotated it) and run_validation, which
+        both 'oopsie-data validate' and 'oopsie-data upload' call with strict=True.
+        """
+        with pytest.raises(EpisodeValidationError, match="Annotations dict is empty"):
+            validate_h5_file(str(episode_without_annotations), strict_annotation_check=True)
+
+    def test_cli_validation_rejects_an_episode_without_annotations(
+        self, episode_without_annotations
+    ):
+        """The strict flag is not optional at the CLI boundary — assert on run_validation."""
+        assert run_validation(str(episode_without_annotations.parent), None, None) == 1
 
     def test_success_episode_passes(self, valid_success_episode):
         assert validate_h5_file(str(valid_success_episode)) is True
