@@ -133,15 +133,29 @@ def _unique_video_dest(
     h5_stem: str,
     used: dict[str, Path],
 ) -> str:
-    """Return a filename (no directory) for *abs_video* that is unique in *used*."""
-    basename = abs_video.name
+    """Return a filename (no directory) for *abs_video* that is unique within *used*.
 
-    fallback = f"{h5_stem}_{cam}{abs_video.suffix}"
-    used[fallback] = abs_video
-    return fallback
+    Episode stems are second-resolution timestamps, so two sessions can easily contribute
+    the same ``<stem>_<cam>.mp4`` to one batch. This used to return the colliding name
+    regardless, silently overwriting the first episode's video during the copy.
+
+    Re-asking for a video already registered returns the same name, so the function is safe
+    to call more than once per file.
+    """
+    stem = f"{h5_stem}_{cam}"
+    suffix = abs_video.suffix
+
+    candidate = f"{stem}{suffix}"
+    attempt = 1
+    while used.get(candidate, abs_video) != abs_video:
+        attempt += 1
+        candidate = f"{stem}_{attempt}{suffix}"
+
+    used[candidate] = abs_video
+    return candidate
 
 
-def restructure(source: Path, output: Path, h5_files: list[Path]) -> None:
+def restructure(output: Path, h5_files: list[Path]) -> None:
     n = len(h5_files)
     n_batches = (n + BATCH_SIZE - 1) // BATCH_SIZE
     logger.info(
@@ -317,7 +331,7 @@ def main() -> None:
 
     # ── Step 5: Restructure ────────────────────────────────────────────────────
     output.mkdir(parents=True, exist_ok=True)
-    restructure(source, output, h5_files)
+    restructure(output, h5_files)
 
     logger.info("\n" + "=" * 60)
     logger.info("  Done!")

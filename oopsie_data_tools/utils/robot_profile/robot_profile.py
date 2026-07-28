@@ -106,24 +106,19 @@ def robot_profile_to_json(profile: RobotProfile) -> str:
 
 
 def robot_profile_config_dir() -> Path:
-    """Directory containing ``*.yaml`` robot profiles (see ``utils.paths.config_dir``)."""
+    """Directory containing ``*.yaml`` robot profiles (see ``utils.paths.robot_profiles_dir``)."""
     return robot_profiles_dir()
 
 
-def default_robot_profile_path() -> Path:
-    return robot_profile_config_dir() / "default_robot_profile.yaml"
-
-
+# These two survive only because the tyro examples use them as a tyro default_factory.
+# Batch 8 makes --robot-profile required and deletes them: an unedited example run must
+# not record episodes under a bundled example's robot_name, cameras and joint names.
 def openpi_example_robot_profile_path() -> Path:
     return robot_profile_config_dir() / "openpi_example_robot_profile.yaml"
 
 
 def act_plus_plus_robot_profile_path() -> Path:
     return robot_profile_config_dir() / "act_plus_plus_robot_profile.yaml"
-
-
-def mock_robot_profile_path() -> Path:
-    return robot_profile_config_dir() / "mock_robot_profile.yaml"
 
 
 def load_robot_profile(path: Path | str) -> RobotProfile:
@@ -213,27 +208,22 @@ def robot_profile_from_raw(raw: Any) -> RobotProfile:
             "action spaces"
         )
 
-    # check validity of action space
-    valid_gripper_set = {"gripper_position", "gripper_velocity", "gripper_binary"}
-    valid_base_set = {"base_velocity", "base_position"}
-    uses_mobile_base = bool(raw.get("uses_mobile_base", False))
-
-    if set(action_space).isdisjoint(valid_gripper_set):
-        raise ValueError(
-            f"Invalid action_space {action_space!r}: must include at least one of "
-            f"{valid_gripper_set}"
-        )
-    if uses_mobile_base and set(action_space).isdisjoint(valid_base_set):
+    # is_valid_action_space already guarantees at least one gripper action, so only the
+    # mobile-base rule is left to check: it allows zero base actions in general, but a
+    # profile declaring a mobile base has to drive it.
+    if bool(raw["uses_mobile_base"]) and set(action_space).isdisjoint(ACTION_SPACE_SET_3):
         raise ValueError(
             f"Invalid action_space {action_space!r} for mobile base: must include at least one of "
-            f"{valid_base_set}"
+            f"{sorted(ACTION_SPACE_SET_3)}"
         )
 
     return RobotProfile(
         policy_name=raw["policy_name"],
         robot_name=raw["robot_name"],
-        is_biarm=raw.get("is_biarm", False),  # default to False if not specified
-        uses_mobile_base=raw.get("uses_mobile_base", False),  # default to False if not specified
+        # Both are in REQUIRED_KEYS, so there is no default to fall back on; bool() only
+        # normalizes a blank YAML value (``is_biarm:``) into False.
+        is_biarm=bool(raw["is_biarm"]),
+        uses_mobile_base=bool(raw["uses_mobile_base"]),
         gripper_name=raw["gripper_name"],
         control_freq=raw["control_freq"],
         camera_names=list(raw["camera_names"]),

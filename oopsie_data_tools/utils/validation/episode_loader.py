@@ -21,7 +21,6 @@ from oopsie_data_tools.utils.robot_profile.robot_profile import robot_profile_fr
 from oopsie_data_tools.utils.validation.episode_data import EpisodeData, VideoInfo
 
 OOPSIE_DATA_SCHEMA_V1 = "oopsiedata_format_v1"
-ROBOTIC_FAILURE_UPLOAD_SCHEMA_V1 = "robotic_failure_upload_data_format_v1"
 
 _OOPSIE_V1_REQUIRED_ROOT_ATTRS = (
     "schema",
