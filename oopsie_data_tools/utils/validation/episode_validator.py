@@ -17,8 +17,11 @@ from oopsie_data_tools.utils.validation.episode_data import EpisodeData
 
 MAX_IMAGE_SIZE = 1280
 MIN_IMAGE_SIZE = 180
-MIN_EPISODE_LENGTH = 1
-MAX_EPISODE_LENGTH = 300
+# Bounds on episode *duration*, not step count: trajectory_length / control_freq. They were
+# named MIN/MAX_EPISODE_LENGTH, so the error reported the raw step count against them and
+# read as nonsense ("trajectory_length 20 out of range [1, 300]" for a 0.67 s episode).
+MIN_EPISODE_DURATION_S = 1
+MAX_EPISODE_DURATION_S = 300
 
 
 def validate_episode(data: EpisodeData, strict_annotation_check: bool = False) -> None:
@@ -44,9 +47,11 @@ def _validate_metadata(data: EpisodeData) -> None:
     assert data.lab_id != "your_lab_id", "lab_id has not been changed from the placeholder value"
     assert data.operator_name, "operator_name is empty"
     assert data.control_freq > 0, "control_freq must be > 0"
-    assert MIN_EPISODE_LENGTH <= data.trajectory_length/data.control_freq <= MAX_EPISODE_LENGTH, (
-        f"trajectory_length {data.trajectory_length} out of range "
-        f"[{MIN_EPISODE_LENGTH}, {MAX_EPISODE_LENGTH}]"
+    duration_s = data.trajectory_length / data.control_freq
+    assert MIN_EPISODE_DURATION_S <= duration_s <= MAX_EPISODE_DURATION_S, (
+        f"episode duration {duration_s:.2f}s out of range "
+        f"[{MIN_EPISODE_DURATION_S}, {MAX_EPISODE_DURATION_S}]s "
+        f"({data.trajectory_length} steps at {data.control_freq:g} Hz)"
     )
 
 

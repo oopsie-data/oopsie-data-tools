@@ -12,9 +12,11 @@ from __future__ import annotations
 import atexit
 import datetime
 import json
+import logging
 import os
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.parse
@@ -25,6 +27,8 @@ from typing import Any
 
 from oopsie_data_tools.annotation_tool.episode_recorder import EpisodeRecorder
 from oopsie_data_tools.utils.robot_profile.robot_profile import RobotProfile
+
+logger = logging.getLogger(__name__)
 
 
 class WebRolloutAnnotator:
@@ -59,41 +63,74 @@ class WebRolloutAnnotator:
     # Server lifecycle
     # ------------------------------------------------------------------
 
-    def start(self) -> None:
+    def start(self, startup_timeout_s: float = 30.0) -> None:
+        """Start the annotation server unless something is already on the port.
+
+        Raises:
+            RuntimeError: If the server does not come up within ``startup_timeout_s``.
+                Continuing regardless would leave the rollout loop polling an address that
+                will never answer, with no output to explain why.
+        """
         self.data_root_dir.mkdir(parents=True, exist_ok=True)
 
         if not self._is_port_open():
-            self._proc = subprocess.Popen(
-                [
-                    "python",
-                    "-m",
-                    "oopsie_data_tools.annotation_tool.annotator_server",
-                    "--samples-dir",
-                    str(self.data_root_dir),
-                    "--port",
-                    str(self.port),
-                    "--annotator-name",
-                    self.annotator_name,
-                    "--with-rollouts",
-                    "--no-browser",
-                ],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            atexit.register(self.stop)
-
-            for _ in range(40):
-                time.sleep(0.25)
-                if self._is_port_open():
-                    break
+            self._spawn_server(startup_timeout_s)
 
         if self.open_browser:
             webbrowser.open(f"http://localhost:{self.port}/")
 
+    def _spawn_server(self, startup_timeout_s: float) -> None:
+        self._proc = subprocess.Popen(
+            [
+                # Not "python": inside a venv that may not exist, or may be a different
+                # interpreter than the one running this rollout.
+                sys.executable,
+                "-m",
+                "oopsie_data_tools.annotation_tool.annotator_server",
+                "--samples-dir",
+                str(self.data_root_dir),
+                "--port",
+                str(self.port),
+                "--annotator-name",
+                self.annotator_name,
+                "--with-rollouts",
+                "--no-browser",
+            ],
+            # stderr is kept so a failure to start is visible; discarding it was why a
+            # server that died on startup looked identical to one that was merely slow.
+            stdout=subprocess.DEVNULL,
+        )
+        atexit.register(self.stop)
+
+        deadline = time.monotonic() + startup_timeout_s
+        while time.monotonic() < deadline:
+            if self._is_port_open():
+                break
+            if self._proc.poll() is not None:
+                raise RuntimeError(
+                    f"Annotation server exited immediately with code {self._proc.returncode}. "
+                    "Its error output is above."
+                )
+            time.sleep(0.25)
+        else:
+            self.stop()
+            raise RuntimeError(
+                f"Annotation server did not start on port {self.port} within "
+                f"{startup_timeout_s:g}s. Pass a larger startup_timeout_s if this machine is "
+                "slow, or check whether the port is taken by something else."
+            )
+
     def stop(self) -> None:
-        if self._proc is not None:
-            self._proc.terminate()
-            self._proc = None
+        if self._proc is None:
+            return
+        self._proc.terminate()
+        try:
+            # Reap it, so a long rollout loop does not leave zombies behind.
+            self._proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            self._proc.kill()
+            self._proc.wait(timeout=5)
+        self._proc = None
 
     def _is_port_open(self) -> bool:
         with socket.socket() as s:
@@ -104,9 +141,17 @@ class WebRolloutAnnotator:
     # ------------------------------------------------------------------
 
     def wait_for_task(self) -> str:
+        """Block until the browser submits a language instruction, then claim it.
+
+        Polling errors are expected and transient (the server may still be starting), so
+        they are logged rather than raised — but they are no longer swallowed silently: a
+        server that has died used to leave this loop spinning forever with no output at all.
+        """
+        consecutive_failures = 0
         while True:
             try:
                 state = self._api_get("/api/task/state")
+                consecutive_failures = 0
                 if (
                     isinstance(state, dict)
                     and state.get("status") == "pending"
@@ -115,8 +160,17 @@ class WebRolloutAnnotator:
                     instruction = str(state["pending_instruction"])
                     self._api_post("/api/task/start", {"instruction": instruction})
                     return instruction
-            except Exception:
-                pass
+            except Exception as e:
+                consecutive_failures += 1
+                # ~5s of failures, then every ~30s, so a dead server is visible without
+                # flooding the console during a normal wait.
+                if consecutive_failures == 10 or consecutive_failures % 60 == 0:
+                    logger.warning(
+                        "Cannot reach the annotation server at http://localhost:%s (%s). "
+                        "Still waiting; is it still running?",
+                        self.port,
+                        e,
+                    )
             time.sleep(0.5)
 
     # ------------------------------------------------------------------
@@ -140,21 +194,27 @@ class WebRolloutAnnotator:
         instruction: str,
         recorder: EpisodeRecorder | None = None,
     ) -> dict[str, Any] | None:
-        assert isinstance(instruction, str) and instruction.strip(), f"Instruction must be a non-empty string. got {instruction}"
+        if not isinstance(instruction, str) or not instruction.strip():
+            raise ValueError(f"Instruction must be a non-empty string, got {instruction!r}")
 
+        # Every use below must go through active_recorder. Three of them used to reach for
+        # self._active_recorder instead, so passing recorder= validated and stamped the
+        # wrong object — and raised AttributeError before reaching the guard right below
+        # whenever self._active_recorder was None, which is the case that guard is for.
         active_recorder = recorder or self._active_recorder
         if active_recorder is None:
             raise ValueError("EpisodeRecorder is required (pass recorder=...).")
-        sample_id = self._active_recorder.save_fname
+        sample_id = active_recorder.save_fname
 
         data = {
-                "language_instruction": instruction,
-                "metadata": {
-                    "episode_id": sample_id,
-                    "operator_name": self.operator_name,
-                },
-            }
-        self._active_recorder._validate_pre_save(data)  # raises if invalid, to avoid saving unwritable data
+            "language_instruction": instruction,
+            "metadata": {
+                "episode_id": sample_id,
+                "operator_name": self.operator_name,
+            },
+        }
+        # Raises if invalid, so an unwritable episode is never saved.
+        active_recorder._validate_pre_save(data)
 
         # 1. Save videos under the recorder's per-session folder
         video_paths = active_recorder._save_videos()
@@ -164,24 +224,15 @@ class WebRolloutAnnotator:
         }
         data["video_paths"] = video_paths
 
-        # Save the episode HDF5 immediately after rollout (before annotation arrives).
-        # We will patch failure_annotation in-place later.
-        #
-        # IMPORTANT: ensure camera_names is populated so EpisodeRecorder writes
-        # `image_observations/<cam>` datasets pointing at MP4 filepaths.
-        # This will create an un-submittable file, as the success annotation is not yet
-        # available, but it allows the UI to show the videos immediately without waiting
-        # for annotation.
-        if not getattr(active_recorder, "camera_names", None):
-            active_recorder.camera_names = list(video_paths.keys())
-
-        # 2. Save the episode HDF5 immediately after rollout to disk (before annotation arrives).
-        h5_path = active_recorder.save(
-            data
-        )
+        # 2. Save the episode HDF5 straight away, before the annotation arrives, and patch
+        # the annotation in later. The file is not submittable until then, but writing it
+        # now lets the UI show the videos without waiting for the human.
+        h5_path = active_recorder.save(data)
 
         # 3. Wait for annotation from human annotator
-        print(f"Waiting for annotation from human annotator at http://localhost:{self.port} ...")
+        logger.info(
+            "Waiting for annotation from human annotator at http://localhost:%s ...", self.port
+        )
         self._api_post(
             "/api/task/annotating",
             {

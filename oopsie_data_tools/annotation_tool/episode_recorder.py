@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -11,7 +12,6 @@ from typing import Any
 import h5py
 import imageio
 import numpy as np
-from moviepy.editor import ImageSequenceClip
 
 from oopsie_data_tools.annotation_tool.annotation_schema import write_annotation_attrs
 from oopsie_data_tools.utils.contributor_config import read_contributor_config
@@ -19,6 +19,8 @@ from oopsie_data_tools.utils.robot_profile.robot_profile import RobotProfile, ro
 from oopsie_data_tools.utils.robot_profile.rotation_utils import ActionQuatConversion
 from oopsie_data_tools.utils.validation.episode_data import EpisodeData, VideoInfo
 from oopsie_data_tools.utils.validation.episode_validator import validate_episode
+
+logger = logging.getLogger(__name__)
 
 REQUIRED_OBSERVATION_KEYS = ["robot_state", "image_observation"]
 
@@ -117,16 +119,19 @@ class EpisodeRecorder:
             if self.robot_profile.robot_state_orientation_representation
             else None
         )
-        self.frames: dict[str, list[np.ndarray]] = {
-            cam: [] for cam in self.camera_names
-        }
-        # Timestep data buffer
+        self.frames: dict[str, list[np.ndarray]] = {}
         self.timesteps: list[dict[str, Any]] = []
+        self.timestamp: float = 0.0
+        self.save_fname: str = ""
+        # A fresh recorder is ready to record. This used to be left to an explicit
+        # reset_episode_recorder() call, so going straight to record_step() raised
+        # AttributeError on save_fname — an undocumented ordering requirement.
+        self.reset_episode_recorder()
 
         self.lab_id, _ = read_contributor_config()
 
     def reset_episode_recorder(self) -> None:
-        """Reset the buffers for a new episode."""
+        """Reset the buffers and start a new episode."""
         ts = datetime.datetime.now()
         self.timestamp = ts.timestamp()
         self.save_fname = f"{ts.strftime('%Y%m%d_%H%M%S')}"
@@ -147,7 +152,8 @@ class EpisodeRecorder:
             None: This method only updates in-memory buffers.
         """
         # TODO: Make sure all checks are present here
-        self._check_step_data(observation, action)
+        # Returns normalized copies; the caller's dicts are left untouched.
+        robot_state, action = self._check_and_normalize_step_data(observation, action)
 
         # Buffer frames for each configured camera (if available)
         for cam in self.camera_names:
@@ -158,9 +164,7 @@ class EpisodeRecorder:
         # Buffer timestep data
         step_data = {"robot_state": {}, "action_dict": {}}
         for key in self.robot_profile.robot_state_keys:
-            step_data["robot_state"][key] = np.asarray(
-                observation["robot_state"][key], dtype=np.float32
-            )
+            step_data["robot_state"][key] = np.asarray(robot_state[key], dtype=np.float32)
         step_data["action_dict"] = {
             "cartesian_position": action.get("cartesian_position", None),
             "cartesian_velocity": action.get("cartesian_velocity", None),
@@ -174,19 +178,21 @@ class EpisodeRecorder:
         }
         self.timesteps.append(step_data)
 
-    def _save_videos(
-        self,
-    ) -> tuple[str, dict[str, str]]:
+    def _save_videos(self) -> dict[str, str]:
+        """Write one MP4 per camera into the session directory.
+
+        Returns:
+            ``{camera: absolute mp4 path}``. Cameras that buffered no frames are skipped
+            rather than crashing in ``np.stack`` on an empty list.
+        """
         video_paths: dict[str, str] = {}
         self.session_dir.mkdir(parents=True, exist_ok=True)
         fps = float(self.robot_profile.control_freq)
         for cam_name, frames in self.frames.items():
+            if not frames:
+                continue
             video_path = self.session_dir / f"{self.save_fname}_{cam_name}.mp4"
-            ImageSequenceClip(list(np.stack(frames)), fps=fps).write_videofile(
-                str(video_path),
-                codec="libx264",
-                logger=None,
-            )
+            write_mp4(video_path=video_path, frames=np.asarray(frames), fps=fps)
             video_paths[cam_name] = str(video_path.resolve())
         return video_paths
 
@@ -254,14 +260,26 @@ class EpisodeRecorder:
 
         return h5_path
 
-    def _check_step_data(
+    def _check_and_normalize_step_data(
         self, observation: dict[str, Any], action: dict[str, np.ndarray]
-    ) -> None:
-        """Validate observation and action inputs for a single rollout step.
+    ) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
+        """Validate one rollout step and return its normalized robot state and action.
+
+        Normalizing means converting any ``cartesian_position`` orientation into a
+        scalar-last quaternion, per the robot profile's ``orientation_representation``.
+
+        The converted values are *returned* rather than written back into the caller's
+        dicts. They used to be written back, which made this validator quietly responsible
+        for feeding the recording buffer — and made "stop mutating the caller's input" a
+        change that would have silently recorded raw euler/rot6d values labelled as
+        quaternions.
 
         Args:
             observation (dict[str, Any]): Observation payload to validate.
             action (dict[str, np.ndarray]): Action dict to validate.
+
+        Returns:
+            A ``(robot_state, action)`` pair of new dicts, safe to buffer.
 
         Raises:
             ValueError: If required observation keys are missing, action is
@@ -334,55 +352,58 @@ class EpisodeRecorder:
                 f"action contains None values for keys: {[k for k, v in action.items() if v is None]}. "
             )
 
-        # TODO: It is currently only being called for cartesian_position, but we should also check for the other actions
-        # If action is cartesian_position, verify the action shape
-        for key in ("cartesian_position",):
-            if key not in action:
-                continue
-            val = action.get(key)
-            arr = np.asarray(val)
-            # convert to quaternion if needed
-            action[key] = (
-                self.quat_conversion.convert_position(arr)
-                if self.quat_conversion
-                else arr
-            )
-            arr = np.asarray(action[key])
-            if arr.shape not in ((7,), (14,)):
-                raise ValueError(
-                    f"action['{key}'] must have shape (7,) or (14,) — "
-                    f"[x, y, z, qx, qy, qz, qw], got shape {arr.shape}"
-                )
-            quat_norm = np.linalg.norm(arr[3:7])
-            if not np.isclose(quat_norm, 1.0, atol=1e-2):
-                raise ValueError(
-                    f"action['{key}'][3:7] must be a unit scalar-last quaternion (norm ≈ 1.0), "
-                    f"got norm {quat_norm:.6f}"
-                )
-            # Heuristic: scalar (w) should not dominate vector part too heavily
-            # (not guaranteed, but catches common mistakes)
-            if abs(arr[6]) > 0.99 and np.linalg.norm(arr[3:6]) < 0.1:
-                print(
-                    f"Warning: Looks like action['{key}'][3:7] is in (w,x,y,z) order instead of (x,y,z,w)"
-                )
+        # Shallow copies from here on: everything below normalizes values, and the caller's
+        # dicts must come back out of record_step() exactly as they went in.
+        action = dict(action)
+        robot_state = dict(robot_state)
 
-        for key in ("cartesian_position",):
-            if key not in robot_state:
-                continue
-            val = robot_state.get(key)
-            arr = np.asarray(val)
-            # convert to quaternion if needed
-            robot_state[key] = (
-                self.robot_state_quat_conversion.convert_position(arr)
-                if self.robot_state_quat_conversion
-                else arr
+        # TODO: only cartesian_position is normalized and shape-checked; the other action
+        # keys are recorded as given.
+        if "cartesian_position" in action:
+            action["cartesian_position"] = self._normalize_cartesian(
+                action["cartesian_position"], self.quat_conversion, "action"
             )
-            arr = np.asarray(robot_state[key])
-            if arr.shape not in ((7,), (14,)):
-                raise ValueError(
-                    f"observation['{key}'] must have shape (7,) or (14,) — "
-                    f"[x, y, z, qx, qy, qz, qw], got shape {arr.shape}"
-                )
+            self._check_quaternion_convention(action["cartesian_position"])
+
+        if "cartesian_position" in robot_state:
+            robot_state["cartesian_position"] = self._normalize_cartesian(
+                robot_state["cartesian_position"],
+                self.robot_state_quat_conversion,
+                "observation",
+            )
+
+        return robot_state, action
+
+    @staticmethod
+    def _normalize_cartesian(
+        value: Any, conversion: ActionQuatConversion | None, label: str
+    ) -> np.ndarray:
+        """Convert a cartesian pose to ``(x, y, z, qx, qy, qz, qw)`` and check its shape."""
+        arr = np.asarray(value)
+        if conversion is not None:
+            arr = np.asarray(conversion.convert_position(arr))
+        if arr.shape not in ((7,), (14,)):
+            raise ValueError(
+                f"{label}['cartesian_position'] must have shape (7,) or (14,) — "
+                f"[x, y, z, qx, qy, qz, qw], got shape {arr.shape}"
+            )
+        quat_norm = np.linalg.norm(arr[3:7])
+        if not np.isclose(quat_norm, 1.0, atol=1e-2):
+            raise ValueError(
+                f"{label}['cartesian_position'][3:7] must be a unit scalar-last quaternion "
+                f"(norm ≈ 1.0), got norm {quat_norm:.6f}"
+            )
+        return arr
+
+    @staticmethod
+    def _check_quaternion_convention(arr: np.ndarray) -> None:
+        """Warn on a pose that looks scalar-first. A heuristic, so it never raises."""
+        if abs(arr[6]) > 0.99 and np.linalg.norm(arr[3:6]) < 0.1:
+            logger.warning(
+                "action['cartesian_position'][3:7] looks like (w,x,y,z) order rather than "
+                "the expected (x,y,z,w)."
+            )
+
     # TODO: Polish this function!
     def _save_h5(self, path: Path, data: dict[str, Any]) -> None:
         """Write buffered rollout data and metadata into one HDF5 file.
@@ -430,17 +451,11 @@ class EpisodeRecorder:
                 if not raw_video_path:
                     continue
 
+                episode_dir = path.parent.resolve()
                 video_path_obj = Path(raw_video_path).expanduser()
-                if video_path_obj.is_absolute():
-                    rel_video_path = os.path.relpath(
-                        video_path_obj.resolve(),
-                        start=path.parent.resolve(),
-                    )
-                else:
-                    rel_video_path = os.path.relpath(
-                        (path.parent / video_path_obj).resolve(),
-                        start=path.parent.resolve(),
-                    )
+                if not video_path_obj.is_absolute():
+                    video_path_obj = episode_dir / video_path_obj
+                rel_video_path = os.path.relpath(video_path_obj.resolve(), start=episode_dir)
 
                 video_paths_group.create_dataset(
                     cam,
@@ -480,7 +495,13 @@ class EpisodeRecorder:
         output_dir: Path,
         provided_video_paths: Any,
     ) -> dict[str, str]:
-        """Resolve per-camera MP4 paths, writing videos when needed.
+        """Resolve per-camera MP4 paths to paths relative to the episode file.
+
+        On the ``finish_rollout`` path every camera arrives in ``provided_video_paths``
+        (absolute, already written by :meth:`_save_videos`) and this only relativizes them —
+        which is what the HDF5 stores. A recorder driven directly through :meth:`save`
+        supplies nothing, and the buffered frames are written here instead, through the same
+        :func:`write_mp4`.
 
         Args:
             output_dir (Path): Directory used as the base for relative path
@@ -495,6 +516,12 @@ class EpisodeRecorder:
         provided = (
             provided_video_paths if isinstance(provided_video_paths, dict) else {}
         )
+        # Both sides of every relpath below must be resolved. Measuring a resolved video
+        # against an unresolved base is what produced stored paths like
+        # "../../../private/tmp/<session>/x.mp4" for a video sitting right next to the
+        # episode, because /tmp is a symlink to /private/tmp on macOS. Those still resolve,
+        # so nothing failed — but they break the moment the session directory is moved.
+        base = Path(output_dir).resolve()
 
         for cam in self.camera_names:
             provided_path = str(provided.get(cam, ""))
@@ -502,7 +529,7 @@ class EpisodeRecorder:
                 abs_path = Path(provided_path).expanduser().resolve()
                 if abs_path.suffix.lower() != ".mp4":
                     abs_path = abs_path.with_suffix(".mp4")
-                paths[cam] = os.path.relpath(abs_path, start=output_dir)
+                paths[cam] = os.path.relpath(abs_path, start=base)
                 continue
 
             frames = self.frames.get(cam, [])
@@ -512,7 +539,7 @@ class EpisodeRecorder:
             video_path = output_dir / f"{self.save_fname}_{cam}.mp4"
             fps = float(self.robot_profile.control_freq)
             write_mp4(video_path=video_path, frames=np.asarray(frames), fps=fps)
-            paths[cam] = os.path.relpath(video_path.resolve(), start=output_dir)
+            paths[cam] = os.path.relpath(video_path.resolve(), start=base)
 
         return paths
 
