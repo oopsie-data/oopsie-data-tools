@@ -32,6 +32,32 @@ from oopsie_data_tools.test.fixtures.make_valid import (
 __all__ = ["write_valid_episode"]
 
 
+@pytest.fixture(autouse=True)
+def _isolate_user_environment(tmp_path_factory, monkeypatch):
+    """Keep every test out of the developer's real home, config and working directory.
+
+    Three confirmed leaks this closes:
+
+    * ``cli.main`` exports ``$OOPSIE_CONFIG_DIR``. ``monkeypatch.delenv`` records nothing
+      when the variable is absent, so there was nothing to undo and the value outlived the
+      test that set it, pointing later tests at a deleted directory.
+    * ``test_robot_setup`` resolves profiles through the cwd and
+      ``$OOPSIE_ROBOT_PROFILES_DIR``, so it failed if either was set, or if pytest ran from
+      a directory that happened to contain ``robot_profiles/``.
+    * ``init_wizard.advise_persisting_config_dir`` appends an export line to ``~/.zshrc``.
+      Nothing stopped that from being the developer's real one.
+    """
+    home = tmp_path_factory.mktemp("home")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
+    for var in ("OOPSIE_CONFIG_DIR", "OOPSIE_ROBOT_PROFILES_DIR"):
+        # Set before deleting so monkeypatch always has a value to restore, whether or not
+        # the variable existed and whatever the test under it does.
+        monkeypatch.setenv(var, str(home / "unset"))
+        monkeypatch.delenv(var)
+    monkeypatch.chdir(tmp_path_factory.mktemp("cwd"))
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _test_contributor_config():
     """Supply a test lab_id everywhere the contributor config is read.
@@ -39,20 +65,28 @@ def _test_contributor_config():
     Lets the suite run on a fresh checkout without a filled-in
     ``configs/contributor_config.yaml`` (whose blank lab_id would otherwise fail
     ``EpisodeRecorder`` construction), without touching the committed file.
+
+    Every module that binds the name at import gets patched: ``hf_upload`` and
+    ``init_wizard`` also do ``from ... import read_contributor_config``, so rebinding two
+    hand-picked modules left them reading the developer's real config.
     """
+    from _pytest.monkeypatch import MonkeyPatch
+
     import oopsie_data_tools.annotation_tool.episode_recorder as _recorder
+    import oopsie_data_tools.init_wizard as _init_wizard
     import oopsie_data_tools.utils.contributor_config as _cc
+    import oopsie_data_tools.utils.hf_upload as _hf_upload
 
     def _fake(config_path=None) -> tuple[str, str]:
         return ("test_lab", "test_token")
 
-    originals = (_cc.read_contributor_config, _recorder.read_contributor_config)
-    _cc.read_contributor_config = _fake
-    _recorder.read_contributor_config = _fake
+    patch = MonkeyPatch()
+    for module in (_cc, _recorder, _hf_upload, _init_wizard):
+        patch.setattr(module, "read_contributor_config", _fake)
     try:
         yield
     finally:
-        _cc.read_contributor_config, _recorder.read_contributor_config = originals
+        patch.undo()
 
 
 # ---------------------------------------------------------------------------

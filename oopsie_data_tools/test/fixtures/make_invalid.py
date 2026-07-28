@@ -94,8 +94,18 @@ _VALID_ROBOT_PROFILE = {
 }
 
 
-def _write_video(path: Path, color: tuple, n_frames: int = 10) -> None:
-    frames = np.full((n_frames, 64, 64, 3), color, dtype=np.uint8)
+# Defaults chosen so a video is *valid* unless a fixture deliberately makes it otherwise:
+# 224px clears MIN_IMAGE_SIZE (180), and 20 frames at 10 fps matches the 20 recorded steps
+# of the standard profile exactly. They used to be 64px/10 frames, which failed the size
+# check before any fixture reached the defect it was written to demonstrate.
+_VIDEO_FRAMES = 20
+_VIDEO_SIZE = 224
+
+
+def _write_video(
+    path: Path, color: tuple, n_frames: int = _VIDEO_FRAMES, size: int = _VIDEO_SIZE
+) -> None:
+    frames = np.full((n_frames, size, size, 3), color, dtype=np.uint8)
     with imageio.get_writer(
         str(path), format="FFMPEG", mode="I", fps=10, codec="libx264",
         output_params=["-crf", "28"],
@@ -144,9 +154,17 @@ def _actions(f: h5py.File, n: int = 20, joint_dof: int = 7) -> None:
         ag.create_dataset(key, data=h5py.Empty(dtype=np.float64))
 
 
-def _video_paths(f: h5py.File, cam: str, rel_path: str) -> None:
+def _video_paths(f: h5py.File, cam: str, rel_path: str, write: bool = True) -> None:
+    """Point ``cam`` at ``rel_path`` and, unless told not to, write that video.
+
+    Declaring a video without creating it used to be the norm here, so nearly every
+    fixture failed on "Video file does not exist" rather than on the defect it was named
+    for. Pass ``write=False`` only where the missing file *is* the defect.
+    """
     vp = f.require_group("observations/video_paths")
     vp.create_dataset(cam, data=rel_path, dtype=_STR_DTYPE)
+    if write:
+        _write_video(Path(f.filename).parent / rel_path, (120, 120, 120))
 
 
 def _full_valid_episode(f: h5py.File, episode_id: str, cam_path: str = "front.mp4") -> None:
@@ -183,7 +201,8 @@ def make_broken_video_ref(out_dir: Path) -> None:
         _base_attrs(f, "invalid_broken_video_ref")
         _robot_states(f)
         _actions(f)
-        _video_paths(f, "front", "does_not_exist.mp4")
+        # The missing file is the defect here, so this one must not be written.
+        _video_paths(f, "front", "does_not_exist.mp4", write=False)
 
 
 def make_no_video_group(out_dir: Path) -> None:

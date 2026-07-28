@@ -123,6 +123,9 @@ class EpisodeRecorder:
         self.timesteps: list[dict[str, Any]] = []
         self.timestamp: float = 0.0
         self.save_fname: str = ""
+        # Names handed out by this recorder, so back-to-back episodes stay distinct even
+        # before the first one has been written to disk.
+        self._used_names: set[str] = set()
         # A fresh recorder is ready to record. This used to be left to an explicit
         # reset_episode_recorder() call, so going straight to record_step() raised
         # AttributeError on save_fname — an undocumented ordering requirement.
@@ -134,9 +137,25 @@ class EpisodeRecorder:
         """Reset the buffers and start a new episode."""
         ts = datetime.datetime.now()
         self.timestamp = ts.timestamp()
-        self.save_fname = f"{ts.strftime('%Y%m%d_%H%M%S')}"
+        self.save_fname = self._unused_episode_name(ts)
         self.frames = {cam: [] for cam in self.camera_names}
         self.timesteps = []
+
+    def _unused_episode_name(self, ts: datetime.datetime) -> str:
+        """A ``%Y%m%d_%H%M%S`` name, suffixed if that second is already taken.
+
+        Episode names are second-resolution, so a fast rollout loop can start two episodes
+        within the same second and have the later one overwrite the earlier one's HDF5 and
+        MP4s. Callers used to work around this by sleeping between episodes.
+        """
+        base = ts.strftime("%Y%m%d_%H%M%S")
+        candidate = base
+        attempt = 1
+        while (self.session_dir / f"{candidate}.h5").exists() or candidate in self._used_names:
+            attempt += 1
+            candidate = f"{base}_{attempt}"
+        self._used_names.add(candidate)
+        return candidate
 
     def record_step(
         self, observation: dict[str, Any], action: dict[str, np.ndarray]
