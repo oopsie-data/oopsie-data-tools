@@ -228,10 +228,18 @@ data without uploading, run `oopsie-data validate --path ./samples` (or
 `oopsie-data upload --path ./samples --skip-upload` for the full pre-upload check).
 
 If upload refuses because a directory holds more than 10,000 files (a HuggingFace limit),
-run `oopsie-data restructure --source ./samples` and upload the restructured copy. Every
-directory over the limit — at any depth — is split into numbered subfolders of 500 episodes;
-the rest of the tree is copied through unchanged. It copies rather than moves, so the
-original is left untouched until you delete it yourself.
+add `--with-restructure` to do it in one step:
+
+```bash
+oopsie-data upload --path ./samples --with-restructure
+```
+
+That writes a restructured copy to `./samples_restructured` and uploads it. Every directory
+over the limit — at any depth — is split into numbered subfolders of 500 episodes; the rest
+of the tree is copied through unchanged. It copies rather than moves, so you need room for a
+second copy and the original is left untouched until you delete it yourself. Run
+`oopsie-data restructure --source ./samples --output <dir>` separately if you need the copy
+somewhere else.
 
 ---
 
