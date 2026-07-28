@@ -180,7 +180,6 @@ def _walk(name: str, obj: h5py.Group | h5py.Dataset, *, indent: int) -> None:
 def inspect_h5(path: str) -> None:
     with h5py.File(path, "r") as f:
         print(f"HDF5: {path}")
-        breakpoint()
         _walk("", f, indent=0)
 
 
