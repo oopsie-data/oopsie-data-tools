@@ -124,14 +124,14 @@ Make sure to list available options to the user where the choice is constrained 
 ### 5b. Observation space
 | Question | YAML key | Options |
 |---|---|---|
-| Which robot state keys are recorded? | `robot_state_keys` | **`joint_position` and `gripper_position` are mandatory**; `cartesian_position` and `base_position` are optional additions |
-| What are the joint names (in order)? | `robot_state_joint_names` | required — e.g. `joint_1 … joint_7` |
+| Which robot state keys are recorded? | `robot_state_keys` | **`gripper_position` is always mandatory.** The rest follow from `action_space`: a joint-space action (`joint_position`, `joint_velocity`) requires `joint_position`, a Cartesian action (`cartesian_position`, `cartesian_velocity`) requires `cartesian_position` — the state must observe whatever space the action controls. Note velocity control requires *position* state. An action space mixing joint and Cartesian requires both. `base_position` is an optional addition. |
+| What are the joint names (in order)? | `robot_state_joint_names` | **Required — and only required — when `joint_position` is in `robot_state_keys`.** E.g. `joint_1 … joint_7`. A pure-Cartesian profile omits it entirely. |
 | If `cartesian_position` is included: what orientation representation does the robot state use? | `robot_state_orientation_representation` | `euler_xyz`, `quat`, `matrix`, `rot6d`, `rotvec` |
 
 ### 5c. Action space
 | Question | YAML key | Options |
 |---|---|---|
-| What action types does the policy output? | `action_space` | Not a free choice — **exactly one arm action** from `joint_position`, `joint_velocity`, `cartesian_position`, `cartesian_velocity`; **at least one gripper action** from `gripper_position`, `gripper_velocity`, `gripper_binary`; **at most one base action** from `base_velocity`, `base_position`; no other keys. A profile declaring `uses_mobile_base: true` must include a base action. |
+| What action types does the policy output? | `action_space` | Not a free choice — **at least one arm action** from `joint_position`, `joint_velocity`, `cartesian_position`, `cartesian_velocity`; **at least one gripper action** from `gripper_position`, `gripper_velocity`, `gripper_binary`; **at most one base action** from `base_velocity`, `base_position`; no other keys. A profile declaring `uses_mobile_base: true` must include a base action. |
 | What are the joint names for arm actions? | `action_joint_names` | same order as the action vector. **Required** whenever `joint_position` or `joint_velocity` is in the action space — not optional. |
 | If `cartesian_position` is in the action space: what orientation representation? | `orientation_representation` | `euler_xyz`, `quat`, `matrix`, `rot6d`, `rotvec`. Applies to `cartesian_position` only — `cartesian_velocity` is recorded exactly as given, with no conversion and no shape check. |
 
