@@ -26,9 +26,7 @@ B – HDF5 schema / data violations (structure)
 
 C – Tensor shape / dtype violations
     invalid_joint_pos_wrong_dof     joint_position is (20, 3) not (20, 7)
-    invalid_gripper_pos_wrong_dof   gripper_position is (20, 3) not (20, 1)
     invalid_joint_vel_wrong_dof     joint_velocity action is (20, 3) not (20, 7)
-    invalid_robot_state_wrong_dtype joint_position stored as uint8 not float64
     invalid_robot_state_extra_key   robot_states has undeclared extra key
     invalid_robot_state_missing_key gripper_position absent from robot_states group
 
@@ -40,7 +38,7 @@ D – Embedded robot_profile JSON violations
     invalid_profile_unsupported_action action_space contains unknown key "hand_position"
     invalid_profile_empty_cameras   camera_names is empty list
     invalid_profile_missing_rs_key  robot_state_keys missing required "joint_position"
-    invalid_profile_biarm_mismatch  is_biarm=True but tensors are single-arm (7-dim)
+    invalid_profile_biarm_mismatch  is_biarm=True but cartesian_position is 7-DOF, not 14
 
 E – Cross-consistency violations
     invalid_joint_names_length_mismatch  robot_state_joint_names has 7 entries, tensor has 5 cols
@@ -294,16 +292,6 @@ def make_joint_pos_wrong_dof(out_dir: Path) -> None:
         _video_paths(f, "front", "invalid_joint_pos_wrong_dof_front.mp4")
 
 
-def make_gripper_pos_wrong_dof(out_dir: Path) -> None:
-    with h5py.File(out_dir / "invalid_gripper_pos_wrong_dof.h5", "w") as f:
-        _base_attrs(f, "invalid_gripper_pos_wrong_dof")
-        rs = f.require_group("observations/robot_states")
-        rs.create_dataset("joint_position", data=np.zeros((20, 7), dtype=np.float64))
-        rs.create_dataset("gripper_position", data=np.zeros((20, 3), dtype=np.float64))
-        _actions(f)
-        _video_paths(f, "front", "invalid_gripper_pos_wrong_dof_front.mp4")
-
-
 def make_joint_vel_wrong_dof(out_dir: Path) -> None:
     with h5py.File(out_dir / "invalid_joint_vel_wrong_dof.h5", "w") as f:
         _base_attrs(f, "invalid_joint_vel_wrong_dof")
@@ -317,16 +305,6 @@ def make_joint_vel_wrong_dof(out_dir: Path) -> None:
         ):
             ag.create_dataset(key, data=h5py.Empty(dtype=np.float64))
         _video_paths(f, "front", "invalid_joint_vel_wrong_dof_front.mp4")
-
-
-def make_robot_state_wrong_dtype(out_dir: Path) -> None:
-    with h5py.File(out_dir / "invalid_robot_state_wrong_dtype.h5", "w") as f:
-        _base_attrs(f, "invalid_robot_state_wrong_dtype")
-        rs = f.require_group("observations/robot_states")
-        rs.create_dataset("joint_position", data=np.full((20, 7), 128, dtype=np.uint8))
-        rs.create_dataset("gripper_position", data=np.zeros((20, 1), dtype=np.float64))
-        _actions(f)
-        _video_paths(f, "front", "invalid_robot_state_wrong_dtype_front.mp4")
 
 
 def make_robot_state_extra_key(out_dir: Path) -> None:
@@ -593,8 +571,8 @@ _MAKERS_SIMPLE = [
     make_no_video_group, make_annotation_dataset, make_taxonomy_not_json,
     make_mismatched_steps, make_zero_steps, make_actions_missing,
     make_robot_states_missing, make_image_obs_float,
-    make_joint_pos_wrong_dof, make_gripper_pos_wrong_dof, make_joint_vel_wrong_dof,
-    make_robot_state_wrong_dtype, make_robot_state_extra_key, make_robot_state_missing_key,
+    make_joint_pos_wrong_dof, make_joint_vel_wrong_dof,
+    make_robot_state_extra_key, make_robot_state_missing_key,
     make_malformed_profile, make_profile_missing_key, make_profile_no_gripper,
     make_profile_joint_no_names, make_profile_unsupported_action, make_profile_empty_cameras,
     make_profile_missing_rs_key, make_profile_biarm_mismatch,

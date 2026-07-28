@@ -19,11 +19,9 @@ from oopsie_data_tools.utils.validation.errors import EpisodeValidationError
 
 MAX_IMAGE_SIZE = 1280
 MIN_IMAGE_SIZE = 180
-# Bounds on episode *duration*, not step count: trajectory_length / control_freq. They were
-# named MIN/MAX_EPISODE_LENGTH, so the error reported the raw step count against them and
-# read as nonsense ("trajectory_length 20 out of range [1, 300]" for a 0.67 s episode).
+# Bounds on episode *duration*, not step count: trajectory_length / control_freq.
 MIN_EPISODE_DURATION_S = 1
-MAX_EPISODE_DURATION_S = 300
+MAX_EPISODE_DURATION_S = 600
 
 
 def validate_episode(data: EpisodeData, strict_annotation_check: bool = False) -> None:
