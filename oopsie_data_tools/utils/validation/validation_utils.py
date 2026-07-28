@@ -7,11 +7,11 @@ used by the CLI and tests.
 
 from __future__ import annotations
 
-import glob
 import logging
 import os
 from pathlib import Path
 
+from oopsie_data_tools.utils.h5 import find_episode_files
 from oopsie_data_tools.utils.log import setup_logger
 from oopsie_data_tools.utils.validation.episode_loader import load_episode_from_h5
 from oopsie_data_tools.utils.validation.episode_validator import validate_episode
@@ -64,12 +64,7 @@ def validate_session_dir(
         logger.error("Not a directory: %s", session_path)
         return 1
 
-    # find all hdf5 files recursively in the session directory
-    h5_files = [
-        f
-        for ext in ("*.h5", "*.hdf5")
-        for f in glob.glob(os.path.join(session_path, "**", ext), recursive=True)
-    ]
+    h5_files = [str(p) for p in find_episode_files(session_path)]
 
     if not h5_files:
         logger.error("No .h5 or .hdf5 files found in %s", session_path)
