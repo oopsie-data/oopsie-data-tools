@@ -4,12 +4,15 @@ Claude Code discovers skills by scanning the filesystem for ``<dir>/SKILL.md``, 
 "installing" one is a directory copy — no Claude CLI, and no network access, is involved.
 Two scopes exist:
 
-* personal — ``~/.claude/skills/<name>/``, available in every project
-* project  — ``<cwd>/.claude/skills/<name>/``, checked in and shared with collaborators
+* project (default) — ``<cwd>/.claude/skills/<name>/``, checked in and shared with
+  collaborators, and versioned alongside the data-collection code it describes
+* personal          — ``~/.claude/skills/<name>/``, available in every project
 
-This is deliberately an explicit opt-in subcommand rather than anything that runs at
-install time: contributors who do not use Claude Code never have files written into their
-home directory.
+Project scope is the default because the skill describes one project's workflow, and
+because writing inside the working directory is the change a contributor can most easily
+see and undo. This is also deliberately an explicit opt-in subcommand rather than anything
+that runs at install time: contributors who do not use Claude Code never have files
+written for them at all.
 """
 
 from __future__ import annotations
@@ -34,19 +37,19 @@ def bundled_skill_dir() -> Path:
     return Path(__file__).resolve().parent.parent / "skill"
 
 
-def skill_destination(project: bool, root: Path | None = None) -> Path:
+def skill_destination(user: bool = False, root: Path | None = None) -> Path:
     """Where the skill would be installed for the given scope."""
     if root is not None:
         base = root
-    elif project:
-        base = Path.cwd() / ".claude"
+    elif user:
+        base = Path.home() / ".claude" / "skills"
     else:
-        base = Path.home() / ".claude"
-    return base / "skills" / SKILL_NAME
+        base = Path.cwd() / "skills"
+    return base / SKILL_NAME
 
 
 def install_skill(
-    project: bool = False,
+    user: bool = False,
     force: bool = False,
     root: Path | None = None,
 ) -> int:
@@ -55,7 +58,7 @@ def install_skill(
         logger.error("The installed package does not contain a skill payload at %s.", source)
         return 1
 
-    dest = skill_destination(project, root)
+    dest = skill_destination(user, root)
     if dest.exists():
         if not force:
             logger.error(
@@ -71,10 +74,23 @@ def install_skill(
     shutil.copytree(source, dest)
 
     logger.info("Installed the '%s' skill to %s", SKILL_NAME, dest)
-    logger.info(
-        "Start a new Claude Code session to pick it up, then run /%s to invoke it directly.",
-        SKILL_NAME,
-    )
-    if project:
-        logger.info("Commit .claude/skills/ to share the skill with the rest of the project.")
+    if user:
+        logger.info(
+            "Claude Code picks it up from ~/.claude/skills/ in every project; start a new "
+            "session, then run /%s to invoke it directly.",
+            SKILL_NAME,
+        )
+    else:
+        # ./skills/ is a plain project directory, so it is visible and committable, but it is
+        # not one of the two locations Claude Code scans. Say so rather than let the skill sit
+        # there looking installed.
+        logger.info(
+            "This is a plain project directory, so Claude Code does not scan it yet. Link it "
+            "into the project's skills directory to activate it:\n\n"
+            "    mkdir -p .claude/skills && ln -s ../../skills/%s .claude/skills/%s\n\n"
+            "Or install it for yourself in every project instead: "
+            "oopsie-data install-skill --user",
+            SKILL_NAME,
+            SKILL_NAME,
+        )
     return 0

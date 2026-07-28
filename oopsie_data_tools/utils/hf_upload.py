@@ -12,8 +12,8 @@ import os
 from collections import Counter
 
 from oopsie_data_tools.utils.contributor_config import read_contributor_config
+from oopsie_data_tools.utils.hf_limits import FILE_LIMIT
 from oopsie_data_tools.utils.log import setup_logger
-from oopsie_data_tools.utils.restructure import FILE_LIMIT
 from oopsie_data_tools.utils.validation.errors import EpisodeValidationError
 from oopsie_data_tools.utils.validation.validation_utils import (
     validate_h5_file,

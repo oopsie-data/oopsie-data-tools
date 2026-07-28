@@ -35,8 +35,7 @@ from pathlib import Path
 
 import h5py
 
-FILE_LIMIT = 10_000
-BATCH_SIZE = 500
+from oopsie_data_tools.utils.hf_limits import BATCH_SIZE, FILE_LIMIT
 
 logger = logging.getLogger(__name__)
 
