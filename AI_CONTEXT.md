@@ -159,6 +159,7 @@ This validates and pushes episodes to the lab-specific HuggingFace repository.
 - Passing an action chunk instead of per-step actions → validation error.
 - `cartesian_position` in state/action but `orientation_representation` not set → conversion will fail.
 - Joint-space actions require `joint_position` in `robot_state_keys`; Cartesian actions require `cartesian_position`.
+- If `joint_position` is in `robot_state_keys`, `robot_state_joint_names` must be a non-empty list.
 - `robot_state_joint_names` length not matching the `joint_position` array length → HDF5 schema error.
 - Running `uv sync` without `--extra tfds` or `--extra droid` when those features are needed (note: those two extras conflict with each other).
 
