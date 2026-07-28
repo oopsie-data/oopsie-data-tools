@@ -24,6 +24,7 @@ from oopsie_data_tools.test.fixtures.make_invalid import (
 from oopsie_data_tools.test.fixtures.make_valid import (
     make_failure,
     make_multi_camera,
+    make_no_annotations,
     make_success,
     make_unannotated,
     write_valid_episode,  # re-exported for per-test use in test modules
@@ -96,10 +97,22 @@ def _test_contributor_config():
 
 @pytest.fixture(scope="session")
 def valid_episode(tmp_path_factory) -> Path:
-    """Fully valid oopsiedata_format_v1 unannotated episode."""
+    """Fully valid oopsiedata_format_v1 episode, minimally annotated as a success.
+
+    It carries an annotation despite ``make_unannotated``'s name: validation through the
+    CLI always checks annotations, so a general-purpose "valid episode" must have one.
+    """
     d = tmp_path_factory.mktemp("valid")
     make_unannotated(d)
     return d / "episode_unannotated.h5"
+
+
+@pytest.fixture(scope="session")
+def episode_without_annotations(tmp_path_factory) -> Path:
+    """Structurally valid episode with no ``episode_annotations`` group at all."""
+    d = tmp_path_factory.mktemp("no_annotations")
+    make_no_annotations(d)
+    return d / "episode_no_annotations.h5"
 
 
 @pytest.fixture(scope="session")

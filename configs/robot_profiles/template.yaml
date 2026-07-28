@@ -25,10 +25,6 @@ camera_names: # list of str (Required) (Example: ["left", "right", "wrist"])
 robot_state_keys: # list of str
   - # str
 
-# For knowing what each index in the robot_state["joint_position"] corresponds to
-robot_state_joint_names: # list of str (Required)
-  - # str
-
 # If cartesian_position is in the robot_state_keys, specify the orientation representation. Options:
 # 1. "euler_{format}" (where format is "xyz", "xyx" ... (shape (3,))
 # 2. "quat" (quaternion should be scalar last, shape (4,))

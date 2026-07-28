@@ -39,9 +39,6 @@ REQUIRED_KEYS = frozenset(
         "uses_mobile_base",
         "camera_names",
         "robot_state_keys",
-        # Read unconditionally below, so list it here to get the friendly "missing keys"
-        # error instead of a bare KeyError.
-        "robot_state_joint_names",
         "action_space",
     }
 )
@@ -52,6 +49,10 @@ REQUIRED_ROBOT_STATE_KEYS = frozenset(
     }
 )
 
+# The state has to observe whatever space the action controls: velocity commands still
+# need the corresponding *position* state. Applied as a union over the action space, so a
+# profile mixing joint and cartesian actions needs both state keys. Base actions are not
+# covered — nothing yet requires base_position state for a base action.
 ARM_ACTION_REQUIRED_ROBOT_STATE_KEY = {
     "joint_position": "joint_position",
     "joint_velocity": "joint_position",

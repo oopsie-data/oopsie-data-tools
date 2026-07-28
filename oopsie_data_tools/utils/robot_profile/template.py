@@ -31,12 +31,10 @@ camera_names: # list of str (Required) (Example: ["left", "right", "wrist"])
 # ===== Observation Related =====
 # ===============================
 
-# Observation keys. Options: "joint_position" (Required), "gripper_position" (Required), "cartesian_position", "base_position"
+# Observation keys. Options: "joint_position", "gripper_position", "cartesian_position", "base_position"
+# "gripper_position" is always required.
+# Joint-space actions require "joint_position"; Cartesian actions require "cartesian_position".
 robot_state_keys: # list of str
-  - # str
-
-# For knowing what each index in the robot_state["joint_position"] corresponds to
-robot_state_joint_names: # list of str (Required)
   - # str
 
 # If cartesian_position is in the robot_state_keys, specify the orientation representation. Options:
@@ -73,6 +71,11 @@ orientation_representation: # str
 # ===== Optional Keys =====
 # ==========================
 
+# Required when "joint_position" is in robot_state_keys.
+# Identifies what each index in robot_state["joint_position"] corresponds to.
+robot_state_joint_names: # list of str
+  - # str
+
 # For knowing what each index in the action["joint_position"] corresponds to
 action_joint_names: # list of str
   - # str
@@ -101,4 +104,5 @@ intrinsic_calibration_matrix:
 extrinsic_calibration_matrix:
   <str>: # camera name str
     - # 4 x list of four floats (camera extrinsics in the form of a transformation matrix)
-# ========================"""
+# ========================
+"""

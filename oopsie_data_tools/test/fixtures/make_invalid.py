@@ -37,7 +37,8 @@ D – Embedded robot_profile JSON violations
     invalid_profile_joint_no_names  joint action_space but action_joint_names absent
     invalid_profile_unsupported_action action_space contains unknown key "hand_position"
     invalid_profile_empty_cameras   camera_names is empty list
-    invalid_profile_missing_rs_key  robot_state_keys missing required "joint_position"
+    invalid_profile_missing_rs_key  joint_velocity action_space but robot_state_keys omits
+                                    the "joint_position" state it requires
     invalid_profile_biarm_mismatch  is_biarm=True but cartesian_position is 7-DOF, not 14
 
 E – Cross-consistency violations
