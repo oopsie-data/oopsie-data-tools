@@ -1,118 +1,53 @@
-# oopsiedata_format_v1 — Full Schema Reference
+# Converting a dataset into `oopsiedata_format_v1`
 
-Use this skill whenever writing or debugging a converter that produces Oopsie HDF5 episode files. It describes the canonical `oopsiedata_format_v1` schema as enforced by `oopsie_data_tools`.
+For writing or debugging a converter that produces Oopsie HDF5 episode files.
+`reference/format.md` is the same schema from the reading side and holds the full field-by-field
+rules; this page covers what a converter has to get right. Where they disagree, the validator
+source wins.
 
-`reference/format.md` is the same schema from the reading side; this page is the writing side. Where they disagree, the validator source wins — check it rather than guessing.
+Steps:
 
-You follow these steps:
+1. Create a robot profile with `oopsie-data new-profile` (writes into `./robot_profiles/` —
+   leave it there, a bare `./configs/` is not on the lookup chain). Confirm with the user that
+   every field is real and nothing was guessed.
+2. Write the conversion script, reusing `oopsie_data_tools.utils.conversion_utils` rather than
+   hand-rolling HDF5 writes. Read the relevant reference first.
+3. Let the user run it against the real input path.
 
-1. Create a new robot profile with `oopsie-data new-profile`, which writes into `./robot_profiles/` by default. Leave it where the command put it — profiles are looked up at `$OOPSIE_ROBOT_PROFILES_DIR`, then `./robot_profiles` or `./configs/robot_profiles`, so a bare `./configs/` is not found. Double check with the user that this robot profile is correct and no unverified information has been entered.
-2. Create the conversion script. Follow DRY and make sure to reuse utilities from `oopsie_data_tools.utils.conversion_utils`. Make sure to read all relevant information before attempting to write the conversion script.
-3. Wait for the user to run the conversion script with the full correct input path.
+Worked examples: `examples/conversion_script_examples/` in the repo.
 
-## Validation entry points (`oopsie_data_tools`)
+## What a converter must produce
 
 ```
-oopsie_data_tools/utils/validation/episode_loader.py    # HDF5 → EpisodeData
-oopsie_data_tools/utils/validation/episode_validator.py # semantic checks
-oopsie_data_tools/utils/validation/validation_utils.py  # public API
-oopsie_data_tools/utils/robot_profile/robot_profile.py  # RobotProfile
+root attrs      schema, episode_id, language_instruction, lab_id, operator_name, robot_profile
+observations/robot_states/<key>   (T, D) float64, keys equal to profile.robot_state_keys exactly
+observations/video_paths/<cam>    string, path relative to the .h5 file
+actions/<key>                     (T, D) float64 for keys in action_space;
+                                  h5py.Empty(dtype=np.float64) for every other canonical key
+episode_annotations/<annotator>/  annotation fields as attrs on the subgroup
 ```
 
-Run validation:
-```bash
-oopsie-data validate --path /path/to/directory
-oopsie-data inspect  /path/to/episode.h5    # structure dump, works on files validate rejects
-```
-
----
-
-## HDF5 File Structure
-
-### Root attributes (all required)
-
-| Attribute | Type | Notes |
-|---|---|---|
-| `schema` | str | Must be `"oopsiedata_format_v1"` |
-| `episode_id` | str | Non-empty unique identifier |
-| `language_instruction` | str | Non-empty task description |
-| `lab_id` | str | Non-empty; not `"your_lab_id"` |
-| `operator_name` | str | Non-empty |
-| `robot_profile` | str | JSON-serialized `RobotProfile` (use `robot_profile_to_json`) |
-
-### `/observations/` group
-
-**`/observations/video_paths/`** — one string dataset per camera:
-- Key = camera name (must match `profile.camera_names`)
-- Value = relative path to MP4 from the HDF5 file's directory
-
-**`/observations/robot_states/`** — one dataset per robot state key:
-- Keys must equal `profile.robot_state_keys` exactly — every declared key present, and nothing
-  undeclared (an extra key is rejected, not ignored)
-- Shape: `(T, D)` float64
-- `joint_position`: `(T, n_joints)` — names from `robot_state_joint_names`, and the count must match
-- `gripper_position`: `(T, 1)` or `(T, n_fingers)` — DOF is not checked
-- `cartesian_position`: **`(T, 7)`**, or `(T, 14)` when `is_biarm` — `[x, y, z, qx, qy, qz, qw]`
-  per arm, scalar-last. Not euler: convert before writing, or the episode is rejected.
+Canonical action keys: `cartesian_position`, `cartesian_velocity`, `joint_position`,
+`joint_velocity`, `base_position`, `base_velocity`, `gripper_velocity`, `gripper_position`,
+`gripper_binary`.
 
 `gripper_position` is the only unconditionally required state key. `joint_position` is required
-only when `action_space` holds `joint_position`/`joint_velocity`, and `cartesian_position` only
-when it holds `cartesian_position`/`cartesian_velocity` — the state must observe the space the
-action controls. Mixing joint and Cartesian actions requires both.
+when `action_space` holds `joint_position`/`joint_velocity`, `cartesian_position` when it holds
+`cartesian_position`/`cartesian_velocity` — the state must observe the space the action controls,
+as a union.
 
-### `/actions/` group
+For annotations, `outcome` is the only field that matters to validation. It is one of `success`,
+`success_suboptimal`, `success_side_effect`, `failure`, and must agree in sign with `success`
+(`failure` iff `success < 0.5`). `failure_category` and `severity` are optional lists/slugs —
+see `reference/format.md` for the vocabularies. A converter that emits no `episode_annotations`
+produces structurally valid files that still fail `validate` with `Annotations dict is empty,
+must be provided for upload`: either carry the source labels across, or plan to run
+`oopsie-data annotate` afterwards.
 
-- Keys in `profile.action_space`: stored as `(T, D)` float64 arrays (non-empty)
-- All other canonical action keys: stored as `h5py.Empty(dtype=np.float64)`
+## The robot profile
 
-Canonical action keys (write Empty for any not in action_space):
-```
-cartesian_position, cartesian_velocity,
-joint_position, joint_velocity,
-base_position, base_velocity,
-gripper_velocity, gripper_position, gripper_binary
-```
-
-### `/episode_annotations/` group (required by both `validate` and `upload`)
-
-Structure: `episode_annotations/{annotator_name}/` — a group with HDF5 attributes:
-
-| Attr | Type | Notes |
-|---|---|---|
-| `success` | float | Required; must be in [0.0, 1.0] |
-| `episode_description` | str | Optional free text |
-| `taxonomy` | str | JSON: `{"outcome": "...", "failure_category": [...], "severity": "..."}` |
-
-`outcome` is one of four slugs — `success`, `success_suboptimal`, `success_side_effect`,
-`failure` — and is the only taxonomy field that matters to validation. It must agree in sign
-with `success` (`failure` iff `success < 0.5`); all three `success_*` outcomes write
-`success = 1.0`, so a consumer that only reads the float sees them alike.
-
-`failure_category` and `severity` are stored as stable slugs, not prose:
-
-| Field | Allowed values |
-|---|---|
-| `failure_category` | `reaching`, `grasp`, `manipulation`, `sequencing_semantic`, `collision`, `hardware`, `not_attempted`, `other` |
-| `severity` | `low`, `medium`, `catastrophic` |
-
-Every field except `outcome` is optional — a partial annotation is valid, and so is a failure
-with no taxonomy at all.
-
-Files written by an older release carry `schema = oopsie_failure_taxonomy_v1`,
-`failure_description` instead of `episode_description`, prose values instead of slugs, and no
-`outcome`. Readers upcast those on the fly and never rewrite them, so both versions can sit in
-one dataset. `oopsie_data_tools/utils/migrate_taxonomy_v2.py` converts them in place if you
-want them normalized.
-
-A converter that emits no `episode_annotations` produces structurally valid files that still fail `oopsie-data validate` with `Annotations dict is empty, must be provided for upload`. Either carry the source dataset's labels across, or plan to run `oopsie-data annotate` afterwards.
-
----
-
-## RobotProfile fields
-
-Defined in `oopsie_data_tools/utils/robot_profile/robot_profile.py`. Serialized as JSON into `f.attrs["robot_profile"]`.
-
-**Required fields** — these nine, and no others, are what `REQUIRED_KEYS` enforces:
+`reference/robot-profile.md` has the full field reference and the questions to ask the user.
+What a converter needs inline — the nine keys `REQUIRED_KEYS` enforces:
 
 | Field | Type | Example |
 |---|---|---|
@@ -123,62 +58,46 @@ Defined in `oopsie_data_tools/utils/robot_profile/robot_profile.py`. Serialized 
 | `uses_mobile_base` | bool | `false` |
 | `control_freq` | int | `10` |
 | `camera_names` | list[str] | `["left", "right", "wrist"]` |
-| `robot_state_keys` | list[str] | Must include `"gripper_position"`, plus whatever `action_space` implies (see above) |
-| `action_space` | list[str] | ≥1 arm key + ≥1 gripper key (see below) |
+| `robot_state_keys` | list[str] | `gripper_position` plus whatever `action_space` implies |
+| `action_space` | list[str] | ≥1 arm key + ≥1 gripper key, ≤1 base key, nothing else |
 
-**`action_space` validity rules** (`is_valid_action_space`):
-- **at least one** arm key from: `{joint_position, joint_velocity, cartesian_position, cartesian_velocity}`
-- **at least one** gripper key from: `{gripper_position, gripper_velocity, gripper_binary}`
-- **at most one** base key from: `{base_velocity, base_position}`
-- No other keys allowed
+Arm keys are `joint_position`, `joint_velocity`, `cartesian_position`, `cartesian_velocity`;
+gripper keys `gripper_position`, `gripper_velocity`, `gripper_binary`; base keys `base_velocity`,
+`base_position`. Declaring two arm or two gripper keys is legal, but every declared key must then
+be written as a real (non-Empty) array.
 
-Declaring two arm keys or two gripper keys is legal — but every declared key must then be written as a real (non-Empty) array. `uses_mobile_base: true` requires a base key; the converse is not checked.
+Conditionally required: `robot_state_joint_names` when `joint_position` is in
+`robot_state_keys`, and `action_joint_names` when `action_space` holds
+`joint_position`/`joint_velocity`. Both are one entry per DOF, in the array's own order, and
+their length is checked against the recorded arrays.
 
-**Optional fields:**
+Optional but worth setting: `robot_state_orientation_representation` and
+`orientation_representation` (state and action `cartesian_position` respectively) and
+`controller`. Note the next section — for a converter these describe what you *wrote*, which is
+not necessarily what the source dataset held.
 
-| Field | Notes |
-|---|---|
-| `robot_state_joint_names` | Required if `joint_position` is in `robot_state_keys` (enforced at profile load). One entry per joint DOF; the count is checked against the recorded array |
-| `action_joint_names` | Required if `action_space` includes `joint_position` or `joint_velocity` |
-| `robot_state_orientation_representation` | Declares how `cartesian_position` state encodes orientation. Options: `"quat"`, `"matrix"`, `"rot6d"`, `"rotvec"`, `"euler_<order>"` where order ∈ `xyz, zyx, xyx, XYZ, ZYX, XYX` (**case matters**: lowercase extrinsic, uppercase intrinsic) |
-| `orientation_representation` | Same, for `cartesian_position` **actions** only — `cartesian_velocity` is never converted |
-| `controller` | str — `"OSC"`, `"joint_position"`, `"joint_velocity"` |
+## The two things converters get wrong
 
----
+**Orientation is not converted for you.** `orientation_representation` is applied by
+`EpisodeRecorder.record_step`; writing HDF5 directly bypasses it entirely. `cartesian_position`
+must be written as `[x, y, z, qx, qy, qz, qw]` per arm — shape `(T, 7)`, or `(T, 14)` when
+`is_biarm`. Declaring `euler_xyz` and then writing euler angles is rejected on width (6 ≠ 7), or
+worse, silently mislabels data if the widths line up. Use
+`to_quaternion_poses(poses, "euler_xyz", is_biarm=...)` for a whole trajectory at once, and
+declare the *result* (`"quat"`) in the profile — the profile describes what is on disk.
 
-## Validation constraints
+**Video and duration limits are checked downstream, so the fix is upstream.** Each side must be
+180–1280 px (`resize_frames` handles the ceiling), episode duration
+(`trajectory_length / control_freq`) must be 1–600 s, all arrays must share the same leading `T`,
+and frame counts must land within `max(5, 0.1 * T)` of `T`.
 
-| Check | Limit |
-|---|---|
-| Video min dimension | 180 px |
-| Video max dimension | 1280 px |
-| Episode duration (trajectory_length / control_freq) | 1 – 600 seconds |
-| Frame count vs trajectory_length tolerance | max(5, 10% of T) |
-| Video duration vs expected duration | ≤ 0.5 s |
-| All obs/action arrays same length T | strict |
-| Frame counts across cameras | within 1 of each other |
+Check the result with `oopsie-data validate --path <dir>`, or `oopsie-data inspect <file.h5>`
+for a structure dump that works even on files `validate` rejects.
 
-**Orientation conversion does not happen here.** `orientation_representation` is applied by
-`EpisodeRecorder.record_step`, not by the validator or the loader. A converter writing HDF5
-directly bypasses that entirely, so it must write `cartesian_position` as scalar-last
-quaternions itself. Declaring `orientation_representation: euler_xyz` and then writing euler
-angles produces a file that is rejected on width (6 ≠ 7) — or, worse, silently mislabels data
-if the widths happen to line up.
+## Write pattern
 
-`to_quaternion_poses(poses, "euler_xyz", is_biarm=...)` does the conversion `record_step`
-would have done, for a whole `(T, D)` trajectory at once. Declare the *result* in the profile
-(`"quat"`), not the source format — the profile describes what is on disk. Frames that exceed
-the 1280 px limit go through `resize_frames` for the same reason: the check is downstream, so
-the fix has to be upstream.
-
-Worked examples of all of this live in `examples/conversion_script_examples/`.
-
----
-
-## Minimal write pattern (Python)
-
-Prefer the helpers in `oopsie_data_tools.utils.conversion_utils` over hand-rolling any of this —
-they are written against the definitions the validator uses, so they cannot drift from it.
+Prefer these helpers over hand-rolling: they are written against the definitions the validator
+uses, so they cannot drift from it.
 
 ```python
 import h5py, numpy as np
@@ -221,8 +140,7 @@ with h5py.File(h5_path, "w") as f:
         h5_path,
     )
 
-    # Keys must equal profile.robot_state_keys exactly — write_robot_states enforces that
-    # in both directions rather than letting the validator find it later.
+    # Enforces key equality with profile.robot_state_keys in both directions.
     write_robot_states(
         f,
         {
@@ -239,38 +157,19 @@ with h5py.File(h5_path, "w") as f:
         profile.action_space,
     )
 
-    # Goes into episode_annotations/<annotator_name>/ — attrs on the parent group are
+    # Must go into episode_annotations/<annotator_name>/ — attrs on the parent group are
     # invisible to the loader, and the episode then fails as unannotated.
-    write_episode_annotations(f, annotator_name="my_annotator", success=1.0)
-```
-
-For a failure, add whatever you know — none of these are required:
-
-```python
     write_episode_annotations(
         f,
         annotator_name="my_annotator",
         success=0.0,
+        # everything below is optional
         episode_description="Robot grasped the cup but dropped it in transit.",
         failure_category=["grasp"],
         severity="medium",
     )
 ```
 
-`outcome` defaults to the coarse reading of `success`, which can only ever be `success` or
-`failure`. Pass it explicitly to record one of the two qualified successes:
-
-```python
-    write_episode_annotations(
-        f,
-        annotator_name="my_annotator",
-        success=1.0,
-        outcome="success_side_effect",
-        episode_description="Completed the task but knocked over a nearby cup.",
-        failure_category=["collision"],
-        severity="low",
-    )
-```
-
-## For reference
-Example conversion scripts can be found at https://github.com/oopsie-data/oopsie-data-tools/tree/main/examples/conversion_script_examples
+`outcome` defaults to the coarse reading of `success`, so it can only come out as `success` or
+`failure`. Pass `outcome="success_side_effect"` (or `"success_suboptimal"`) explicitly to record
+a qualified success.
