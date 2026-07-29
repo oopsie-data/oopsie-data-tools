@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "oopsie-data-tools"
-version = "0.2.1"
+version = "0.2.2"
 description = "Collect, annotate, validate and upload robotic manipulation rollout data."
 readme = "README.md"
 requires-python = ">=3.8"
