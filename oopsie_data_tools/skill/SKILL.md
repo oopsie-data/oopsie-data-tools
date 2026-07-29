@@ -1,9 +1,12 @@
 ---
 name: oopsie-data
-description: Use when working with Oopsie Data robotic manipulation failure datasets — recording rollouts, annotating episodes, validating the HDF5 format, or uploading a submission with the oopsie-data CLI.
+description: Use when working with Oopsie Data robotic manipulation failure datasets or the oopsie-data / oopsie-data-tools CLI — recording rollouts with EpisodeRecorder, writing or debugging a robot profile, annotating episodes and the failure taxonomy, reading or validating oopsiedata_format_v1 HDF5 (.h5) episode files, converting an existing robot dataset into the format, or uploading a lab's submission to HuggingFace.
 ---
 
 # Oopsie Data
+
+This skill is for using the toolkit: recording, annotating, validating and uploading a
+contributor's data. 
 
 Oopsie Data is a community dataset of **robotic manipulation failures**. Contributors record
 rollouts, annotate what went wrong, and upload them to a shared HuggingFace repo. The
@@ -36,10 +39,58 @@ Supporting commands: `show-config` (which config files are in effect), `submissi
 lab has already uploaded), `inspect <file.h5>` (dump one episode's structure — a debugging aid
 that works even on files `validate` rejects; the path is positional, there is no `--path`),
 `restructure` (split a directory HuggingFace would reject), `install-skill` (copy this skill
-into a Claude configuration).
+into an agent's skills directory).
 
 Inside a git checkout that was set up with `uv sync`, prefix every command with `uv run`. A
 pip- or uv-installed package puts `oopsie-data` on `PATH` directly.
+
+## Machine-readable output
+
+`validate`, `show-config` and `inspect` each take `--json`, which prints a structure on stdout
+instead of prose and logs nothing else. Prefer it: it is the difference between reading a
+result and parsing one. Exit codes are identical either way.
+
+```bash
+oopsie-data validate --path ./samples --json     # one record per episode: passed, error
+oopsie-data show-config --json                   # both search chains and what won
+oopsie-data inspect ./samples/000000.h5 --json   # the full group/dataset/attr tree
+```
+
+`validate --json` gives `episodes[]` with `episode`, `path`, `passed`, and on failure `error`
+and an `error_type` of `validation` (the episode is bad — the user's to fix) or `unexpected`
+(the validator broke — report it, do not work around it), plus `total`/`passed`/`failed`
+counts. That is what to use when triaging a directory rather than checking a single file.
+`show-config --json` masks the token unless `--show-token` is given, so it is safe to quote
+back to the user.
+
+## Commands that block or prompt
+
+Three commands are the human's to run, and running them in the foreground yourself stalls the
+session or fails for a reason that has nothing to do with the data.
+
+**`annotate` never returns.** It serves the UI until Ctrl-C, by design. Start it in the
+background and give the user the URL, or hand them the command to run — do not wait on it.
+Annotating is a human judgement about what happened in a rollout, so there is nothing for you
+to do while it runs anyway.
+
+**`restructure` prompts for confirmation** and has no terminal check, so without `--yes` it
+either hangs waiting for input or dies on `EOFError`. It copies the whole dataset, which is
+why the prompt exists — get the user's agreement, then pass `--yes`. `upload
+--with-restructure` treats the flag itself as that agreement and does not prompt.
+
+**`init` is interactive**, but it checks for a terminal and exits 1 with an explanation
+rather than hanging. It runs unattended only when `--lab-id` and `--hf-token` are both given —
+and a token passed as a flag lands in the user's shell history, so prefer letting them run
+`init` themselves. The same applies to `annotate --annotator-name`: omitted, it prompts;
+without a terminal it errors out.
+You can run it, but ask the user to provide the values and pass them as flags rather than typing them yourself.
+
+**`upload`**: out of principle, you should not run it for the user. It publishes their data to the submission repository, so
+it is best practice to let the user run it themselves. If you do run it, confirm with them first, and pass `--skip-upload` to do a dry run that validates everything without publishing. Only run it
+in full if the user explicitly asks and insists.
+
+Everything else — `validate`, `show-config`, `inspect`, `submissions`, `new-profile`,
+`install-skill` — runs to completion on its own and is safe to invoke directly.
 
 ## Rules
 

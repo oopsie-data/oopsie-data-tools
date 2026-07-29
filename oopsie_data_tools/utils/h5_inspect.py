@@ -165,3 +165,77 @@ def inspect_h5(path: str) -> None:
     with h5py.File(path, "r") as f:
         print(f"HDF5: {path}")
         _walk("", f, indent=0)
+
+
+# ── structured form ───────────────────────────────────────────────────────────
+
+
+def _jsonable(v: Any) -> Any:
+    """An attribute value as something ``json.dumps`` accepts.
+
+    Attrs are the interesting half of an episode — the profile, the annotations, the
+    instruction — so these are converted rather than stringified. Arrays keep their full
+    contents here: unlike the printed dump this output is read by a program, and eliding
+    is the caller's business.
+    """
+    if isinstance(v, bytes):
+        return decode_h5_scalar(v)
+    if isinstance(v, np.ndarray):
+        return [_jsonable(x) for x in v.tolist()]
+    if isinstance(v, np.generic):
+        return _jsonable(v.item())
+    if isinstance(v, (list, tuple)):
+        return [_jsonable(x) for x in v]
+    if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+        # JSON has no NaN/Infinity literal; emit the repr rather than a document that
+        # only Python's json module can read back.
+        return repr(v)
+    return v
+
+
+def _attrs_dict(obj: h5py.Group | h5py.Dataset) -> dict:
+    out = {}
+    for k in sorted(obj.attrs.keys()):
+        try:
+            out[k] = _jsonable(obj.attrs[k])
+        except Exception as e:
+            out[k] = f"<error reading attr: {e}>"
+    return out
+
+
+def _structure(obj: h5py.Group | h5py.Dataset) -> dict:
+    if isinstance(obj, h5py.Group):
+        node: dict = {"type": "group", "attrs": _attrs_dict(obj), "children": {}}
+        for k in sorted(obj.keys()):
+            try:
+                link = obj.get(k, getlink=True)
+                if isinstance(link, (h5py.SoftLink, h5py.ExternalLink)):
+                    node["children"][k] = {"type": "link", "target": str(link)}
+                    continue
+            except Exception:
+                pass
+            node["children"][k] = _structure(obj[k])
+        return node
+
+    if isinstance(obj, h5py.Dataset):
+        # An h5py.Empty dataset has a dtype but no shape, and the schema uses those as
+        # placeholders for undeclared action keys — so "empty" has to be reportable.
+        return {
+            "type": "dataset",
+            "shape": None if obj.shape is None else list(obj.shape),
+            "dtype": str(obj.dtype),
+            "empty": obj.shape is None,
+            "attrs": _attrs_dict(obj),
+        }
+
+    return {"type": "unknown", "repr": str(type(obj))}
+
+
+def inspect_h5_structure(path: str) -> dict:
+    """The same structure ``inspect_h5`` prints, as a JSON-serializable dict.
+
+    Backs ``oopsie-data inspect --json``. Like the printed dump it assumes nothing about
+    the schema, so it works on a file ``oopsie-data validate`` rejects.
+    """
+    with h5py.File(path, "r") as f:
+        return {"path": path, "root": _structure(f)}

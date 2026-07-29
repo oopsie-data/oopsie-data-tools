@@ -46,11 +46,42 @@ def validate_h5_file(
     return True
 
 
-def validate_session_dir(
-    session_dir: str,
-    strict_annotation_check: bool = False,
-    log_path: str | Path | None = None,
-) -> int:
+def collect_validation_results(
+    target: str, strict_annotation_check: bool = True
+) -> list[dict]:
+    """Validate a file or a directory and return one result record per episode.
+
+    The same checks ``validate_session_dir`` runs, reported as data rather than log lines,
+    so a caller can answer "which episodes failed, and on what" without parsing prose.
+    Backs ``oopsie-data validate --json``.
+
+    Each record carries ``episode`` (the file name), ``path``, ``passed``, and on failure
+    ``error`` plus an ``error_type`` of ``validation`` for a rejected episode or
+    ``unexpected`` for a bug in the validator — the same distinction the prose output
+    draws, since only the first is the user's to fix.
+    """
+    target = os.path.abspath(os.path.normpath(target))
+    if os.path.isfile(target):
+        paths = [Path(target)]
+    elif os.path.isdir(target):
+        paths = find_episode_files(target)
+    else:
+        paths = []
+
+    results = []
+    for path in paths:
+        record = {"episode": path.name, "path": str(path), "passed": True}
+        try:
+            validate_h5_file(str(path), strict_annotation_check=strict_annotation_check)
+        except EpisodeValidationError as e:
+            record.update(passed=False, error=str(e), error_type="validation")
+        except Exception as e:
+            record.update(passed=False, error=str(e), error_type="unexpected")
+        results.append(record)
+    return results
+
+
+def validate_session_dir(session_dir: str, strict_annotation_check: bool = False, log_path: str | Path | None = None) -> int:
     """Validate every ``*.h5`` / ``*.hdf5`` file in a session directory.
 
     Returns:
