@@ -1,22 +1,26 @@
-"""One definition of which failure-taxonomy fields count as filled in.
+"""One definition of when an annotation counts as *finished* for its outcome.
 
-Two callers ask closely-related questions about the same three fields, and each used to
-answer with its own copy of the logic:
+Only ``outcome`` is required, so this module no longer speaks for the validator -- a partial
+annotation is perfectly valid to upload. What it speaks for is the annotation UI's tick,
+which still needs to distinguish "outcome recorded" from "everything this outcome asks
+about is filled in", so annotators can find episodes worth revisiting.
 
-* :mod:`episode_validator` asks *is this acceptable to upload?* — the trio must be
-  all-filled or all-empty. A failure with no taxonomy at all is allowed through.
-* The annotation server asks *is this fully annotated?*, to drive the tick in the episode
-  list. There, a failure with no taxonomy is "partial" and still wants attention.
-
-Those thresholds are deliberately different, and unifying them would be a policy change:
-tightening the validator would reject already-uploaded data, and loosening the UI would
-stop prompting annotators to finish. What is shared — and now lives here once — is what
-"filled" means for each field, which is the part that must not drift.
+The per-outcome field list below mirrors which fields the annotation form actually shows for
+each outcome. If one moves, the other must.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Mapping
+
+# Mirrors the conditional fields in the annotation form. `success` is a clean run: there is
+# nothing further to say about it, so it is complete the moment it is chosen.
+OUTCOME_EXPECTED_FIELDS: dict = {
+    "success": (),
+    "success_suboptimal": ("episode_description",),
+    "success_side_effect": ("episode_description", "side_effect_category", "severity"),
+    "failure": ("episode_description", "side_effect_category", "severity"),
+}
 
 
 def _is_filled(value: Any) -> bool:
@@ -29,21 +33,35 @@ def _is_filled(value: Any) -> bool:
 
 
 def _category_is_filled(value: Any) -> bool:
-    """``failure_category`` may arrive as a list (the UI) or a scalar (older records)."""
+    """``side_effect_category`` may arrive as a list (the form) or a scalar (older records).
+
+    Blank entries do not count, so ``[""]`` is empty. The stored form drops them on the way
+    to disk, and a list that looks filled here but not after a round-trip would make the
+    tick flip for no visible reason.
+    """
     if isinstance(value, (list, tuple)):
-        return len(value) > 0
+        return any(_is_filled(v) for v in value)
     return _is_filled(value)
 
 
-def failure_trio_flags(
-    failure_category: Any, failure_description: Any, severity: Any
-) -> tuple[bool, bool, bool]:
-    """Whether category, description and severity are each filled in.
+def _field_is_filled(annotation: Mapping[str, Any], field: str) -> bool:
+    value = annotation.get(field)
+    if field == "side_effect_category":
+        return _category_is_filled(value)
+    return _is_filled(value)
 
-    Returned in that order, so ``sum(...)`` gives how many of the three are present.
+
+def completeness_flags(annotation: Mapping[str, Any]) -> dict:
+    """Per-field filled flags, restricted to the fields this outcome actually asks about.
+
+    An outcome the vocabulary does not know gets an empty mapping rather than an error: the
+    caller's job is to render a tick, not to reject data.
     """
-    return (
-        _category_is_filled(failure_category),
-        _is_filled(failure_description),
-        _is_filled(severity),
-    )
+    outcome = str(annotation.get("outcome", "") or "").strip().lower()
+    expected = OUTCOME_EXPECTED_FIELDS.get(outcome, ())
+    return {field: _field_is_filled(annotation, field) for field in expected}
+
+
+def is_complete(annotation: Mapping[str, Any]) -> bool:
+    """Whether every field this outcome asks about is filled (trivially true for ``success``)."""
+    return all(completeness_flags(annotation).values())

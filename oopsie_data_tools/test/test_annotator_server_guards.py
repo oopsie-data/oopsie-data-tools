@@ -106,7 +106,7 @@ def test_sample_rejects_bad_paths(client, query, expected_status, reason):
 def test_annotation_write_refuses_a_path_outside_the_samples_dir(client, secret):
     response = client.post(
         "/api/h5/annotations?path=../outside_the_samples_dir.txt",
-        json={"binary_success": "Success"},
+        json={"outcome": "success"},
     )
 
     assert response.status_code in (400, 403)
@@ -118,7 +118,7 @@ def test_annotation_write_lands_in_the_episode(client, tmp_path):
 
     response = client.post(
         f"/api/h5/annotations?path={h5_path.name}",
-        json={"binary_success": "Success", "additional_notes": "looks fine"},
+        json={"outcome": "success", "additional_notes": "looks fine"},
     )
 
     assert response.status_code == 200

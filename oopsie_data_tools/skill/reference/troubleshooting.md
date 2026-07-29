@@ -39,6 +39,17 @@ control_freq` — not a step count. Short test rollouts trip this constantly.
 freshly recorded episode fails until someone has annotated it — run `oopsie-data annotate` first.
 This is expected between recording and annotation, not a malformed file.
 
+**"taxonomy is not valid JSON" / "taxonomy must be a JSON object".** The `taxonomy` attr on an
+annotator subgroup is stored as a JSON object string. Something wrote it by hand and got the
+quoting wrong — write annotations through `write_episode_annotations` or the annotation tool
+rather than setting the attr directly.
+
+**"unrecognized outcome" / "outcome disagrees with success".** The `outcome` slug inside
+`taxonomy` must be one of `success`, `success_suboptimal`, `success_side_effect`, `failure`,
+and must match the `success` float (`failure` iff `success < 0.5`). Both are only reachable by
+writing the attrs by hand; the writers derive one from the other. Taxonomy v1 files have no
+`outcome` at all and are exempt.
+
 **Undeclared keys.** `observations/robot_states contains N key(s) the robot profile does not
 declare`. Add them to the profile or stop recording them; an extra diagnostic channel is not
 allowed through.

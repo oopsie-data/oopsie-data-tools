@@ -16,11 +16,21 @@ import cv2
 import h5py
 import numpy as np
 
-from oopsie_data_tools.annotation_tool.annotation_schema import write_annotation_attrs
+from oopsie_data_tools.annotation_tool.annotation_schema import (
+    OUTCOME_SUCCESS,
+    OUTCOMES,
+    SUCCESS_THRESHOLD,
+    success_to_outcome,
+    write_annotation_attrs,
+)
 from oopsie_data_tools.utils.h5 import decode_h5_scalar
 from oopsie_data_tools.utils.robot_profile.robot_profile import (
     RobotProfile,
     robot_profile_to_json,
+)
+from oopsie_data_tools.utils.robot_profile.rotation_utils import (
+    ActionQuatConversion,
+    RotOption,
 )
 from oopsie_data_tools.utils.validation.episode_loader import OOPSIE_DATA_SCHEMA_V1
 from oopsie_data_tools.utils.validation.episode_validator import (
@@ -35,7 +45,7 @@ SCHEMA_VERSION = OOPSIE_DATA_SCHEMA_V1
 MAX_DIM = MAX_IMAGE_SIZE
 
 
-def _resize_frames(frames: np.ndarray, max_dim: int = MAX_DIM) -> np.ndarray:
+def resize_frames(frames: np.ndarray, max_dim: int = MAX_DIM) -> np.ndarray:
     """Resize ``(T, H, W, 3)`` frames so that ``max(H, W) <= max_dim``.
 
     Raises:
@@ -61,6 +71,10 @@ def _resize_frames(frames: np.ndarray, max_dim: int = MAX_DIM) -> np.ndarray:
     return np.stack(
         [cv2.resize(f, (new_w, new_h), interpolation=cv2.INTER_AREA) for f in frames]
     )
+
+
+#: Kept so converters written against the older private name keep importing.
+_resize_frames = resize_frames
 
 
 def _parse_fps(control_freq: Any, default_fps: float = 15.0) -> float:
@@ -112,8 +126,9 @@ def write_episode_annotations(
     *,
     annotator_name: str,
     success: float,
-    failure_description: str = "",
-    failure_category: Sequence[str] | None = None,
+    outcome: str | None = None,
+    episode_description: str = "",
+    side_effect_category: Sequence[str] | None = None,
     severity: str = "",
     additional_notes: str = "",
     timestamp: str = "",
@@ -126,38 +141,102 @@ def write_episode_annotations(
     (``lab_id``, ``operator_name``) are root attributes — see :func:`write_root_attrs` —
     not annotation fields.
 
-    ``success`` is stored as the exact float given, so qualified successes survive; the
-    failure taxonomy is only required when it is below 0.5.
+    ``success`` is stored as the exact float given, so qualified successes survive; it is
+    authoritative for magnitude, and ``outcome`` for which of the four branches this is.
+    Omit ``outcome`` and it is derived from the float, which can only ever yield the coarse
+    ``success``/``failure`` — pass it explicitly to record a qualified success.
+
+    Every taxonomy field is optional: a partial annotation is valid.
     """
     if not 0.0 <= float(success) <= 1.0:
         raise ValueError(f"success must be in [0.0, 1.0], got {success!r}")
 
-    categories = list(failure_category or [])
-    if float(success) < 0.5:
-        filled = [bool(categories), bool(str(failure_description).strip()), bool(str(severity).strip())]
-        if any(filled) and not all(filled):
-            raise ValueError(
-                "For a failure, failure_category, failure_description and severity must be "
-                "all filled or all empty; got "
-                f"category={categories!r}, description={failure_description!r}, "
-                f"severity={severity!r}."
-            )
+    resolved_outcome = (outcome or "").strip().lower() or success_to_outcome(success)
+    if resolved_outcome not in OUTCOME_SUCCESS:
+        raise ValueError(f"outcome must be one of {OUTCOMES}, got {outcome!r}")
+    # A float and a slug that disagree would make every downstream reader pick a different
+    # answer depending on which one it happens to consult.
+    if (resolved_outcome == "failure") != (float(success) < SUCCESS_THRESHOLD):
+        raise ValueError(
+            f"outcome={resolved_outcome!r} disagrees with success={success!r} "
+            f"(threshold {SUCCESS_THRESHOLD})"
+        )
 
     group = file_handle.require_group("episode_annotations").require_group(annotator_name)
     write_annotation_attrs(
         group,
         {
-            # write_annotation_attrs speaks the annotation tool's dict; the numeric success
-            # it derives from this is overwritten below with the exact value.
-            "binary_success": "success" if float(success) >= 0.5 else "failure",
+            "outcome": resolved_outcome,
             "timestamp": timestamp,
-            "failure_description": failure_description,
-            "failure_category": categories,
+            "episode_description": episode_description,
+            "side_effect_category": list(side_effect_category or []),
             "severity": severity,
             "additional_notes": additional_notes,
         },
     )
+    # write_annotation_attrs derives a 1.0/0.0 success from the outcome; restore the exact
+    # value so a fractional success survives.
     group.attrs["success"] = float(success)
+
+
+def to_quaternion_poses(
+    poses: np.ndarray,
+    source_format: str,
+    *,
+    is_biarm: bool = False,
+) -> np.ndarray:
+    """Convert ``(T, D)`` cartesian poses to ``(T, 7)`` — or ``(T, 14)`` when biarm.
+
+    ``source_format`` is a profile orientation string (``"euler_xyz"``, ``"rotvec"``,
+    ``"quat"``, …). The recorder applies this conversion in ``record_step``; a converter
+    writing HDF5 directly bypasses it, so it has to do the same thing here or write a pose
+    the validator rejects on width.
+    """
+    array = np.asarray(poses, dtype=np.float64)
+    if array.ndim != 2:
+        raise ValueError(f"Expected (T, D) poses, got shape {array.shape}")
+
+    convert = ActionQuatConversion(RotOption.from_string(source_format), is_biarm=is_biarm)
+    converted = np.stack([convert.convert_position(row) for row in array]).astype(np.float64)
+
+    expected = 14 if is_biarm else 7
+    if converted.shape[-1] != expected:
+        raise ValueError(
+            f"{source_format!r} poses of width {array.shape[-1]} converted to width "
+            f"{converted.shape[-1]}, but a {'biarm' if is_biarm else 'single-arm'} pose "
+            f"must be {expected}. Check is_biarm and the source layout."
+        )
+    return converted
+
+
+def write_robot_states(
+    file_handle: h5py.File,
+    robot_states: dict[str, np.ndarray],
+    robot_state_keys: Sequence[str],
+) -> None:
+    """Write ``/observations/robot_states``, one ``(T, D)`` float64 dataset per key.
+
+    The keys must equal ``profile.robot_state_keys`` exactly: a declared key that is absent
+    and an undeclared key that is present are both rejected by the validator, so neither is
+    allowed to slip through here.
+    """
+    declared = set(robot_state_keys)
+    supplied = set(robot_states)
+    if declared != supplied:
+        missing = sorted(declared - supplied)
+        extra = sorted(supplied - declared)
+        raise ValueError(
+            "robot_states must match profile.robot_state_keys exactly "
+            f"(missing: {missing}, undeclared: {extra})"
+        )
+
+    observations = file_handle.require_group("observations")
+    group = observations.require_group("robot_states")
+    for key in robot_state_keys:
+        array = np.asarray(robot_states[key], dtype=np.float64)
+        if array.ndim == 1:
+            array = array[:, None]
+        group.create_dataset(key, data=array, dtype=np.float64)
 
 
 def write_actions(

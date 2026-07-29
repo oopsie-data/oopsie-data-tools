@@ -14,6 +14,7 @@ from typing import Any
 
 import h5py
 
+from oopsie_data_tools.annotation_tool.annotation_schema import read_annotation_attrs
 from oopsie_data_tools.utils.h5 import find_episode_files
 
 logger = logging.getLogger(__name__)
@@ -49,7 +50,11 @@ def check_diversity(samples_dir: str) -> list[str]:
                         sub = ea[name]
                         if not isinstance(sub, h5py.Group):
                             continue
-                        desc = _attr_str(sub, "failure_description").lower()
+                        # read_annotation_attrs so v1 (failure_description) and v2
+                        # (episode_description) files both feed the copy-paste check.
+                        desc = str(
+                            read_annotation_attrs(sub.attrs).get("episode_description", "")
+                        ).lower()
                         if desc:
                             descriptions.append(desc)
         except Exception:
@@ -72,7 +77,7 @@ def check_diversity(samples_dir: str) -> list[str]:
         top_desc, top_n = Counter(descriptions).most_common(1)[0]
         if top_n / len(descriptions) > DUP_DESCRIPTION_FRACTION:
             warnings.append(
-                f"Possible copied annotations: {top_n}/{len(descriptions)} failure "
+                f"Possible copied annotations: {top_n}/{len(descriptions)} episode "
                 f'descriptions are identical ("{top_desc[:60]}...").'
             )
 

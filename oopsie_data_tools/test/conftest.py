@@ -23,6 +23,7 @@ from oopsie_data_tools.test.fixtures.make_invalid import (
 )
 from oopsie_data_tools.test.fixtures.make_valid import (
     make_failure,
+    make_legacy_v1,
     make_multi_camera,
     make_no_annotations,
     make_success,
@@ -129,6 +130,14 @@ def valid_failure_episode(tmp_path_factory) -> Path:
     d = tmp_path_factory.mktemp("valid_failure")
     make_failure(d)
     return d / "episode_failure.h5"
+
+
+@pytest.fixture(scope="session")
+def legacy_v1_episode(tmp_path_factory) -> Path:
+    """Valid episode still carrying the taxonomy v1 annotation schema."""
+    d = tmp_path_factory.mktemp("legacy_v1")
+    make_legacy_v1(d)
+    return d / "episode_legacy_v1.h5"
 
 
 @pytest.fixture(scope="session")

@@ -13,7 +13,11 @@ from typing import Any
 
 import numpy as np
 
-from oopsie_data_tools.utils.validation.annotation_completeness import failure_trio_flags
+from oopsie_data_tools.annotation_tool.annotation_schema import (
+    OUTCOME_SUCCESS,
+    OUTCOMES,
+    SUCCESS_THRESHOLD,
+)
 from oopsie_data_tools.utils.validation.episode_data import EpisodeData
 from oopsie_data_tools.utils.validation.errors import EpisodeValidationError
 
@@ -246,35 +250,16 @@ def _annotation_attr_scalar_str(val: Any) -> str:
     return str(val).strip()
 
 
-def _failure_trio_fill_flags(attrs: dict[str, Any]) -> tuple[bool, bool, bool]:
-    """Read the failure trio out of HDF5 annotation attrs and report what is filled.
-
-    Extraction is specific to the stored layout — category and severity live inside the
-    ``taxonomy`` JSON blob — but the "is this filled?" rule is shared with the annotation
-    server via :mod:`annotation_completeness`, so the two cannot drift apart.
-    """
-    tax: dict[str, Any] = {}
-    tax_raw = _annotation_attr_scalar_str(attrs.get("taxonomy", ""))
-    if tax_raw:
-        try:
-            parsed = json.loads(tax_raw)
-        except json.JSONDecodeError:
-            parsed = None
-        if isinstance(parsed, dict):
-            tax = parsed
-
-    return failure_trio_flags(
-        failure_category=tax.get("failure_category"),
-        failure_description=attrs.get("failure_description", ""),
-        severity=tax.get("severity"),
-    )
-
-
 def _validate_annotations(data: EpisodeData) -> None:
     """Every annotator subgroup must have a numeric success score in [0.0, 1.0].
 
-    The failure taxonomy trio (category/description/severity) is all-or-nothing, but
-    only for *failures* — a qualified success may record severity/notes on its own (#29).
+    Beyond that, the taxonomy fields are all optional: a partial annotation is valid, and
+    a failure with no taxonomy at all is valid. What is checked is only that what *is*
+    stored is readable and self-consistent — a malformed ``taxonomy`` blob, or an
+    ``outcome`` that contradicts the ``success`` float, would make different readers reach
+    different conclusions about the same episode.
+
+    v1 files carry no ``outcome``, so they skip that check and stay valid unchanged.
     """
     if not data.annotations:
         raise EpisodeValidationError("annotations dict is empty")
@@ -301,14 +286,30 @@ def _validate_annotations(data: EpisodeData) -> None:
                 f"episode_annotations/{annotator}/success out of range [0.0, 1.0]: {success}"
             )
 
-        # The failure taxonomy trio is all-or-nothing, but only for failures;
-        # successes (including qualified successes) are exempt.
-        if success < 0.5:
-            cat_ok, desc_ok, sev_ok = _failure_trio_fill_flags(attrs)
-            filled = int(cat_ok) + int(desc_ok) + int(sev_ok)
-            if filled not in (0, 3):
+        taxonomy_raw = _annotation_attr_scalar_str(attrs.get("taxonomy", ""))
+        if taxonomy_raw:
+            try:
+                parsed = json.loads(taxonomy_raw)
+            except json.JSONDecodeError as e:
                 raise EpisodeValidationError(
-                    f"episode_annotations/{annotator}: failure_category (taxonomy), "
-                    f"failure_description, and severity must be all filled or all empty "
-                    f"(found {filled} of 3 filled). Either complete all three or leave all three empty."
+                    f"episode_annotations/{annotator}/taxonomy is not valid JSON: "
+                    f"{taxonomy_raw!r}"
+                ) from e
+            if not isinstance(parsed, dict):
+                raise EpisodeValidationError(
+                    f"episode_annotations/{annotator}/taxonomy must be a JSON object, "
+                    f"got {type(parsed).__name__}"
                 )
+
+            outcome = _annotation_attr_scalar_str(parsed.get("outcome", "")).lower()
+            if outcome:
+                if outcome not in OUTCOME_SUCCESS:
+                    raise EpisodeValidationError(
+                        f"episode_annotations/{annotator}/taxonomy has unrecognized "
+                        f"outcome {outcome!r}; expected one of {OUTCOMES}"
+                    )
+                if (outcome == "failure") != (success < SUCCESS_THRESHOLD):
+                    raise EpisodeValidationError(
+                        f"episode_annotations/{annotator}: outcome {outcome!r} disagrees "
+                        f"with success {success} (threshold {SUCCESS_THRESHOLD})"
+                    )

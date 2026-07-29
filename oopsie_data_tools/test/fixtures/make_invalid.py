@@ -69,6 +69,8 @@ import h5py
 import imageio
 import numpy as np
 
+from oopsie_data_tools.annotation_tool.annotation_schema import write_annotation_attrs
+
 _VideoWriter = Callable[[Path, Tuple[int, int, int], int], None]
 
 _STR_DTYPE = h5py.string_dtype(encoding="utf-8")
@@ -218,17 +220,25 @@ def make_annotation_dataset(out_dir: Path) -> None:
 
 
 def make_taxonomy_not_json(out_dir: Path) -> None:
+    """A complete, valid annotation whose ``taxonomy`` blob alone is corrupt.
+
+    Written through the real writer and then damaged, so the fixture fails on the defect
+    it is named for rather than on some unrelated attr the schema happens to have moved.
+    """
     with h5py.File(out_dir / "invalid_taxonomy_not_json.h5", "w") as f:
         _full_valid_episode(f, "invalid_taxonomy_not_json", "invalid_taxonomy_not_json_front.mp4")
         ag = f.require_group("episode_annotations/test_annotator")
-        ag.attrs["schema"] = "oopsie_failure_taxonomy_v1"
-        ag.attrs["source"] = "human"
-        ag.attrs["timestamp"] = "2026-04-21T10:00:00+00:00"
-        ag.attrs["success"] = 0.0
-        ag.attrs["failure_description"] = "Robot dropped the object."
-        ag.attrs["taxonomy_schema"] = "oopsiedata_taxonomy_schema_v1"
+        write_annotation_attrs(
+            ag,
+            {
+                "outcome": "failure",
+                "timestamp": "2026-04-21T10:00:00+00:00",
+                "episode_description": "Robot dropped the object.",
+                "side_effect_category": ["grasp"],
+                "severity": "medium",
+            },
+        )
         ag.attrs["taxonomy"] = "{ this is: not: valid json !!!"
-        ag.attrs["additional_notes"] = ""
 
 
 # ---------------------------------------------------------------------------

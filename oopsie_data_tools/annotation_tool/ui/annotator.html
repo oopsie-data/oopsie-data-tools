@@ -707,18 +707,18 @@
             <h2 class="h5-title">HDF5 files</h2>
           </div>
           <div class="h5-legend" aria-label="Annotation status icons">
-            <div class="h5-legend-row"><span class="tick">✓</span> Success/failure only (failure details incomplete)</div>
-            <div class="h5-legend-row"><span class="tick">✓✓</span> Complete (description, category, severity)</div>
+            <div class="h5-legend-row"><span class="tick">✓</span> Outcome recorded (details left blank)</div>
+            <div class="h5-legend-row"><span class="tick">✓✓</span> Complete for its outcome</div>
             <div class="h5-legend-row"><span class="other-mark">◆</span> Also annotated by another annotator</div>
           </div>
           <div class="sidebar-stats" id="sidebarStats">
             <div class="stats-row"><span>Episodes</span><span id="statsTotal">—</span></div>
-            <div class="stats-row"><span>Fully annotated</span><span id="statsComplete">—</span></div>
+            <div class="stats-row"><span>Fully detailed</span><span id="statsComplete">—</span></div>
           </div>
           <div class="sidebar-filter">
-            <label class="sidebar-filter-row" title="Hide episodes that are already fully annotated">
+            <label class="sidebar-filter-row" title="Hide episodes whose outcome and all its details are filled in">
               <span class="sidebar-filter-text">
-                Hide fully annotated
+                Hide fully detailed
                 <!-- Always reserved so toggling the checkbox does not shift the tree. -->
                 <span class="filter-shown" id="h5Count" aria-hidden="true"></span>
               </span>
@@ -793,7 +793,122 @@
               <label class="autofill-label" for="autofillSelect">Copy from a previous annotation</label>
               <select id="autofillSelect"><option value="">— select —</option></select>
             </div>
-            <div id="questionnaire"></div>
+            <!--
+              The annotation form is hardcoded rather than rendered from a spec. The
+              `value` on each input is what gets stored — a stable slug — while the
+              visible text is free to be reworded without touching data. Slugs must stay
+              in step with annotation_schema.py; test_ui_vocabulary_matches_python
+              enforces that.
+            -->
+            <div id="questionnaire">
+              <h2 class="card-title">Robot Rollout Annotation</h2>
+              <div class="card">
+                <div class="form-group" data-question-id="outcome" data-qtype="radio" data-required="1">
+                  <label class="required">How did the episode end?</label>
+                  <div>
+                    <label class="opt-row">
+                      <input type="radio" name="outcome" value="success" data-qname="outcome" />
+                      <span>Success</span>
+                      <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="Task completed correctly, efficiently, and with no unwanted side-effects.">ⓘ</span>
+                    </label>
+                    <label class="opt-row">
+                      <input type="radio" name="outcome" value="success_suboptimal" data-qname="outcome" />
+                      <span>Success, suboptimal execution</span>
+                      <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="Task completed, but inefficiently or awkwardly (e.g. many retries, a very indirect path, near-misses). Nothing in the scene was disturbed and nothing was at risk.">ⓘ</span>
+                    </label>
+                    <label class="opt-row">
+                      <input type="radio" name="outcome" value="success_side_effect" data-qname="outcome" />
+                      <span>Success, unwanted side-effect</span>
+                      <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="Task completed, but something unintended happened along the way (e.g. knocked over a nearby object, minor collision) that did not prevent completion.">ⓘ</span>
+                    </label>
+                    <label class="opt-row">
+                      <input type="radio" name="outcome" value="failure" data-qname="outcome" />
+                      <span>Failure</span>
+                      <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="The task was not completed.">ⓘ</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="form-group" data-question-id="episode_description" data-qtype="textarea" hidden>
+                  <div class="form-divider"></div>
+                  <label>Describe what happened</label>
+                  <textarea name="episode_description" data-qname="episode_description"></textarea>
+                </div>
+
+                <div class="form-group" data-question-id="side_effect_category" data-qtype="checkbox" hidden>
+                  <label>Side-effect categories (select all that apply)</label>
+                  <div>
+                    <label class="opt-row">
+                      <input type="checkbox" name="side_effect_category" value="reaching" data-qname="side_effect_category" />
+                      <span>Reaching (pre contact)</span>
+                      <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="The robot did not reach the target object or location, so no contact was made. If a grasp just barely misses the object, count this as grasp rather than reaching.">ⓘ</span>
+                    </label>
+                    <label class="opt-row">
+                      <input type="checkbox" name="side_effect_category" value="grasp" data-qname="side_effect_category" />
+                      <span>Grasp (at contact)</span>
+                      <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="The target object was not grasped properly. Includes slipping, dropping, or an incorrect grasp.">ⓘ</span>
+                    </label>
+                    <label class="opt-row">
+                      <input type="checkbox" name="side_effect_category" value="manipulation" data-qname="side_effect_category" />
+                      <span>Manipulation (post contact)</span>
+                      <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="The object was grasped but not manipulated as intended. For example, successfully grasping a door handle but failing to open the door.">ⓘ</span>
+                    </label>
+                    <label class="opt-row">
+                      <input type="checkbox" name="side_effect_category" value="sequencing_semantic" data-qname="side_effect_category" />
+                      <span>Sequencing or semantic</span>
+                      <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="Error in planning or sequencing of actions. This includes executing a related but wrong action, such as pick-and-place of the wrong object, or executing a pick motion when a push motion was specified.">ⓘ</span>
+                    </label>
+                    <label class="opt-row">
+                      <input type="checkbox" name="side_effect_category" value="collision" data-qname="side_effect_category" />
+                      <span>Collision</span>
+                      <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="Collision with an obstacle or the environment. This can co-occur with other categories; please select all that apply.">ⓘ</span>
+                    </label>
+                    <label class="opt-row">
+                      <input type="checkbox" name="side_effect_category" value="hardware" data-qname="side_effect_category" />
+                      <span>Hardware/mechanical issue</span>
+                      <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="Hardware or mechanical problem with the robot.">ⓘ</span>
+                    </label>
+                    <label class="opt-row">
+                      <input type="checkbox" name="side_effect_category" value="not_attempted" data-qname="side_effect_category" />
+                      <span>Task not attempted</span>
+                      <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="The robot made no discernible attempt at the task, e.g. by stalling.">ⓘ</span>
+                    </label>
+                    <label class="opt-row">
+                      <input type="checkbox" name="side_effect_category" value="other" data-qname="side_effect_category" />
+                      <span>Other</span>
+                      <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="A side-effect or failure mode not covered by the categories above.">ⓘ</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="form-group" data-question-id="severity" data-qtype="radio" hidden>
+                  <label>Severity</label>
+                  <div>
+                    <label class="opt-row">
+                      <input type="radio" name="severity" value="low" data-qname="severity" />
+                      <span>Low</span>
+                      <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="No damage; the scene can be reset and the task reattempted.">ⓘ</span>
+                    </label>
+                    <label class="opt-row">
+                      <input type="radio" name="severity" value="medium" data-qname="severity" />
+                      <span>Medium</span>
+                      <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="Some damage or risk of damage, or a significant reset is required, but the task can be reattempted.">ⓘ</span>
+                    </label>
+                    <label class="opt-row">
+                      <input type="radio" name="severity" value="catastrophic" data-qname="severity" />
+                      <span>Catastrophic</span>
+                      <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="Significant damage or risk of damage; the task cannot be reattempted without repair.">ⓘ</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="form-group" data-question-id="additional_notes" data-qtype="text">
+                  <div class="form-divider"></div>
+                  <label>Additional notes (optional)</label>
+                  <input type="text" name="additional_notes" data-qname="additional_notes" />
+                </div>
+              </div>
+            </div>
           </div>
           <div class="save-bar" id="saveBar">
             <button class="primary" id="saveBtn">Save annotation</button>
@@ -819,7 +934,6 @@
         h5Items: [],
         flatFileOrder: [],
         recentAnnotations: [],
-        questionnaireSpec: {},
       };
 
       function escHtml(s) {
@@ -1147,7 +1261,7 @@
         renderAutofillOptions();
       }
       function annotationSummaryLabel(a) {
-        const desc = String(a?.failure_description || "").trim() || "(no description)";
+        const desc = String(a?.episode_description || "").trim() || "(no description)";
         const trimmed = desc.length > 80 ? desc.slice(0, 80) + "…" : desc;
         const ep = String(a?.__source_name || "").trim();
         return ep ? `[${ep}] ${trimmed}` : trimmed;
@@ -1166,89 +1280,34 @@
         row.hidden = !(items.length && annotating);
       }
 
-      function inputForQuestion(q) {
-        const name = escHtml(q.name || q.id || q.key || "");
-        const label = escHtml(q.label || q.prompt || q.name || q.id || q.key || "");
-        const type = (q.type || "text").toLowerCase();
-        const sectionIntro =
-          (q.id || q.name || q.key) === "additional_notes"
-            ? `<div class="form-divider"></div>`
-            : "";
-        // "data-required" (single input) and "data-required-group" (radio/checkbox
-        // group) fold into one attribute — the qtype attribute already tells the
-        // validator which selector to use.
-        const requiredAttr = q.required ? `data-required="1"` : "";
-        const labelClass = q.required ? "required" : "";
-        const optLabelRaw = (o) => (typeof o === "string" ? o : (o && o.name ? String(o.name) : ""));
-        const optLabel = (o) => escHtml(optLabelRaw(o));
-        const optInfo = (o) => (typeof o === "object" && o && o.long_form)
-          ? `<span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="${escHtml(o.long_form)}">ⓘ</span>`
-          : "";
-        if (type === "select" || type === "dropdown") {
-          const opts = (q.options || []).map(o => `<option value="${optLabel(o)}">${optLabel(o)}</option>`).join("");
-          return `
-            ${sectionIntro}
-            <div class="form-group" data-question-id="${name}" data-qtype="${escHtml(type)}">
-              <label class="${labelClass}">${label}</label>
-              <select name="${name}" data-qname="${name}" ${requiredAttr}>
-                <option value=""></option>
-                ${opts}
-              </select>
-            </div>
-          `;
-        }
-        if (type === "radio" || type === "checkbox") {
-          const inputType = type;
-          const opts = (q.options || []).map(o => `
-            <label class="opt-row">
-              <input type="${inputType}" name="${name}" value="${optLabel(o)}" data-qname="${name}" />
-              <span>${optLabel(o)}</span>
-              ${optInfo(o)}
-            </label>
-          `).join("");
-          return `
-            ${sectionIntro}
-            <div class="form-group" data-question-id="${name}" data-qtype="${inputType}" ${requiredAttr}>
-              <label class="${labelClass}">${label}</label>
-              <div>${opts}</div>
-            </div>
-          `;
-        }
-        if (type === "textarea") {
-          const failureBlockIntro =
-            (q.id || q.name || q.key) === "failure_description"
-              ? `<div class="form-divider">Fill all or leave all.</div>`
-              : "";
-          return `
-            ${sectionIntro}
-            <div class="form-group" data-question-id="${name}" data-qtype="textarea">
-              ${failureBlockIntro}
-              <label class="${labelClass}">${label}</label>
-              <textarea name="${name}" data-qname="${name}" ${requiredAttr}></textarea>
-            </div>
-          `;
-        }
-        // default: text
-        return `
-          ${sectionIntro}
-          <div class="form-group" data-question-id="${name}" data-qtype="text">
-            <label class="${labelClass}">${label}</label>
-            <input type="text" name="${name}" data-qname="${name}" ${requiredAttr} />
-          </div>
-        `;
-      }
+      // The form itself is static markup (see #questionnaire above). This is only the
+      // field list the generic save/populate/validate helpers iterate — ids and input
+      // types, no vocabulary.
+      const FIELDS = [
+        { id: "outcome", type: "radio" },
+        { id: "episode_description", type: "textarea" },
+        { id: "side_effect_category", type: "checkbox" },
+        { id: "severity", type: "radio" },
+        { id: "additional_notes", type: "text" },
+      ];
+
+      // Which fields each outcome asks about. Mirrors OUTCOME_EXPECTED_FIELDS in
+      // annotation_completeness.py; a clean success asks for nothing further.
+      const OUTCOME_FIELDS = {
+        success: [],
+        success_suboptimal: ["episode_description"],
+        success_side_effect: ["episode_description", "side_effect_category", "severity"],
+        failure: ["episode_description", "side_effect_category", "severity"],
+      };
 
       /**
        * Optional radio: click the already-selected row again to clear.
        * Listeners must live on the <label> (or capture), because clicks on the text
        * do not target the <input>, so input-only mousedown never ran.
        */
-      function attachOptionalRadioDeselect(spec) {
-        const qs = Array.isArray(spec?.questions) ? spec.questions : [];
-        for (const q of qs) {
-          const id = q.id || q.name || q.key;
-          if (!id || Boolean(q.required)) continue;
-          if (String(q.type || "").toLowerCase() !== "radio") continue;
+      function attachOptionalRadioDeselect() {
+        // `outcome` is required, so it is deliberately not in this list.
+        for (const id of ["severity"]) {
           const group = document.querySelector(`[data-question-id="${CSS.escape(id)}"]`);
           if (!group) continue;
           group.querySelectorAll("label.opt-row").forEach((label) => {
@@ -1280,25 +1339,12 @@
         }
       }
 
-      function renderQuestionnaire(spec) {
-        const root = el("questionnaire");
-        root.innerHTML = "";
-        const title = document.createElement("h2");
-        title.className = "card-title";
-        title.textContent = spec?.title || "Questionnaire";
-        root.appendChild(title);
-        state.questionnaireSpec = spec || {};
-        const qs = Array.isArray(spec?.questions) ? spec.questions : [];
-        const card = document.createElement("div");
-        card.className = "card";
-        card.innerHTML = qs.map(inputForQuestion).join("\n");
-        root.appendChild(card);
-
-        document.querySelectorAll('input[type="radio"][name="binary_success"]').forEach((r) => {
-          r.addEventListener("change", applySuccessConditional);
+      function initAnnotationForm() {
+        document.querySelectorAll('input[type="radio"][name="outcome"]').forEach((r) => {
+          r.addEventListener("change", applyOutcomeVisibility);
         });
-        attachOptionalRadioDeselect(spec);
-        applySuccessConditional();
+        attachOptionalRadioDeselect();
+        applyOutcomeVisibility();
       }
 
       // Shared tooltip driver. One <div id="floatingTooltip"> at body-level is
@@ -1372,14 +1418,12 @@
 
       function gatherAnswers() {
         const out = {};
-        const qs = Array.isArray(state.questionnaireSpec?.questions) ? state.questionnaireSpec.questions : [];
-        for (const q of qs) {
-          const id = q.id || q.name || q.key;
-          if (!id) continue;
-          const type = String(q.type || "text").toLowerCase();
-          // Conditionally-hidden questions (e.g. failure fields when "Success" is
-          // selected) count as empty: they must neither block save (#35) nor be
-          // persisted with stale values the annotator can no longer see.
+        for (const q of FIELDS) {
+          const id = q.id;
+          const type = q.type;
+          // Conditionally-hidden fields (e.g. severity when "Success" is selected)
+          // count as empty: they must neither block save (#35) nor be persisted with
+          // stale values the annotator can no longer see.
           const group = document.querySelector(`[data-question-id="${CSS.escape(id)}"]`);
           if (group && group.hidden) {
             out[id] = type === "checkbox" ? [] : "";
@@ -1416,25 +1460,10 @@
         return true;
       }
 
+      // Only the outcome is required; every taxonomy field is optional in every branch,
+      // so a partial annotation saves cleanly and the tick prompts to finish it later.
       function validateSaveAnswers(answers) {
-        const bs = String(answers?.binary_success ?? "").trim();
-        if (!bs) {
-          return "Please annotate success/failure.";
-        }
-        // The failure taxonomy trio is all-or-nothing, but only for failures — a
-        // (qualified) success may set severity/notes independently (#29).
-        if (bs !== "Failure") {
-          return "";
-        }
-        const categoryFilled =
-          Array.isArray(answers?.failure_category) && answers.failure_category.length > 0;
-        const descriptionFilled = Boolean(String(answers?.failure_description ?? "").trim());
-        const severityFilled = Boolean(String(answers?.severity ?? "").trim());
-        const filledCount = [categoryFilled, descriptionFilled, severityFilled].filter(Boolean).length;
-        if (filledCount !== 0 && filledCount !== 3) {
-          return "Fill all of failure description, category, and severity, or leave all three empty.";
-        }
-        return "";
+        return String(answers?.outcome ?? "").trim() ? "" : "Please select an outcome.";
       }
 
       function questionCurrentValue(id) {
@@ -1444,23 +1473,14 @@
         return other ? String(other.value ?? "") : "";
       }
 
-      // Data-driven conditional visibility (#29): a question with
-      // `show_when: {binary_success: [...]}` is shown only when every referenced
-      // question currently holds one of the listed values. Questions without a
-      // `show_when` are always visible. Generalizes the old hard-coded failure hide.
-      function applySuccessConditional() {
-        const qs = Array.isArray(state.questionnaireSpec?.questions) ? state.questionnaireSpec.questions : [];
-        for (const q of qs) {
-          const id = q.id || q.name || q.key;
-          const cond = q && q.show_when;
-          if (!id || !cond || typeof cond !== "object") continue;
+      // Show only the fields the selected outcome asks about (#29). With no outcome
+      // chosen, all three conditional fields stay hidden.
+      function applyOutcomeVisibility() {
+        const outcome = questionCurrentValue("outcome");
+        const shown = OUTCOME_FIELDS[outcome] || [];
+        for (const id of ["episode_description", "side_effect_category", "severity"]) {
           const group = document.querySelector(`[data-question-id="${CSS.escape(id)}"]`);
-          if (!group) continue;
-          const visible = Object.entries(cond).every(([depId, allowed]) => {
-            const vals = Array.isArray(allowed) ? allowed.map(String) : [String(allowed)];
-            return vals.includes(questionCurrentValue(depId));
-          });
-          group.hidden = !visible;
+          if (group) group.hidden = !shown.includes(id);
         }
       }
 
@@ -1481,7 +1501,7 @@
       }
       let currentBrowseSample = null;
       let lastStatus = null;
-      let questionnaireRenderedFor = null;
+      let formPopulatedFor = null; // guards populateForm against clobbering live edits
       let videosRenderedFor = null;
       let lastH5ListSig = "";
       let isDirty = false; // unsaved edits in the current form (#34)
@@ -1574,9 +1594,9 @@
         return ok;
       }
 
-      // ── Success/failure hotkeys (#33) ──────────────────────────────────────
-      function setBinarySuccess(val) {
-        const radios = document.querySelectorAll('input[type="radio"][name="binary_success"]');
+      // ── Outcome hotkeys (#33) ─────────────────────────────────────────────
+      function setOutcome(val) {
+        const radios = document.querySelectorAll('input[type="radio"][name="outcome"]');
         if (!radios.length) return;
         let changed = false;
         radios.forEach((r) => {
@@ -1584,7 +1604,7 @@
           if (r.checked !== match) changed = true;
           r.checked = match;
         });
-        applySuccessConditional();
+        applyOutcomeVisibility();
         if (changed) { setDirty(true); el("saveMsg").textContent = ""; }
       }
 
@@ -1757,14 +1777,13 @@
       function populateForm(existing) {
         const ann = existing && typeof existing === "object" ? existing : {};
         const skip = new Set(["annotated_at", "annotator", "source"]);
-        const qs = Array.isArray(state.questionnaireSpec?.questions) ? state.questionnaireSpec.questions : [];
         // Reset every managed field first so applying a (possibly partial) annotation —
         // e.g. copying a previous annotation onto an already-filled form (#27) — never
-        // leaves stale values (like a success_category) from a prior selection.
-        for (const q of qs) {
-          const id = q.id || q.name || q.key;
-          if (!id || skip.has(id)) continue;
-          const type = String(q.type || "text").toLowerCase();
+        // leaves stale values (like a severity) from a prior selection.
+        for (const q of FIELDS) {
+          const id = q.id;
+          const type = q.type;
+          if (skip.has(id)) continue;
           if (type === "checkbox" || type === "radio") {
             document.querySelectorAll(`input[name="${CSS.escape(id)}"]`).forEach((e) => { e.checked = false; });
           } else {
@@ -1772,11 +1791,10 @@
             if (el0) el0.value = "";
           }
         }
-        for (const q of qs) {
-          const id = q.id || q.name || q.key;
-          if (!id || skip.has(id)) continue;
-          if (!(id in ann)) continue;
-          const type = String(q.type || "text").toLowerCase();
+        for (const q of FIELDS) {
+          const id = q.id;
+          const type = q.type;
+          if (skip.has(id) || !(id in ann)) continue;
           const value = ann[id];
           if (type === "checkbox") {
             const values = Array.isArray(value) ? value.map(String) : [String(value)];
@@ -1790,7 +1808,7 @@
             if (el0) el0.value = (value == null) ? "" : String(value);
           }
         }
-        applySuccessConditional();
+        applyOutcomeVisibility();
         // Programmatic population does not fire input/change events, so the form
         // starts clean after (re)loading an episode.
         setDirty(false);
@@ -1799,7 +1817,7 @@
       async function selectBrowseH5(relPath) {
         browseRelPath = relPath;
         currentBrowseSample = null;
-        questionnaireRenderedFor = null;
+        formPopulatedFor = null;
         videosRenderedFor = null;
         el("instrEditRow").hidden = true; // never carry an open edit onto another episode (#31)
         renderH5List();
@@ -1813,7 +1831,7 @@
         currentBrowseSample = null;
         el("saveMsg").textContent = "";
         el("instrEditRow").hidden = true;
-        questionnaireRenderedFor = null;
+        formPopulatedFor = null;
         videosRenderedFor = null;
         renderH5List();
         updateSaveButtonState();
@@ -1835,7 +1853,7 @@
             if (!currentBrowseSample || currentBrowseSample.rel_path !== browseRelPath) {
               const sample = await fetchSampleCached(browseRelPath);
               currentBrowseSample = sample;
-              questionnaireRenderedFor = null;
+              formPopulatedFor = null;
               videosRenderedFor = null;
             }
 
@@ -1844,11 +1862,9 @@
               renderEpisodeFields(currentBrowseSample?.episode_fields || null);
               videosRenderedFor = browseRelPath;
             }
-            if (questionnaireRenderedFor !== browseRelPath) {
-              const q = await jget("/api/questionnaire");
-              renderQuestionnaire(q);
+            if (formPopulatedFor !== browseRelPath) {
               populateForm(currentBrowseSample?.existing_annotation || {});
-              questionnaireRenderedFor = browseRelPath;
+              formPopulatedFor = browseRelPath;
             }
             syncHeaderPanel(st);
             return;
@@ -1860,11 +1876,9 @@
             renderEpisodeFields(null);
             videosRenderedFor = "__browse_landing__";
           }
-          if (questionnaireRenderedFor !== "__browse_landing__") {
-            const q = await jget("/api/questionnaire");
-            renderQuestionnaire(q);
+          if (formPopulatedFor !== "__browse_landing__") {
             populateForm({});
-            questionnaireRenderedFor = "__browse_landing__";
+            formPopulatedFor = "__browse_landing__";
           }
           syncHeaderPanel(st);
           return;
@@ -1877,7 +1891,7 @@
           if (!currentBrowseSample || currentBrowseSample.rel_path !== browseRelPath) {
             const sample = await fetchSampleCached(browseRelPath);
             currentBrowseSample = sample;
-            questionnaireRenderedFor = null;
+            formPopulatedFor = null;
             videosRenderedFor = null;
           }
 
@@ -1886,11 +1900,9 @@
             renderEpisodeFields(currentBrowseSample?.episode_fields || null);
             videosRenderedFor = browseRelPath;
           }
-          if (questionnaireRenderedFor !== browseRelPath) {
-            const q = await jget("/api/questionnaire");
-            renderQuestionnaire(q);
+          if (formPopulatedFor !== browseRelPath) {
             populateForm(currentBrowseSample?.existing_annotation || {});
-            questionnaireRenderedFor = browseRelPath;
+            formPopulatedFor = browseRelPath;
           }
           syncHeaderPanel(st);
           return;
@@ -1929,17 +1941,16 @@
             videosRenderedFor = nextSampleId;
           }
 
-          // Render questionnaire only once per sample; otherwise it rebuilds DOM and steals focus.
-          if (nextSampleId && questionnaireRenderedFor !== nextSampleId) {
-            const q = await jget("/api/questionnaire");
-            renderQuestionnaire(q);
-            questionnaireRenderedFor = nextSampleId;
-            setDirty(false);
+          // Reset the form once per sample; re-running it on every poll would wipe
+          // edits the annotator is in the middle of making.
+          if (nextSampleId && formPopulatedFor !== nextSampleId) {
+            populateForm({});
+            formPopulatedFor = nextSampleId;
           }
         } else {
           currentSampleId = null;
           updateSaveButtonState();
-          questionnaireRenderedFor = null;
+          formPopulatedFor = null;
           videosRenderedFor = null;
           renderMetadata({});
         }
@@ -2171,8 +2182,13 @@
         if (e.key === "ArrowRight" || e.key === "n" || e.key === "k") { e.preventDefault(); navigateBy(1); return; }
         if (e.key === "ArrowLeft" || e.key === "p" || e.key === "j") { e.preventDefault(); navigateBy(-1); return; }
         if (!browseRelPath && !currentSampleId) return;
-        if (e.key === "s" || e.key === "S") { e.preventDefault(); setBinarySuccess("Success"); }
-        else if (e.key === "f" || e.key === "F") { e.preventDefault(); setBinarySuccess("Failure"); }
+        if (e.key === "s" || e.key === "S") { e.preventDefault(); setOutcome("success"); }
+        else if (e.key === "f" || e.key === "F") { e.preventDefault(); setOutcome("failure"); }
+        // 1-4 reach the two qualified successes, which s/f alone cannot.
+        else if (["1", "2", "3", "4"].includes(e.key)) {
+          e.preventDefault();
+          setOutcome(["success", "success_suboptimal", "success_side_effect", "failure"][Number(e.key) - 1]);
+        }
       });
 
       // Guard against losing unsaved edits on tab close / reload (#34).
@@ -2206,9 +2222,10 @@
       }
 
       updateSaveButtonState(); // start disabled with the "select an episode" tooltip
+      initAnnotationForm();     // conditional visibility + optional-radio deselect
       loadH5List().catch(() => {});
       loadRecentAnnotations().catch(() => {});
-      refresh().catch(() => {}); // initial paint (renders questionnaire landing page)
+      refresh().catch(() => {}); // initial paint
       if (IS_IN_THE_LOOP) {
         setInterval(() => refresh().catch(() => {}), POLL_TASK_MS);
         setInterval(() => pollH5List().catch(() => {}), POLL_LIST_MS);
