@@ -9,6 +9,9 @@ Start from `oopsie-data new-profile --name <name>`, which writes a commented ske
 fills it in. Ask the user the questions below; where the choice is constrained to a set, list the
 options and explain them if asked.
 
+Be careful to ask the user these questions step by step and explain their choices. Providing 
+a full list can easily overwhelm.
+
 ## Required fields
 
 All nine must be present or `load_robot_profile` raises `Robot profile missing keys: [...]`.
