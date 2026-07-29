@@ -78,7 +78,8 @@ upload --path ...`. Placing it after the subcommand is an argparse error.
 
 When unsure what is in effect, run `oopsie-data show-config`: it prints both chains, the
 location that wins, and the lab id and token in use (`--show-token` prints the token unmasked).
-`$HF_TOKEN` in the environment overrides the stored token.
+`$HF_TOKEN` in the environment overrides the stored token. Add `--json` to get the same thing
+as a structure — the token stays masked unless `--show-token` is also given.
 
 Below, `<config-dir>` means the resolved credential location and `<profiles-dir>` the resolved
 profile location.
@@ -129,7 +130,8 @@ python -c "from oopsie_data_tools.utils.robot_profile.robot_profile import load_
 
 `oopsie-data show-config` is what verifies a contributor config; loading the profile as above is
 what verifies a profile. Real confirmation comes from `oopsie-data validate --path ./samples`
-once episodes exist.
+once episodes exist. Add `--json` to any of the read-only commands (`validate`, `show-config`,
+`inspect`) to read the result as a structure instead of parsing prose — exit codes are the same.
 
 Running `pytest oopsie_data_tools/test/` checks the toolkit, not the user's setup — the suite
 deliberately isolates `HOME`, `XDG_CONFIG_HOME`, both `OOPSIE_*` variables and the working

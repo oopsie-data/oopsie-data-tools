@@ -15,6 +15,7 @@ notes and reStructuredText markup cannot leak into a terminal.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import difflib
 import logging
 import os
@@ -23,6 +24,10 @@ import sys
 import textwrap
 from pathlib import Path
 
+# Imported eagerly, unlike the heavier command modules below: the parser needs the agent
+# names to build --agent's choices, and this module costs nothing but the standard library.
+from oopsie_data_tools.utils.claude_skill import AGENT_SKILL_DIRS as _AGENT_CHOICES
+from oopsie_data_tools.utils.claude_skill import DEFAULT_AGENT as _DEFAULT_AGENT
 from oopsie_data_tools.utils.hf_limits import BATCH_SIZE, FILE_LIMIT
 from oopsie_data_tools.utils.paths import ENV_CONFIG_DIR
 
@@ -41,6 +46,36 @@ def _version() -> str:
         return version("oopsie-data-tools")
     except Exception:
         return "unknown (not installed)"
+
+
+# ── machine-readable output ───────────────────────────────────────────────────
+
+#: Commands whose result is a structure rather than a narrative accept ``--json``, for
+#: callers — scripts, CI, coding agents — that would otherwise have to parse prose. The
+#: prose output is unchanged and stays the default; exit codes mean the same thing either
+#: way. JSON goes to stdout on its own, so logs must not be interleaved with it.
+def _emit_json(payload: dict) -> None:
+    import json
+
+    print(json.dumps(payload, indent=2, default=str))
+
+
+@contextlib.contextmanager
+def _quiet_logging(enabled: bool):
+    """Silence log output so --json emits a parseable document and nothing else.
+
+    Restores the previous level on the way out: ``main`` is called more than once in a
+    single process by the test suite and by anything embedding the CLI, and a root logger
+    left at CRITICAL would silence every later command.
+    """
+    root = logging.getLogger()
+    previous = root.level
+    if enabled:
+        root.setLevel(logging.CRITICAL)
+    try:
+        yield
+    finally:
+        root.setLevel(previous)
 
 
 # ── show-config ───────────────────────────────────────────────────────────────
@@ -87,12 +122,76 @@ def _print_wrapped_field(label: str, value: str) -> None:
         print(line)
 
 
-def cmd_show_config(args: argparse.Namespace) -> int:
-    """Show where every config is read from right now, and what is in it. Read-only."""
+def _read_config_yaml(config_path: Path) -> tuple[dict, str | None]:
+    """The contributor config as a plain dict, plus a parse error if there was one.
+
+    Read directly rather than through ``read_contributor_config``, which raises on a
+    missing or placeholder lab_id — this command must still report what it found.
+    """
     import yaml
 
+    if not config_path.is_file():
+        return {}, None
+    try:
+        loaded = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        return (loaded if isinstance(loaded, dict) else {}), None
+    except yaml.YAMLError as e:
+        return {}, str(e)
+
+
+def _show_config_json(args: argparse.Namespace) -> int:
     from oopsie_data_tools.init_wizard import _mask
     from oopsie_data_tools.utils import paths
+
+    config_path = paths.contributor_config_path()
+    profiles_dir = paths.robot_profiles_dir()
+    data, parse_error = _read_config_yaml(config_path)
+
+    lab_id = str(data.get("lab_id") or "").strip()
+    config_token = str(data.get("huggingface_token") or "").strip()
+    env_token = os.environ.get("HF_TOKEN", "").strip()
+    token = env_token or config_token
+
+    _emit_json(
+        {
+            "credentials": {
+                "env_var": paths.ENV_CONFIG_DIR,
+                "env_value": os.environ.get(paths.ENV_CONFIG_DIR),
+                "search_path": [str(p) for p in paths.config_search_dirs()],
+                "active": str(config_path) if config_path.is_file() else None,
+                "parse_error": parse_error,
+                "lab_id": lab_id or None,
+                # Masked unless asked, so --json is safe to paste into a bug report.
+                "hf_token": (token if args.show_token else _mask(token)) if token else None,
+                "hf_token_source": (
+                    None if not token else ("HF_TOKEN" if env_token else "contributor_config.yaml")
+                ),
+                "uploads_to": f"OopsieData-Submissions/{lab_id}" if lab_id else None,
+            },
+            "robot_profiles": {
+                "env_var": paths.ENV_PROFILES_DIR,
+                "env_value": os.environ.get(paths.ENV_PROFILES_DIR),
+                "search_path": [str(p) for p in paths.profiles_search_dirs()],
+                "active": str(profiles_dir) if profiles_dir.is_dir() else None,
+                "profiles": (
+                    sorted(p.name for p in profiles_dir.glob("*.yaml"))
+                    if profiles_dir.is_dir()
+                    else []
+                ),
+                "write_target": str(paths.write_profiles_dir()),
+            },
+        }
+    )
+    return 0
+
+
+def cmd_show_config(args: argparse.Namespace) -> int:
+    """Show where every config is read from right now, and what is in it. Read-only."""
+    from oopsie_data_tools.init_wizard import _mask
+    from oopsie_data_tools.utils import paths
+
+    if args.json:
+        return _show_config_json(args)
 
     config_path = paths.contributor_config_path()
     profiles_dir = paths.robot_profiles_dir()
@@ -110,15 +209,9 @@ def cmd_show_config(args: argparse.Namespace) -> int:
     else:
         print(f"  No config found. 'oopsie-data init' would write {config_path}")
 
-    # Read the YAML directly: read_contributor_config raises on a missing or placeholder
-    # lab_id, and this command must still report what it found.
-    data = {}
-    if config_path.is_file():
-        try:
-            loaded = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-            data = loaded if isinstance(loaded, dict) else {}
-        except yaml.YAMLError as e:
-            print(f"  Could not parse the file: {e}")
+    data, parse_error = _read_config_yaml(config_path)
+    if parse_error:
+        print(f"  Could not parse the file: {parse_error}")
 
     lab_id = str(data.get("lab_id") or "").strip()
     config_token = str(data.get("huggingface_token") or "").strip()
@@ -249,10 +342,34 @@ def cmd_validate(args: argparse.Namespace) -> int:
     from oopsie_data_tools.utils.hf_upload import run_validation
 
     target = os.path.abspath(os.path.normpath(args.path))
+    if args.episode_id:
+        target = os.path.join(target, f"{args.episode_id}.h5")
     if not os.path.exists(target):
+        if args.json:
+            _emit_json({"path": target, "error": "path does not exist", "episodes": []})
+            return 1
         logger.error("Path does not exist: %s", target)
         return 1
-    return run_validation(target, args.episode_id, args.log_path)
+
+    if not args.json:
+        return run_validation(args.path, args.episode_id, args.log_path)
+
+    from oopsie_data_tools.utils.validation.validation_utils import collect_validation_results
+
+    episodes = collect_validation_results(target)
+    failed = [e for e in episodes if not e["passed"]]
+    _emit_json(
+        {
+            "path": target,
+            "episodes": episodes,
+            "total": len(episodes),
+            "passed": len(episodes) - len(failed),
+            "failed": len(failed),
+        }
+    )
+    # An empty directory is a failure in the prose path too — nothing was checked, so
+    # nothing can be said to have passed.
+    return 1 if failed or not episodes else 0
 
 
 # ── upload ────────────────────────────────────────────────────────────────────
@@ -383,12 +500,19 @@ def cmd_submissions(args: argparse.Namespace) -> int:
 
 
 def cmd_inspect(args: argparse.Namespace) -> int:
-    from oopsie_data_tools.utils.h5_inspect import inspect_h5
+    from oopsie_data_tools.utils.h5_inspect import inspect_h5, inspect_h5_structure
 
     if not os.path.isfile(args.path):
+        if args.json:
+            _emit_json({"path": args.path, "error": "not a file"})
+            return 1
         logger.error("Not a file: %s", args.path)
         return 1
-    inspect_h5(args.path)
+
+    if args.json:
+        _emit_json(inspect_h5_structure(args.path))
+    else:
+        inspect_h5(args.path)
     return 0
 
 
@@ -405,9 +529,11 @@ def cmd_restructure(args: argparse.Namespace) -> int:
 
 
 def cmd_install_skill(args: argparse.Namespace) -> int:
-    from oopsie_data_tools.utils.claude_skill import install_skill
+    from oopsie_data_tools.utils.claude_skill import check_installations, install_skill
 
-    return install_skill(user=args.user, force=args.force)
+    if args.check:
+        return check_installations()
+    return install_skill(user=args.user, force=args.force, agent=args.agent)
 
 
 # ── parser ────────────────────────────────────────────────────────────────────
@@ -471,6 +597,15 @@ class _ArgumentParser(argparse.ArgumentParser):
             )
             message = f"unknown command '{given}' — {hint}"
         super().error(message)
+
+
+def _add_json_flag(parser: argparse.ArgumentParser, what: str) -> None:
+    """Give a command a ``--json`` mode. Exit codes are unchanged; only the format differs."""
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help=f"Print {what} as JSON on stdout instead of prose, for scripts and agents",
+    )
 
 
 def _add_command(
@@ -576,6 +711,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_config.add_argument(
         "--show-token", action="store_true", help="Print the HuggingFace token in full"
     )
+    _add_json_flag(p_config, "the resolved config, both search paths, and what is in effect")
     p_config.set_defaults(func=cmd_show_config)
 
     # new-profile
@@ -688,6 +824,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_validate.add_argument(
         "--log-path", "-l", default=None, metavar="FILE", help="Also write logs to this file"
     )
+    _add_json_flag(p_validate, "one record per episode, with the error that rejected it")
     p_validate.set_defaults(func=cmd_validate)
 
     # upload
@@ -795,6 +932,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p_inspect.add_argument("path", metavar="FILE", help="Path to a .h5 / .hdf5 file")
+    _add_json_flag(p_inspect, "the full group/dataset/attribute tree")
     p_inspect.set_defaults(func=cmd_inspect)
 
     # restructure
@@ -840,28 +978,48 @@ def build_parser() -> argparse.ArgumentParser:
         "install-skill",
         summary="Install the bundled agent skill for oopsie-data",
         description=(
-            "Copy the skill that ships with this package into your project, so a coding agent "
-            "knows how to drive the contributor workflow. SKILL.md is a shared format, so the "
-            "same payload works for Claude Code, Cursor, Codex and anything else that reads "
-            "it. Entirely optional: nothing else in oopsie-data needs an agent, and no files "
-            "are written anywhere unless you run this command. Installs into "
-            "./skills/oopsie-data/, a plain directory you can read, edit and commit; the "
-            "command then prints the directories agents scan, so you can copy it into the one "
-            "you use. Pass --user to install it into ~/.claude/skills/ instead, which Claude "
-            "Code and Cursor both read in every project."
+            "Copy the skill that ships with this package into a directory your coding agent "
+            "scans, so it knows how to drive the contributor workflow. SKILL.md is a shared "
+            "format, so the same payload works for Claude Code, Cursor, Codex and anything "
+            "else that reads it — --agent only chooses the destination. Defaults to "
+            "./.claude/skills/oopsie-data/, which Claude Code and Cursor both read; --user "
+            "installs into your home directory instead, making it available in every project. "
+            "Entirely optional: nothing else in oopsie-data needs an agent, and no files are "
+            "written anywhere unless you run this command."
         ),
         examples=(
             "  oopsie-data install-skill\n"
-            "  oopsie-data install-skill --user   # available in every project\n"
+            "  oopsie-data install-skill --user             # available in every project\n"
+            "  oopsie-data install-skill --agent cursor\n"
+            "  oopsie-data install-skill --agent none       # a plain ./skills/ to copy onward\n"
+            "  oopsie-data install-skill --check            # is an installed copy out of date?\n"
+        ),
+    )
+    p_skill.add_argument(
+        "--agent",
+        choices=list(_AGENT_CHOICES),
+        default=_DEFAULT_AGENT,
+        help=(
+            f"Which agent's skills directory to install into (default: {_DEFAULT_AGENT}). "
+            "'agents' is the vendor-neutral .agents/skills/; 'none' writes a plain ./skills/ "
+            "that no agent scans, for copying onward yourself"
         ),
     )
     p_skill.add_argument(
         "--user",
         action="store_true",
-        help="Install into ~/.claude/skills/ instead of ./skills/",
+        help="Install under your home directory instead of the working directory",
     )
     p_skill.add_argument(
         "--force", action="store_true", help="Overwrite an existing installation of the skill"
+    )
+    p_skill.add_argument(
+        "--check",
+        action="store_true",
+        help=(
+            "Report installed copies and whether they came from this version of the package, "
+            "instead of installing anything. Exits 1 if any copy is stale or missing"
+        ),
     )
     p_skill.set_defaults(func=cmd_install_skill)
 
@@ -882,15 +1040,25 @@ def main(argv: list[str] | None = None) -> int:
     # Export before any command runs, so library code resolving config paths sees it.
     if args.config_dir is not None:
         os.environ[ENV_CONFIG_DIR] = str(Path(args.config_dir).expanduser().resolve())
-    try:
-        return args.func(args)
-    except KeyboardInterrupt:
-        logger.info("Interrupted.")
-        return 130
-    except RuntimeError as e:
-        # Config/auth problems already carry an actionable message; don't dump a traceback.
-        logger.error("%s", e)
-        return 1
+
+    # --json owns stdout: a log line interleaved with the document would make it
+    # unparseable, which is the whole point of the flag.
+    as_json = getattr(args, "json", False)
+    with _quiet_logging(as_json):
+        try:
+            return args.func(args)
+        except KeyboardInterrupt:
+            logger.info("Interrupted.")
+            return 130
+        except RuntimeError as e:
+            # Config/auth problems already carry an actionable message; don't dump a
+            # traceback. Under --json logging is silenced, so the message has to go into
+            # the document or the caller gets an empty stdout and a bare exit code.
+            if as_json:
+                _emit_json({"error": str(e)})
+            else:
+                logger.error("%s", e)
+            return 1
 
 
 if __name__ == "__main__":

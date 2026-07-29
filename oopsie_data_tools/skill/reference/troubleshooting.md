@@ -1,5 +1,11 @@
 # Troubleshooting
 
+`oopsie-data validate --path <dir> --json` is the fastest way to see which episodes failed and
+on what: it reports one record per episode with `passed`, `error`, and an `error_type` of
+`validation` (the episode is wrong) or `unexpected` (the validator is wrong — report it rather
+than working around it). `oopsie-data inspect <file.h5> --json` does the same for one file's
+structure.
+
 ## Errors you will actually see
 
 **`lab_id` unset, blank (`lab_id:`), or still `your_lab_id`.** A `RuntimeError` pointing at the
@@ -66,7 +72,7 @@ silence. The check runs even under `--skip-validate`.
 **`--config-dir` rejected.** It is a flag on `oopsie-data` itself and must come *before* the
 subcommand.
 
-**`oopsie-data inspect --path ...` fails.** `inspect` takes a positional path.
+**`--path` passed to `inspect`.** It takes a positional path — `oopsie-data inspect <file.h5>`.
 
 **`--robot-profile` missing** when running an `examples/inference_examples/` script. It is
 required and deliberately has no default. Those examples also need `uv sync --extra droid`.

@@ -220,7 +220,8 @@ trajectory_*/
 
 # Claude Code memory file
 CLAUDE.md
-.claude
+.claude/*
+.claude/skills/*
 
 # Jekyll build output
 docs/_site/

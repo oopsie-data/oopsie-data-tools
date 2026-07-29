@@ -1,21 +1,16 @@
 """Install the bundled agent skill into a user's project or home directory.
 
 Agents discover skills by scanning the filesystem for ``<dir>/SKILL.md``, so "installing"
-one is a directory copy — no agent CLI, and no network access, is involved. Two scopes
-exist:
+one is a directory copy — no agent CLI, and no network access, is involved.
 
-* project (default) — ``<cwd>/skills/<name>/``, checked in and shared with collaborators,
-  and versioned alongside the data-collection code it describes
-* personal          — ``~/.claude/skills/<name>/``, available in every project
+``--agent`` picks that directory and defaults to Claude Code's, because a skill that lands
+somewhere nothing scans is not installed in any useful sense. ``--agent agents`` writes the
+vendor-neutral ``.agents/skills/`` and ``--agent none`` the plain ``skills/`` directory, for
+anyone who would rather copy it onward themselves. ``--user`` swaps the working directory
+for the home directory, making the skill available in every project.
 
-Project scope is the default because the skill describes one project's workflow, and
-because writing inside the working directory is the change a contributor can most easily
-see and undo. It is a plain ``skills/`` directory rather than any one agent's config
-location on purpose: the payload is just markdown, and Claude Code is not the only agent
-that can read it. Whichever agent a contributor uses, the last step is theirs — copy or
-move the directory to wherever that agent scans. This is also deliberately an explicit
-opt-in subcommand rather than anything that runs at install time: contributors who do not
-use an agent never have files written for them at all.
+Installing is an explicit opt-in subcommand rather than anything that runs at install time:
+contributors who do not use an agent never have files written for them at all.
 """
 
 from __future__ import annotations
@@ -29,17 +24,22 @@ logger = logging.getLogger(__name__)
 
 SKILL_NAME = "oopsie-data"
 
-# Where the common agents scan, for the "now move it into place" hint. SKILL.md is a shared
-# format — Cursor reads the same payload, and also loads Claude's and Codex's directories —
-# so this is only ever about the destination, never about the files themselves. Kept as data
-# rather than prose so adding an agent is one line and cannot drift from what is printed.
-# ``.agents/skills`` is the vendor-neutral location, hence first.
-AGENT_SKILL_DIRS: list[tuple[str, str]] = [
-    ("any agent following the convention", ".agents/skills/"),
-    ("Claude Code", ".claude/skills/"),
-    ("Cursor", ".cursor/skills/"),
-    ("Codex", ".codex/skills/"),
-]
+#: Records the package version a copy was installed from, so ``--check`` can spot a stale
+#: one. A dotfile so it does not read as part of the skill's content, and inside the
+#: installed directory so it survives being copied onward.
+VERSION_STAMP = ".skill-version"
+
+# Where each agent scans, keyed by the --agent value. Kept as data rather than prose so
+# adding an agent is one line and cannot drift from what is printed.
+AGENT_SKILL_DIRS: dict[str, tuple[str, str]] = {
+    "claude": ("Claude Code", ".claude/skills"),
+    "cursor": ("Cursor", ".cursor/skills"),
+    "codex": ("Codex", ".codex/skills"),
+    "agents": ("any agent following the convention", ".agents/skills"),
+    "none": ("a plain directory, scanned by nothing", "skills"),
+}
+
+DEFAULT_AGENT = "claude"
 
 
 def bundled_skill_dir() -> Path:
@@ -52,20 +52,85 @@ def bundled_skill_dir() -> Path:
     return Path(__file__).resolve().parent.parent / "skill"
 
 
-def skill_destination(user: bool = False, root: Path | None = None) -> Path:
-    """Where the skill would be installed for the given scope."""
+def _package_version() -> str:
+    try:
+        from importlib.metadata import version
+
+        return version("oopsie-data-tools")
+    except Exception:
+        return "unknown"
+
+
+def skill_destination(
+    user: bool = False, agent: str = DEFAULT_AGENT, root: Path | None = None
+) -> Path:
+    """Where the skill would be installed for the given scope and agent."""
     if root is not None:
-        base = root
-    elif user:
-        base = Path.home() / ".claude" / "skills"
-    else:
-        base = Path.cwd() / "skills"
-    return base / SKILL_NAME
+        return root / SKILL_NAME
+    base = Path.home() if user else Path.cwd()
+    return base / AGENT_SKILL_DIRS[agent][1] / SKILL_NAME
+
+
+def installed_version(dest: Path) -> str | None:
+    """The package version a copy at *dest* was installed from, if it says."""
+    stamp = dest / VERSION_STAMP
+    if not stamp.is_file():
+        return None
+    return stamp.read_text(encoding="utf-8").strip() or None
+
+
+def find_installations() -> list[Path]:
+    """Every installed copy of the skill under the working directory or the home directory."""
+    found = []
+    for base in (Path.cwd(), Path.home()):
+        for _, subdir in AGENT_SKILL_DIRS.values():
+            candidate = base / subdir / SKILL_NAME
+            if (candidate / "SKILL.md").is_file() and candidate not in found:
+                found.append(candidate)
+    return found
+
+
+def check_installations() -> int:
+    """Report every installed copy and whether it matches the running package."""
+    current = _package_version()
+    installs = find_installations()
+    if not installs:
+        logger.info(
+            "No installed copy of the '%s' skill found under %s or %s.\n"
+            "Run 'oopsie-data install-skill' to install one.",
+            SKILL_NAME,
+            Path.cwd(),
+            Path.home(),
+        )
+        return 1
+
+    stale = 0
+    logger.info("Installed package version: %s\n", current)
+    for dest in installs:
+        found = installed_version(dest)
+        if found == current:
+            logger.info("  up to date   %s", dest)
+        elif found is None:
+            # Copies predating the stamp, and hand-made copies, land here. The version is
+            # genuinely unknown rather than known-old, so say that instead of guessing.
+            stale += 1
+            logger.info("  unstamped    %s   (installed before versions were recorded)", dest)
+        else:
+            stale += 1
+            logger.info("  stale        %s   (from %s)", dest, found)
+
+    if stale:
+        logger.info(
+            "\nRe-install the copies above with 'oopsie-data install-skill --force' "
+            "(add --agent/--user to match where each one lives)."
+        )
+    return 1 if stale else 0
 
 
 def install_skill(
     user: bool = False,
     force: bool = False,
+    agent: str = DEFAULT_AGENT,
     root: Path | None = None,
 ) -> int:
     source = bundled_skill_dir()
@@ -73,7 +138,7 @@ def install_skill(
         logger.error("The installed package does not contain a skill payload at %s.", source)
         return 1
 
-    dest = skill_destination(user, root)
+    dest = skill_destination(user, agent, root)
     if dest.exists():
         if not force:
             logger.error(
@@ -87,36 +152,27 @@ def install_skill(
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(source, dest)
+    (dest / VERSION_STAMP).write_text(_package_version() + "\n", encoding="utf-8")
 
     logger.info("Installed the '%s' skill to %s", SKILL_NAME, dest)
-    if user:
-        # ~/.claude/skills is the one personal location more than one agent reads: Claude Code
-        # owns it, and Cursor loads it too, so it covers the most people without asking them
-        # which agent they use. Anyone else copies it on to their own directory from here.
-        logger.info(
-            "Claude Code picks it up from ~/.claude/skills/ in every project, and Cursor "
-            "reads that directory too; start a new session, then run /%s to invoke it "
-            "directly. For another agent, copy it on to ~/.agents/skills/, ~/.cursor/skills/ "
-            "or ~/.codex/skills/.",
-            SKILL_NAME,
+
+    if agent == "none":
+        # A plain directory: visible, committable, and not tied to any one agent. No agent
+        # scans it, though, so say that rather than let the skill sit there looking
+        # installed. Copying is something the contributor can inspect and undo.
+        agents = "\n".join(
+            f"      {subdir + '/':<18} {label}"
+            for key, (label, subdir) in AGENT_SKILL_DIRS.items()
+            if key != "none"
         )
-    else:
-        # ./skills/ is a plain project directory: visible, committable, and not tied to any
-        # one agent. No agent scans it, though, so say that rather than let the skill sit
-        # there looking installed. The last step stays manual because only the contributor
-        # knows which agent they use, and copying is something they can inspect and undo.
-        agents = "\n".join(f"      {where:<18} {label}" for label, where in AGENT_SKILL_DIRS)
-        # A command the user can paste as-is. Project scope writes under the working
-        # directory, so the relative form is both shorter and correct; --root can point
-        # elsewhere, and then the absolute path is the only one that works.
         try:
-            copy_from = Path(dest).relative_to(Path.cwd())
+            copy_from = dest.relative_to(Path.cwd())
         except ValueError:
             copy_from = dest
         logger.info(
-            "This is a plain project directory, so no agent scans it yet. Copy it to "
-            "whichever directory your agent reads, then start a new session there:\n\n"
-            "    mkdir -p .agents/skills && cp -r %s .agents/skills/\n\n"
+            "No agent scans this directory. Copy it to whichever directory your agent "
+            "reads, then start a new session there:\n\n"
+            "    mkdir -p .claude/skills && cp -r %s .claude/skills/\n\n"
             "  Substitute the directory your agent uses:\n\n"
             "%s\n\n"
             "  The payload is the same in every case — SKILL.md is a shared format, and "
@@ -125,4 +181,18 @@ def install_skill(
             copy_from,
             agents,
         )
+        return 0
+
+    label = AGENT_SKILL_DIRS[agent][0]
+    scope = "in every project" if user else "in this project"
+    logger.info(
+        "%s picks it up from there %s. Start a new session, then run /%s to invoke it "
+        "directly.\n"
+        "For another agent, re-run with --agent {%s}; the payload is identical in every "
+        "case, and Cursor reads Claude's and Codex's directories too.",
+        label,
+        scope,
+        SKILL_NAME,
+        ",".join(key for key in AGENT_SKILL_DIRS if key != agent),
+    )
     return 0
