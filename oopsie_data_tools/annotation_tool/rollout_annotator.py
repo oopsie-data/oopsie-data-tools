@@ -44,14 +44,14 @@ class WebRolloutAnnotator:
         resume_session_name: str | None = None,
     ) -> None:
         self.robot_profile = robot_profile
-        self.data_root_dir = Path(data_root_dir)
-        self.data_root_dir = self.data_root_dir.resolve()
+        self.data_root_dir = Path(data_root_dir).resolve()
         self.operator_name = operator_name.strip()
         self.annotator_name = annotator_name.strip() if annotator_name is not None else self.operator_name
         self.port = port
         self.wait_for_annotation = wait_for_annotation
         self.open_browser = open_browser
         self._proc: subprocess.Popen | None = None
+        self._poll_failures = 0
         self._active_recorder = EpisodeRecorder(
             robot_profile=self.robot_profile,
             data_root_dir=self.data_root_dir,
@@ -83,10 +83,12 @@ class WebRolloutAnnotator:
         self._proc = subprocess.Popen(
             [
                 # Not "python": inside a venv that may not exist, or may be a different
-                # interpreter than the one running this rollout.
+                # interpreter than the one running this rollout. Goes through the CLI so
+                # there is one place that parses these flags.
                 sys.executable,
                 "-m",
-                "oopsie_data_tools.annotation_tool.annotator_server",
+                "oopsie_data_tools.cli",
+                "annotate",
                 "--samples-dir",
                 str(self.data_root_dir),
                 "--port",
@@ -140,37 +142,42 @@ class WebRolloutAnnotator:
     # Task coordination
     # ------------------------------------------------------------------
 
-    def wait_for_task(self) -> str:
-        """Block until the browser submits a language instruction, then claim it.
+    def _poll(self, path: str) -> Any:
+        """One GET of *path*, or None if the server could not be reached.
 
         Polling errors are expected and transient (the server may still be starting), so
-        they are logged rather than raised — but they are no longer swallowed silently: a
-        server that has died used to leave this loop spinning forever with no output at all.
+        they are logged rather than raised — but not swallowed silently: a server that has
+        died would otherwise leave the callers spinning forever with no output at all.
         """
-        consecutive_failures = 0
+        try:
+            result = self._api_get(path)
+            self._poll_failures = 0
+            return result
+        except Exception as e:
+            self._poll_failures += 1
+            # ~5s of failures, then every ~30s, so a dead server is visible without
+            # flooding the console during a normal wait.
+            if self._poll_failures == 10 or self._poll_failures % 60 == 0:
+                logger.warning(
+                    "Cannot reach the annotation server at http://localhost:%s (%s). "
+                    "Still waiting; is it still running?",
+                    self.port,
+                    e,
+                )
+            return None
+
+    def wait_for_task(self) -> str:
+        """Block until the browser submits a language instruction, then claim it."""
         while True:
-            try:
-                state = self._api_get("/api/task/state")
-                consecutive_failures = 0
-                if (
-                    isinstance(state, dict)
-                    and state.get("status") == "pending"
-                    and state.get("pending_instruction")
-                ):
-                    instruction = str(state["pending_instruction"])
-                    self._api_post("/api/task/start", {"instruction": instruction})
-                    return instruction
-            except Exception as e:
-                consecutive_failures += 1
-                # ~5s of failures, then every ~30s, so a dead server is visible without
-                # flooding the console during a normal wait.
-                if consecutive_failures == 10 or consecutive_failures % 60 == 0:
-                    logger.warning(
-                        "Cannot reach the annotation server at http://localhost:%s (%s). "
-                        "Still waiting; is it still running?",
-                        self.port,
-                        e,
-                    )
+            state = self._poll("/api/task/state")
+            if (
+                isinstance(state, dict)
+                and state.get("status") == "pending"
+                and state.get("pending_instruction")
+            ):
+                instruction = str(state["pending_instruction"])
+                self._api_post("/api/task/start", {"instruction": instruction})
+                return instruction
             time.sleep(0.5)
 
     # ------------------------------------------------------------------
@@ -178,21 +185,15 @@ class WebRolloutAnnotator:
     # ------------------------------------------------------------------
 
     def reset_episode_recorder(self) -> None:
-        if self._active_recorder is not None:
-            self._active_recorder.reset_episode_recorder()
+        self._active_recorder.reset_episode_recorder()
 
     def record_step(self, observation: dict[str, Any], action: dict[str, Any]) -> None:
-        if self._active_recorder is not None:
-            self._active_recorder.record_step(observation=observation, action=action)
+        self._active_recorder.record_step(observation=observation, action=action)
 
     @property
     def episode_name(self) -> str:
-        """Name of the episode being recorded — the stem of its ``.h5`` and MP4 files.
-
-        Callers wanting to log which episode a result belongs to used to reach for a
-        ``_last_sample_id`` attribute that has never existed.
-        """
-        return "" if self._active_recorder is None else self._active_recorder.save_fname
+        """Name of the episode being recorded — the stem of its ``.h5`` and MP4 files."""
+        return self._active_recorder.save_fname
 
     # ------------------------------------------------------------------
     # Post-rollout workflow
@@ -206,13 +207,9 @@ class WebRolloutAnnotator:
         if not isinstance(instruction, str) or not instruction.strip():
             raise ValueError(f"Instruction must be a non-empty string, got {instruction!r}")
 
-        # Every use below must go through active_recorder. Three of them used to reach for
-        # self._active_recorder instead, so passing recorder= validated and stamped the
-        # wrong object — and raised AttributeError before reaching the guard right below
-        # whenever self._active_recorder was None, which is the case that guard is for.
+        # Every use below must go through active_recorder, not self._active_recorder, or
+        # passing recorder= would validate and stamp the wrong object.
         active_recorder = recorder or self._active_recorder
-        if active_recorder is None:
-            raise ValueError("EpisodeRecorder is required (pass recorder=...).")
         sample_id = active_recorder.save_fname
 
         data = {
@@ -292,22 +289,9 @@ class WebRolloutAnnotator:
 
     def _wait_for_annotation(self, sample_id: str) -> dict[str, Any]:
         while True:
-            data = self._api_get(f"/api/annotations/{sample_id}")
-            if not isinstance(data, dict):
-                time.sleep(0.5)
-                continue
-            if data.get("__annotation_skipped__"):
-                return {}
-            inner = (
-                data.get("annotation")
-                if isinstance(data.get("annotation"), dict)
-                else None
-            )
-            if inner and inner.get("__annotation_skipped__"):
-                return {}
-            if data:
-                # minimal server returns the annotation dict directly
-                return inner if inner is not None else data
+            data = self._poll(f"/api/annotations/{sample_id}")
+            if isinstance(data, dict) and data:
+                return {} if data.get("__annotation_skipped__") else data
             time.sleep(0.5)
 
     def _video_url_from_abs_path(self, abs_path: Path) -> str:

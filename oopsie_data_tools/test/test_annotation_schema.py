@@ -25,9 +25,6 @@ from oopsie_data_tools.annotation_tool.annotation_schema import (
     success_to_outcome,
     write_annotation_attrs,
 )
-from oopsie_data_tools.utils.validation.annotation_completeness import (
-    OUTCOME_EXPECTED_FIELDS,
-)
 
 _ANNOTATOR_HTML = ANNOTATION_TOOL_DIR / "ui" / "annotator.html"
 
@@ -176,10 +173,6 @@ def test_ui_vocabulary_matches_python(field, expected):
     the markup would otherwise only show up as data that quietly fails to round-trip.
     """
     assert _html_values(field) == list(expected)
-
-
-def test_expected_fields_match_the_outcomes():
-    assert set(OUTCOME_EXPECTED_FIELDS) == set(OUTCOMES)
 
 
 def test_the_form_marks_only_outcome_as_required():

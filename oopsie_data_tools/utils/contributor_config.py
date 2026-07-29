@@ -61,6 +61,21 @@ def _warn_if_inside_git_worktree(path: Path) -> None:
     )
 
 
+def load_config_yaml(path: Path) -> tuple[dict, str | None]:
+    """The config file as a plain dict, plus a parse error if there was one.
+
+    Unlike :func:`read_contributor_config` this never raises, so ``oopsie-data show-config``
+    and the init wizard can both report a file the reader would reject.
+    """
+    if not path.is_file():
+        return {}, None
+    try:
+        loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as e:
+        return {}, str(e)
+    return (loaded if isinstance(loaded, dict) else {}), None
+
+
 def read_contributor_config(config_path: Path | str | None = None) -> tuple[str, str]:
     """Return ``(lab_id, huggingface_token)`` from the contributor config.
 

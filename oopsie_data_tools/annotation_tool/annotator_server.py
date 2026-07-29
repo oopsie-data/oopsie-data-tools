@@ -14,17 +14,15 @@ Tool can also be launched as a standalone module to browse and annotate existing
 
 from __future__ import annotations
 
-import argparse
 import json
 import logging
-import os
 import threading
 import webbrowser
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, unquote
+from urllib.parse import quote
 
 import h5py
 from flask import Flask, abort, jsonify, request, send_file
@@ -257,8 +255,6 @@ def api_get_annotation(sample_id: str):
 def api_save_annotation_json() -> Any:
     """Save annotation with ``sample_id`` in the JSON body (avoids slashes in URL paths)."""
     payload = _json_payload()
-    if not isinstance(payload, dict):
-        return jsonify({"error": "invalid JSON body"}), 400
     sample_id = str(payload.get("sample_id", "")).strip()
     if not sample_id:
         return jsonify({"error": "sample_id is required"}), 400
@@ -348,15 +344,19 @@ class H5PathError(ValueError):
 
     def __init__(self, message: str, status: int = 400) -> None:
         super().__init__(message)
-        self.message = message
         self.status = status
+
+
+@app.errorhandler(H5PathError)
+def _h5_path_error(e: H5PathError):
+    return jsonify({"error": str(e)}), e.status
 
 
 def _safe_h5_path_from_query(samples_root: Path) -> Path:
     raw = str(request.args.get("path", "")).strip()
     if not raw:
         raise H5PathError("path query parameter is required", 400)
-    rel = Path(unquote(raw))
+    rel = Path(raw)
     target = (samples_root.resolve() / rel).resolve()
     try:
         target.relative_to(samples_root.resolve())
@@ -443,21 +443,9 @@ def _h5_annotation_tick_level(h5f: h5py.File, annotator_name: str) -> int:
     level = _annotation_tick_level(ann)
     if level > 0:
         return level
-    raw = _read_h5_attr(ea, "failure_annotation", "")
-    raw_s = str(raw or "").strip()
-    if raw_s:
-        try:
-            parsed = json.loads(raw_s)
-            if isinstance(parsed, dict):
-                if len(parsed) > 0:
-                    return 1
-            elif bool(parsed):
-                return 1
-        except Exception:
-            return 1
-    if annotator_name in ea.keys() and isinstance(ea[annotator_name], h5py.Group):
-        if _annotator_subgroup_looks_annotated(ea[annotator_name]):
-            return 1
+    sub = ea.get(annotator_name)
+    if isinstance(sub, h5py.Group) and _annotator_subgroup_looks_annotated(sub):
+        return 1
     return 0
 
 
@@ -632,10 +620,7 @@ def api_recent_annotations():
 def api_h5_sample():
     rt = _get_runtime()
     samples_root = rt.cfg.samples_dir.resolve()
-    try:
-        h5_path = _safe_h5_path_from_query(samples_root)
-    except H5PathError as e:
-        return jsonify({"error": e.message}), e.status
+    h5_path = _safe_h5_path_from_query(samples_root)
 
     video_urls: dict[str, str] = {}
     existing_annotation: dict[str, Any] = {}
@@ -705,14 +690,9 @@ def api_h5_sample():
 def api_h5_save_annotation():
     rt = _get_runtime()
     samples_root = rt.cfg.samples_dir.resolve()
-    try:
-        h5_path = _safe_h5_path_from_query(samples_root)
-    except H5PathError as e:
-        return jsonify({"error": e.message}), e.status
+    h5_path = _safe_h5_path_from_query(samples_root)
 
     payload = _json_payload()
-    if not isinstance(payload, dict):
-        return jsonify({"error": "invalid JSON body"}), 400
     error = validate_annotation_payload(payload)
     if error:
         return jsonify({"error": error}), 400
@@ -727,10 +707,8 @@ def api_h5_save_annotation():
             ea = f.require_group("episode_annotations")
             ag = ea.require_group(ann["annotator"])
             write_annotation_attrs(ag, ann)
-    except OSError as e:
-        return jsonify({"error": f"could not write HDF5: {e}"}), 500
     except Exception as e:
-        return jsonify({"error": f"could not update annotation: {e}"}), 500
+        return jsonify({"error": f"could not write annotation: {e}"}), 500
 
     return jsonify({"status": "saved", "annotation": ann})
 
@@ -740,10 +718,7 @@ def api_h5_set_instruction():
     """Overwrite an episode's ``language_instruction`` root attr (issue #31)."""
     rt = _get_runtime()
     samples_root = rt.cfg.samples_dir.resolve()
-    try:
-        h5_path = _safe_h5_path_from_query(samples_root)
-    except H5PathError as e:
-        return jsonify({"error": e.message}), e.status
+    h5_path = _safe_h5_path_from_query(samples_root)
 
     instruction = str(_json_payload().get("instruction", "")).strip()
     if not instruction:
@@ -752,10 +727,8 @@ def api_h5_set_instruction():
     try:
         with h5py.File(h5_path, "r+") as f:
             f.attrs["language_instruction"] = instruction
-    except OSError as e:
-        return jsonify({"error": f"could not write HDF5: {e}"}), 500
     except Exception as e:
-        return jsonify({"error": f"could not update instruction: {e}"}), 500
+        return jsonify({"error": f"could not write instruction: {e}"}), 500
 
     return jsonify({"status": "saved", "language_instruction": instruction})
 
@@ -776,15 +749,10 @@ def run_server(
     port: int = 5001,
     open_browser: bool = True,
     with_rollouts: bool = False,
-    debug: bool = False,
 ) -> int:
     """Configure the runtime and serve the annotation UI (blocks until interrupted).
 
-    Shared by this module's ``main()`` and the ``oopsie-data annotate`` CLI command.
-
-    ``debug`` is off by default and should stay off outside development: it enables the
-    Werkzeug debugger, whose interactive console executes arbitrary Python on request, and
-    the reloader, which re-executes this process and so loses any state answered at startup.
+    Backs the ``oopsie-data annotate`` CLI command.
     """
     samples_dir = Path(samples_dir).resolve()
     samples_dir.mkdir(parents=True, exist_ok=True)
@@ -794,57 +762,10 @@ def run_server(
         browse_only=bool(not with_rollouts),
     )
 
-    # WERKZEUG_RUN_MAIN marks the reloader's child process; only the parent should open a
-    # browser. Only reachable with debug=True, but harmless and correct either way.
-    if open_browser and os.environ.get("WERKZEUG_RUN_MAIN") != "true":
+    if open_browser:
         webbrowser.open(f"http://localhost:{port}/")
 
     logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
-    app.run(host="localhost", port=port, debug=debug)
+    app.run(host="localhost", port=port)
     return 0
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Annotator server")
-    parser.add_argument(
-        "--samples-dir",
-        type=Path,
-        default=Path("samples"),
-        help="Directory containing saved MP4s (and HDF5 episodes) for this session",
-    )
-    parser.add_argument("--port", type=int, default=5001)
-    parser.add_argument(
-        "--annotator-name",
-        type=str,
-        required=True,
-        help="Annotator name to stamp into saved annotations",
-    )
-    parser.add_argument("--no-browser", action="store_true")
-    parser.add_argument(
-        "--with-rollouts",
-        action="store_true",
-        help="HDF5 browser + annotation form + rollouts",
-    )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help=(
-            "Development only: enable the Werkzeug reloader and debugger. The debugger's "
-            "console executes arbitrary Python on request — never use it on a shared machine."
-        ),
-    )
-    args = parser.parse_args()
-
-    return run_server(
-        samples_dir=args.samples_dir,
-        annotator_name=args.annotator_name,
-        port=args.port,
-        open_browser=not args.no_browser,
-        with_rollouts=args.with_rollouts,
-        debug=args.debug,
-    )
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

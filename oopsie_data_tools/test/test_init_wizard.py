@@ -1,7 +1,7 @@
 """Tests for ``oopsie-data init`` (``oopsie_data_tools/init_wizard.py``).
 
-The wizard is driven by scripted answers: ``builtins.input`` is replaced with a queue and
-``sys.stdin.isatty`` is forced True, which is what the prompt helpers gate on.
+The wizard is driven by scripted answers: click's prompt function is replaced with a queue
+and ``sys.stdin.isatty`` is forced True, which is what the prompt helpers gate on.
 
 Note: ``conftest._test_contributor_config`` rebinds ``read_contributor_config`` for the whole
 session, so assertions here read the written YAML directly rather than through that name.
@@ -36,7 +36,7 @@ def answers(monkeypatch):
             raise AssertionError(f"wizard asked an unexpected question: {prompt!r}")
         return queue.pop(0)
 
-    monkeypatch.setattr("builtins.input", _fake_input)
+    monkeypatch.setattr("click.termui.visible_prompt_func", _fake_input)
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
     return queue
 

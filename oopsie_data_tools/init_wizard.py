@@ -18,12 +18,13 @@ import os
 import stat
 import sys
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from typing import Callable, Sequence
 
+import click
 import yaml
 
 from oopsie_data_tools.utils import paths
-from oopsie_data_tools.utils.contributor_config import read_contributor_config
+from oopsie_data_tools.utils.contributor_config import load_config_yaml
 
 logger = logging.getLogger(__name__)
 
@@ -38,10 +39,8 @@ class WizardAbort(Exception):
 
 # ── prompt helpers ────────────────────────────────────────────────────────────
 #
-# Same contract as cli._prompt_annotator_name: never block on a non-interactive stdin,
-# re-ask a bounded number of times, strip every answer.
-
-_MAX_ATTEMPTS = 3
+# click.prompt/click.confirm do the asking, re-asking and default handling. These add the
+# only thing they do not: never block on a non-interactive stdin, and strip every answer.
 
 
 def _require_tty(what: str) -> None:
@@ -52,10 +51,6 @@ def _require_tty(what: str) -> None:
         )
 
 
-def _with_default(prompt: str, default: str | None) -> str:
-    return f"{prompt} [{default}]: " if default else f"{prompt}: "
-
-
 def ask(
     prompt: str,
     default: str | None = None,
@@ -63,43 +58,31 @@ def ask(
 ) -> str:
     """Ask for a string. ``validate`` returns an error message, or None if the value is fine."""
     _require_tty(prompt)
-    for _ in range(_MAX_ATTEMPTS):
-        answer = input(_with_default(prompt, default)).strip()
-        if not answer and default is not None:
-            answer = default
-        if not answer:
-            print("  Please enter a value.")
-            continue
-        error = validate(answer) if validate else None
+
+    def _check(value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise click.UsageError("Please enter a value.")
+        error = validate(value) if validate else None
         if error:
-            print(f"  {error}")
-            continue
-        return answer
-    raise WizardAbort(f"No valid answer for: {prompt}")
+            raise click.UsageError(error)
+        return value
+
+    try:
+        return click.prompt(prompt, default=default, value_proc=_check)
+    except click.Abort as e:
+        raise WizardAbort(f"No valid answer for: {prompt}") from e
 
 
 def ask_optional(prompt: str, default: str | None = None) -> str:
     """Ask for a string that may be left empty."""
     _require_tty(prompt)
-    answer = input(_with_default(prompt, default)).strip()
-    if not answer and default is not None:
-        return default
-    return answer
+    return click.prompt(prompt, default=default or "", show_default=bool(default)).strip()
 
 
 def ask_bool(prompt: str, default: bool = False) -> bool:
     _require_tty(prompt)
-    hint = "[Y/n]" if default else "[y/N]"
-    for _ in range(_MAX_ATTEMPTS):
-        answer = input(f"{prompt} {hint}: ").strip().lower()
-        if not answer:
-            return default
-        if answer in ("y", "yes"):
-            return True
-        if answer in ("n", "no"):
-            return False
-        print("  Please answer y or n.")
-    raise WizardAbort(f"No valid answer for: {prompt}")
+    return click.confirm(prompt, default=default)
 
 
 def ask_choice(prompt: str, options: Sequence[str], default: str | None = None) -> str:
@@ -110,9 +93,7 @@ def ask_choice(prompt: str, options: Sequence[str], default: str | None = None) 
         print(f"  {index}) {option}{marker}")
 
     def _validate(value: str) -> str | None:
-        if value in options:
-            return None
-        if value.isdigit() and 1 <= int(value) <= len(options):
+        if value in options or (value.isdigit() and 1 <= int(value) <= len(options)):
             return None
         return f"Please enter a number between 1 and {len(options)}."
 
@@ -199,16 +180,6 @@ def advise_persisting_config_dir(target_dir: Path, from_flag: bool = False) -> N
 # ── contributor config ────────────────────────────────────────────────────────
 
 
-def _read_existing_yaml(path: Path) -> dict[str, Any]:
-    if not path.is_file():
-        return {}
-    try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except yaml.YAMLError:
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
 def _mask(token: str) -> str:
     return f"{token[:5]}…{token[-4:]}" if len(token) > 12 else "…"
 
@@ -242,7 +213,7 @@ def step_credentials(
 ) -> Path | None:
     """Write ``contributor_config.yaml``. Returns the path, or None if nothing was written."""
     path = target_dir / CONTRIBUTOR_CONFIG_NAME
-    existing = _read_existing_yaml(path)
+    existing, _ = load_config_yaml(path)
     existing_lab_id = str(existing.get("lab_id") or "").strip()
     existing_token = str(existing.get("huggingface_token") or "").strip()
 
@@ -289,9 +260,7 @@ def step_credentials(
     )
     path.chmod(stat.S_IRUSR | stat.S_IWUSR)  # contains a credential
 
-    # Prove the file round-trips through the reader the rest of the toolkit uses.
-    saved_lab_id, _ = read_contributor_config(path)
-    logger.info("Saved. Episodes will be uploaded to OopsieData-Submissions/%s", saved_lab_id)
+    logger.info("Saved. Episodes will be uploaded to OopsieData-Submissions/%s", lab_id)
     if not hf_token:
         logger.info("No token saved — set $HF_TOKEN in your environment before uploading.")
     return path

@@ -58,7 +58,7 @@ def test_config_file_is_ignored():
 def test_wizard_defaults_to_the_user_dir(isolated, monkeypatch):
     """Pressing Enter must not put a token where a commit can pick it up."""
     answers = iter([""])  # accept the default
-    monkeypatch.setattr("builtins.input", lambda *_: next(answers))
+    monkeypatch.setattr("click.termui.visible_prompt_func", lambda *_: next(answers))
 
     assert init_wizard.choose_target_dir() == paths.user_config_dir()
 
@@ -69,7 +69,7 @@ def test_wizard_offers_the_working_directory(isolated, tmp_path, monkeypatch):
     project.mkdir()
     monkeypatch.chdir(project)
     answers = iter(["2"])  # the second option is this directory
-    monkeypatch.setattr("builtins.input", lambda *_: next(answers))
+    monkeypatch.setattr("click.termui.visible_prompt_func", lambda *_: next(answers))
 
     target = init_wizard.choose_target_dir()
 
@@ -85,7 +85,7 @@ def test_the_working_directory_is_not_offered_when_it_is_the_user_dir(isolated, 
 
     paths.user_config_dir().mkdir(parents=True)
     monkeypatch.chdir(paths.user_config_dir())
-    monkeypatch.setattr("builtins.input", refuse)
+    monkeypatch.setattr("click.termui.visible_prompt_func", refuse)
 
     assert init_wizard.choose_target_dir() == paths.user_config_dir()
 

@@ -8,6 +8,8 @@ rendered videos by accident via the ``<stem>_<cam>.mp4`` filename fallback.
 
 from __future__ import annotations
 
+import inspect
+import re
 from pathlib import Path
 
 import h5py
@@ -238,3 +240,49 @@ def test_list_ignores_nonhuman_annotator(client, tmp_path: Path) -> None:
 
     entry = next(e for e in client.get("/api/h5/list").get_json() if e["rel_path"] == "ep.h5")
     assert entry["annotated_by_others"] is False
+
+
+def test_stop_is_safe_before_the_server_was_started(tmp_path):
+    """The teardown path runs on every failure, including ones before start()."""
+    from oopsie_data_tools.annotation_tool.rollout_annotator import WebRolloutAnnotator
+    from oopsie_data_tools.utils.robot_profile.robot_profile import RobotProfile
+
+    profile = RobotProfile(
+        policy_name="p", robot_name="r", is_biarm=False, uses_mobile_base=False,
+        gripper_name="g", control_freq=10, camera_names=["left"],
+        robot_state_keys=["joint_position", "gripper_position"],
+        robot_state_joint_names=[f"j{i}" for i in range(7)],
+        action_space=["joint_velocity", "gripper_position"],
+        action_joint_names=[f"j{i}" for i in range(7)],
+    )
+    annotator = WebRolloutAnnotator(
+        robot_profile=profile, data_root_dir=tmp_path, operator_name="tester",
+        wait_for_annotation=False, open_browser=False,
+    )
+    annotator.stop()  # _proc is None — must not raise
+
+
+def test_the_spawn_command_is_a_real_entry_point():
+    """WebRolloutAnnotator launches the server as `python -m <module> annotate ...`.
+
+    Nothing else in the suite starts that subprocess, so a module losing its ``__main__``
+    handling breaks rollout mode silently: the child exits 0 having done nothing, and the
+    parent waits for a port that never opens.
+    """
+    import subprocess
+    import sys
+
+    from oopsie_data_tools.annotation_tool.rollout_annotator import WebRolloutAnnotator
+
+    source = inspect.getsource(WebRolloutAnnotator._spawn_server)
+    module = re.search(r'"-m",\s*"([\w.]+)"', source).group(1)
+    subcommand = re.search(r'"-m",\s*"[\w.]+",\s*"([a-z-]+)"', source)
+
+    argv = [sys.executable, "-m", module]
+    if subcommand:
+        argv.append(subcommand.group(1))
+    result = subprocess.run(argv + ["--help"], capture_output=True, text=True, timeout=60)
+
+    assert result.returncode == 0, f"{' '.join(argv)} --help failed: {result.stderr}"
+    for flag in ("--samples-dir", "--port", "--annotator-name", "--with-rollouts", "--no-browser"):
+        assert flag in result.stdout, f"{module} does not accept {flag}"

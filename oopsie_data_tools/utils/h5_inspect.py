@@ -89,85 +89,91 @@ def _fmt_attr_value(v: Any) -> str:
     return _fmt_scalar(v)
 
 
-def _print_attrs(obj: h5py.Group | h5py.Dataset, *, indent: int) -> None:
-    if len(obj.attrs) == 0:
-        return
-    print(" " * indent + "attrs:")
+# ── one walk, two renderers ───────────────────────────────────────────────────
+#
+# The tree is built once and rendered twice, so the printed dump and ``--json`` cannot
+# disagree about what is in the file. Attribute values are carried raw: the printed form
+# elides them for a terminal, the JSON form keeps them whole for a program.
+
+
+def _raw_attrs(obj: h5py.Group | h5py.Dataset) -> dict:
+    out = {}
     for k in sorted(obj.attrs.keys()):
         try:
-            v = obj.attrs[k]
-        except Exception as e:
-            print(" " * (indent + 2) + f"- {k!r}: <error reading attr: {e}>")
-            continue
-        print(" " * (indent + 2) + f"- {k!r}: {_fmt_attr_value(v)}")
+            out[k] = obj.attrs[k]
+        except Exception as e:  # a corrupt attr must not abort the whole dump
+            out[k] = f"<error reading attr: {e}>"
+    return out
 
 
-def _describe_dataset(ds: h5py.Dataset) -> str:
-    parts = [f"shape={ds.shape}", f"dtype={ds.dtype}"]
-
-    try:
-        if ds.chunks is not None:
-            parts.append(f"chunks={ds.chunks}")
-    except Exception:
-        pass
-
-    try:
-        comp = ds.compression
-        if comp is not None:
-            parts.append(f"compression={comp!r}")
-    except Exception:
-        pass
-
-    try:
-        fill = ds.fillvalue
-        if fill is not None:
-            parts.append(f"fill={_fmt_scalar(fill)}")
-    except Exception:
-        pass
-
-    try:
-        nbytes = int(ds.size) * int(ds.dtype.itemsize)
-        parts.append(f"approx_nbytes={_human_bytes(nbytes)}")
-    except Exception:
-        pass
-
-    return ", ".join(parts)
-
-
-def _walk(name: str, obj: h5py.Group | h5py.Dataset, *, indent: int) -> None:
+def _structure(obj: h5py.Group | h5py.Dataset) -> dict:
     if isinstance(obj, h5py.Group):
-        title = "/" if name == "" else name
-        print(" " * indent + f"[group] {title}")
-        _print_attrs(obj, indent=indent + 2)
-
+        node: dict = {"type": "group", "attrs": _raw_attrs(obj), "children": {}}
         for k in sorted(obj.keys()):
             # Show links explicitly rather than following them (common in some layouts).
-            try:
-                link = obj.get(k, getlink=True)
-                if isinstance(link, (h5py.SoftLink, h5py.ExternalLink)):
-                    print(" " * (indent + 2) + f"[link] {title.rstrip('/')}/{k} -> {link}")
-                    continue
-            except Exception:
-                pass
+            link = obj.get(k, getlink=True)
+            if isinstance(link, (h5py.SoftLink, h5py.ExternalLink)):
+                node["children"][k] = {"type": "link", "target": str(link)}
+            else:
+                node["children"][k] = _structure(obj[k])
+        return node
 
-            child_name = (title.rstrip("/") + "/" + k) if title != "/" else ("/" + k)
-            _walk(child_name, obj[k], indent=indent + 2)
+    if isinstance(obj, h5py.Dataset):
+        # An h5py.Empty dataset has a dtype but no shape, and the schema uses those as
+        # placeholders for undeclared action keys — so "empty" has to be reportable.
+        return {
+            "type": "dataset",
+            "shape": None if obj.shape is None else list(obj.shape),
+            "dtype": str(obj.dtype),
+            "empty": obj.shape is None,
+            "chunks": obj.chunks,
+            "compression": obj.compression,
+            "fillvalue": obj.fillvalue,
+            "nbytes": None if obj.size is None else int(obj.size) * obj.dtype.itemsize,
+            "attrs": _raw_attrs(obj),
+        }
 
-    elif isinstance(obj, h5py.Dataset):
-        print(" " * indent + f"[dataset] {name} ({_describe_dataset(obj)})")
-        _print_attrs(obj, indent=indent + 2)
+    return {"type": "unknown", "repr": str(type(obj))}
+
+
+def _print_node(name: str, node: dict, *, indent: int) -> None:
+    pad = " " * indent
+    if node["type"] == "link":
+        print(f"{pad}[link] {name} -> {node['target']}")
+        return
+
+    if node["type"] == "group":
+        print(f"{pad}[group] {name}")
+    elif node["type"] == "dataset":
+        parts = [f"shape={tuple(node['shape']) if node['shape'] is not None else None}",
+                 f"dtype={node['dtype']}"]
+        if node["chunks"] is not None:
+            parts.append(f"chunks={node['chunks']}")
+        if node["compression"] is not None:
+            parts.append(f"compression={node['compression']!r}")
+        if node["fillvalue"] is not None:
+            parts.append(f"fill={_fmt_scalar(node['fillvalue'])}")
+        if node["nbytes"] is not None:
+            parts.append(f"approx_nbytes={_human_bytes(node['nbytes'])}")
+        print(f"{pad}[dataset] {name} ({', '.join(parts)})")
     else:
-        print(" " * indent + f"[unknown] {name}: {type(obj)}")
+        print(f"{pad}[unknown] {name}: {node['repr']}")
+
+    if node["attrs"]:
+        print(f"{pad}  attrs:")
+        for k, v in node["attrs"].items():
+            print(f"{pad}    - {k!r}: {_fmt_attr_value(v)}")
+
+    for key, child in node.get("children", {}).items():
+        child_name = f"{name.rstrip('/')}/{key}" if name != "/" else f"/{key}"
+        _print_node(child_name, child, indent=indent + 2)
 
 
 def inspect_h5(path: str) -> None:
     """Print the full structure of the HDF5 file at *path* to stdout."""
     with h5py.File(path, "r") as f:
         print(f"HDF5: {path}")
-        _walk("", f, indent=0)
-
-
-# ── structured form ───────────────────────────────────────────────────────────
+        _print_node("/", _structure(f), indent=0)
 
 
 def _jsonable(v: Any) -> Any:
@@ -193,42 +199,25 @@ def _jsonable(v: Any) -> Any:
     return v
 
 
-def _attrs_dict(obj: h5py.Group | h5py.Dataset) -> dict:
-    out = {}
-    for k in sorted(obj.attrs.keys()):
-        try:
-            out[k] = _jsonable(obj.attrs[k])
-        except Exception as e:
-            out[k] = f"<error reading attr: {e}>"
-    return out
-
-
-def _structure(obj: h5py.Group | h5py.Dataset) -> dict:
-    if isinstance(obj, h5py.Group):
-        node: dict = {"type": "group", "attrs": _attrs_dict(obj), "children": {}}
-        for k in sorted(obj.keys()):
-            try:
-                link = obj.get(k, getlink=True)
-                if isinstance(link, (h5py.SoftLink, h5py.ExternalLink)):
-                    node["children"][k] = {"type": "link", "target": str(link)}
-                    continue
-            except Exception:
-                pass
-            node["children"][k] = _structure(obj[k])
+def _jsonable_node(node: dict) -> dict:
+    """One tree node with its attrs converted, dropping the print-only dataset detail."""
+    if node["type"] == "link":
         return node
-
-    if isinstance(obj, h5py.Dataset):
-        # An h5py.Empty dataset has a dtype but no shape, and the schema uses those as
-        # placeholders for undeclared action keys — so "empty" has to be reportable.
+    if node["type"] == "group":
+        return {
+            "type": "group",
+            "attrs": {k: _jsonable(v) for k, v in node["attrs"].items()},
+            "children": {k: _jsonable_node(c) for k, c in node["children"].items()},
+        }
+    if node["type"] == "dataset":
         return {
             "type": "dataset",
-            "shape": None if obj.shape is None else list(obj.shape),
-            "dtype": str(obj.dtype),
-            "empty": obj.shape is None,
-            "attrs": _attrs_dict(obj),
+            "shape": node["shape"],
+            "dtype": node["dtype"],
+            "empty": node["empty"],
+            "attrs": {k: _jsonable(v) for k, v in node["attrs"].items()},
         }
-
-    return {"type": "unknown", "repr": str(type(obj))}
+    return node
 
 
 def inspect_h5_structure(path: str) -> dict:
@@ -238,4 +227,4 @@ def inspect_h5_structure(path: str) -> dict:
     the schema, so it works on a file ``oopsie-data validate`` rejects.
     """
     with h5py.File(path, "r") as f:
-        return {"path": path, "root": _structure(f)}
+        return {"path": path, "root": _jsonable_node(_structure(f))}

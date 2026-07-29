@@ -10,7 +10,7 @@ validator uses. See ``skill/reference/conversion.md``.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Sequence
 
 import cv2
 import h5py
@@ -23,7 +23,6 @@ from oopsie_data_tools.annotation_tool.annotation_schema import (
     success_to_outcome,
     write_annotation_attrs,
 )
-from oopsie_data_tools.utils.h5 import decode_h5_scalar
 from oopsie_data_tools.utils.robot_profile.robot_profile import (
     RobotProfile,
     robot_profile_to_json,
@@ -38,14 +37,8 @@ from oopsie_data_tools.utils.validation.episode_validator import (
     MIN_IMAGE_SIZE,
 )
 
-#: Kept as an alias so existing converters keep working. Imported from the validator rather
-#: than restated: a local copy drifted to 1080 once already, which silently downscaled every
-#: video for a limit that was never 1080.
-SCHEMA_VERSION = OOPSIE_DATA_SCHEMA_V1
-MAX_DIM = MAX_IMAGE_SIZE
 
-
-def resize_frames(frames: np.ndarray, max_dim: int = MAX_DIM) -> np.ndarray:
+def resize_frames(frames: np.ndarray, max_dim: int = MAX_IMAGE_SIZE) -> np.ndarray:
     """Resize ``(T, H, W, 3)`` frames so that ``max(H, W) <= max_dim``.
 
     Raises:
@@ -73,25 +66,6 @@ def resize_frames(frames: np.ndarray, max_dim: int = MAX_DIM) -> np.ndarray:
     )
 
 
-#: Kept so converters written against the older private name keep importing.
-_resize_frames = resize_frames
-
-
-def _parse_fps(control_freq: Any, default_fps: float = 15.0) -> float:
-    """Coerce a profile's ``control_freq`` to a usable FPS, falling back on nonsense."""
-    try:
-        parsed = float(control_freq)
-    except (TypeError, ValueError):
-        return default_fps
-    return parsed if parsed > 0 else default_fps
-
-
-def _decode_text(value: Any) -> str:
-    """Decode bytes, numpy scalars/arrays, or arbitrary values to a plain str."""
-    # Thin alias: decode_h5_scalar handles every case this did, plus None and str.
-    return decode_h5_scalar(value)
-
-
 def write_root_attrs(
     file_handle: h5py.File,
     *,
@@ -109,7 +83,7 @@ def write_root_attrs(
     ``"your_lab_id"`` is rejected by name.
     """
     str_dtype = h5py.string_dtype(encoding="utf-8")
-    file_handle.attrs["schema"] = SCHEMA_VERSION
+    file_handle.attrs["schema"] = OOPSIE_DATA_SCHEMA_V1
     file_handle.attrs["episode_id"] = episode_id
     file_handle.attrs["language_instruction"] = language_instruction
     file_handle.attrs["lab_id"] = lab_id

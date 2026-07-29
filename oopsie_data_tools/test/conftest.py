@@ -68,23 +68,17 @@ def _test_contributor_config():
     ``configs/contributor_config.yaml`` (whose blank lab_id would otherwise fail
     ``EpisodeRecorder`` construction), without touching the committed file.
 
-    Every module that binds the name at import gets patched: ``hf_upload`` and
-    ``init_wizard`` also do ``from ... import read_contributor_config``, so rebinding two
-    hand-picked modules left them reading the developer's real config.
+    Every caller reaches the function through its module, so this one patch covers them all.
     """
     from _pytest.monkeypatch import MonkeyPatch
 
-    import oopsie_data_tools.annotation_tool.episode_recorder as _recorder
-    import oopsie_data_tools.init_wizard as _init_wizard
     import oopsie_data_tools.utils.contributor_config as _cc
-    import oopsie_data_tools.utils.hf_upload as _hf_upload
 
     def _fake(config_path=None) -> tuple[str, str]:
         return ("test_lab", "test_token")
 
     patch = MonkeyPatch()
-    for module in (_cc, _recorder, _hf_upload, _init_wizard):
-        patch.setattr(module, "read_contributor_config", _fake)
+    patch.setattr(_cc, "read_contributor_config", _fake)
     try:
         yield
     finally:
@@ -116,20 +110,6 @@ def episode_without_annotations(tmp_path_factory) -> Path:
     return d / "episode_no_annotations.h5"
 
 
-@pytest.fixture(scope="session")
-def valid_success_episode(tmp_path_factory) -> Path:
-    """Valid episode annotated as success."""
-    d = tmp_path_factory.mktemp("valid_success")
-    make_success(d)
-    return d / "episode_success.h5"
-
-
-@pytest.fixture(scope="session")
-def valid_failure_episode(tmp_path_factory) -> Path:
-    """Valid episode annotated as failure."""
-    d = tmp_path_factory.mktemp("valid_failure")
-    make_failure(d)
-    return d / "episode_failure.h5"
 
 
 @pytest.fixture(scope="session")
