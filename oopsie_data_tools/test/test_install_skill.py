@@ -57,12 +57,13 @@ def test_skill_declares_frontmatter_claude_can_discover():
     assert "description:" in frontmatter
 
 
-def test_installs_into_a_visible_project_directory_by_default(home, tmp_path):
-    """Default scope is the project, and deliberately not a hidden .claude directory."""
+def test_installs_into_a_visible_agent_neutral_directory_by_default(home, tmp_path):
+    """Default scope is the project, and deliberately not any one agent's config dir."""
     assert cli.main(["install-skill"]) == 0
 
     assert (tmp_path / "project" / "skills" / "oopsie-data" / "SKILL.md").is_file()
     assert not (tmp_path / "project" / ".claude").exists()
+    assert not (tmp_path / "project" / ".cursor").exists()
     assert not (home / ".claude").exists()
 
 
@@ -85,11 +86,26 @@ def test_user_scope_installs_where_claude_code_scans(home, tmp_path):
 
 
 def test_default_install_explains_how_to_activate_the_skill(home, caplog):
-    """./skills is not scanned by Claude Code, so the command must not imply it is live."""
+    """./skills is not scanned by any agent, so the command must not imply it is live."""
     with caplog.at_level("INFO"):
         assert cli.main(["install-skill"]) == 0
 
-    assert ".claude/skills" in caplog.text
+    # A plain copy: one directory, no link to reason about, and trivially undone. A relative
+    # symlink out of the agent's skills directory reads as broken even when it resolves.
+    assert "cp -r" in caplog.text
+    assert "ln -s" not in caplog.text
+
+
+def test_activation_advice_covers_more_agents_than_claude(home, caplog):
+    """The payload is a shared format; the advice must not read as Claude-only."""
+    with caplog.at_level("INFO"):
+        assert cli.main(["install-skill"]) == 0
+
+    for _, directory in claude_skill.AGENT_SKILL_DIRS:
+        assert directory in caplog.text
+
+    assert ".agents/skills/" in caplog.text, "the vendor-neutral location must be offered"
+    assert "Cursor" in caplog.text
 
 
 def test_refuses_to_overwrite_without_force(home, tmp_path):

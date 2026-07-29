@@ -127,32 +127,43 @@ def choose_target_dir() -> Path:
     """Pick the directory to write the config into.
 
     ``$OOPSIE_CONFIG_DIR`` (set directly or via ``--config-dir``) wins outright. Otherwise
-    the per-user config directory is the default everywhere; inside a checkout we still
-    offer the checkout's ``configs/``, but never pick it for you.
+    the per-user directory is the default, and the working directory is offered as the
+    alternative — both are found by the lookup, so either choice works afterwards.
 
-    The default deliberately points away from the checkout. The file holds a HuggingFace
-    token, and a token inside a git working tree is one ``git add -A`` away from being
-    published — which is exactly how it used to be committed.
+    The default points at the per-user directory because the file holds a HuggingFace token:
+    the project-local copy is one ``git add -A`` from being published, and it is only found
+    while you are in that directory. That makes it the right answer for a second lab or a
+    shared machine, and the wrong default for everyone else — so it is offered, never picked.
     """
     env_dir = paths.env_config_dir()
     if env_dir is not None:
         logger.info("Using config directory from $%s: %s", paths.ENV_CONFIG_DIR, env_dir)
         return env_dir
 
-    repo_dir = paths.repo_config_dir()
     user_dir = paths.user_config_dir()
-    if repo_dir is None or not sys.stdin.isatty():
+    project_dir = paths.project_config_dirs()[0]
+    if not sys.stdin.isatty() or project_dir == user_dir:
         logger.info("Using config directory: %s", user_dir)
         return user_dir
 
-    user_option = f"{user_dir}  (your user config directory)"
-    repo_option = f"{repo_dir}  (this checkout — holds a token inside a git working tree)"
+    user_option = f"{user_dir}  (your user config directory — used from every project)"
+    project_option = f"{project_dir}  (this directory — a token inside it can be committed)"
     choice = ask_choice(
         "Where should your config be saved? Both are found automatically.",
-        [user_option, repo_option],
+        [user_option, project_option],
         default=user_option,
     )
-    return repo_dir if choice.startswith(str(repo_dir)) else user_dir
+    if not choice.startswith(f"{project_dir} "):
+        return user_dir
+    # The lookup finds it, but only from here, and nothing else warns until a command is run
+    # from somewhere else and quietly resolves to a different config.
+    logger.info(
+        "Saving to %s. It is found when you run oopsie-data from this directory; elsewhere "
+        "the lookup falls through to %s.",
+        project_dir,
+        user_dir,
+    )
+    return project_dir
 
 
 def _shell_rc_path() -> Path:
@@ -167,7 +178,7 @@ def advise_persisting_config_dir(target_dir: Path, from_flag: bool = False) -> N
     ``from_flag`` marks a location that came from ``--config-dir``: the CLI exports that into
     the environment for the current process only, so it must not count as persisted.
     """
-    if target_dir in (paths.user_config_dir(), paths.repo_config_dir()):
+    if target_dir == paths.user_config_dir() or target_dir in paths.project_config_dirs():
         return  # found by the normal lookup order
     if paths.env_config_dir() == target_dir and not from_flag:
         return  # already exported in the user's environment

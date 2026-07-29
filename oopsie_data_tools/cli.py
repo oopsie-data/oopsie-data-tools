@@ -838,15 +838,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_skill = _add_command(
         sub,
         "install-skill",
-        summary="Install the bundled Claude Code skill for oopsie-data",
+        summary="Install the bundled agent skill for oopsie-data",
         description=(
-            "Copy the skill that ships with this package into your project, so Claude Code "
-            "knows how to drive the contributor workflow. Entirely optional: nothing else in "
-            "oopsie-data needs Claude, and no files are written anywhere unless you run this "
-            "command. Installs into ./skills/oopsie-data/, a plain directory you can read, "
-            "edit and commit; the command prints how to link it into .claude/skills/ so Claude "
-            "Code picks it up. Pass --user to install it into ~/.claude/skills/ instead, where "
-            "it is active in every project straight away."
+            "Copy the skill that ships with this package into your project, so a coding agent "
+            "knows how to drive the contributor workflow. SKILL.md is a shared format, so the "
+            "same payload works for Claude Code, Cursor, Codex and anything else that reads "
+            "it. Entirely optional: nothing else in oopsie-data needs an agent, and no files "
+            "are written anywhere unless you run this command. Installs into "
+            "./skills/oopsie-data/, a plain directory you can read, edit and commit; the "
+            "command then prints the directories agents scan, so you can copy it into the one "
+            "you use. Pass --user to install it into ~/.claude/skills/ instead, which Claude "
+            "Code and Cursor both read in every project."
         ),
         examples=(
             "  oopsie-data install-skill\n"

@@ -2,24 +2,34 @@
 
 The two kinds of config are looked up separately, because they belong to different things.
 
-**Credentials** (``contributor_config.yaml``) belong to the person, so they are stored once
-per user and shared by every project:
+**Credentials** (``contributor_config.yaml``) usually belong to the person, so the per-user
+directory is where ``init`` puts them by default and where they are found from any project:
 
 1. ``$OOPSIE_CONFIG_DIR`` — explicit override
-2. ``$XDG_CONFIG_HOME/oopsie-data`` (default ``~/.config/oopsie-data``)
-3. the repo's ``configs/`` directory, when running from a source checkout
+2. ``.`` or ``./configs``, relative to the working directory
+3. ``$XDG_CONFIG_HOME/oopsie-data`` (default ``~/.config/oopsie-data``)
+
+The project-local legs make a per-project identity possible — a second lab, a shared
+machine, a CI checkout — without exporting anything. They come first so that a config sitting
+in front of you wins over the personal one; ``oopsie-data show-config`` prints the whole chain
+with the winner marked, because a token that changes with the working directory is otherwise
+a confusing thing to debug. A local config also holds a token inside whatever repository it
+sits in, which ``contributor_config`` warns about on read.
 
 **Robot profiles** belong to the robot code that uses them, so they are looked up next to
 that code and never in the user config directory:
 
 1. ``$OOPSIE_ROBOT_PROFILES_DIR`` — explicit override
 2. ``./robot_profiles`` or ``./configs/robot_profiles``, relative to the working directory
-3. the repo's ``configs/robot_profiles``, when running from a source checkout
+
+Neither chain knows anything about a source checkout. A clone is just another directory:
+working inside one, its ``configs/`` is found by the ordinary cwd-relative legs, and nothing
+else about it is privileged.
 
 In each chain the first location that actually exists wins; when none do, the first
 *writable* location is returned, which is where new files should be created. Note that
 profiles are usually loaded by explicit path (``load_robot_profile(path)``), so this lookup
-mainly backs the bundled example profiles.
+mainly backs a project's own profile directory.
 
 ``oopsie-data --config-dir <dir> <command>`` sets the credential override for one invocation.
 """
@@ -32,13 +42,10 @@ from pathlib import Path
 ENV_CONFIG_DIR = "OOPSIE_CONFIG_DIR"
 ENV_PROFILES_DIR = "OOPSIE_ROBOT_PROFILES_DIR"
 
-_PACKAGE_ROOT = Path(__file__).resolve().parent.parent
-# Deliberately only the checkout's configs/. Nothing in either lookup chain resolves into
-# an installed package: config that lives in site-packages is read-only, invisible to the
-# user, and would silently shadow their own. Installed users get None here and fall through
-# to a location they control. ``oopsie-data new-profile`` covers the "I have no checkout to
-# copy a template from" case.
-_REPO_CONFIG_DIR = _PACKAGE_ROOT.parent / "configs"
+# No location below is derived from the package's own path. Config found that way is
+# read-only under a wheel, invisible to the user, and — under an editable install — follows
+# them into every unrelated directory. Each candidate is one the user picked, by exporting
+# an environment variable or by choosing a working directory.
 
 PROFILES_DIR_NAME = "robot_profiles"
 
@@ -51,9 +58,9 @@ def _env_dir(name: str) -> Path | None:
 def _unique(candidates: list[Path | None]) -> list[Path]:
     """Drop Nones and repeats, keeping order.
 
-    Two entries can name the same directory — running from the checkout root makes
-    ``./configs/robot_profiles`` and the repo's own profile dir identical — and a chain
-    that lists it twice is confusing when printed by ``oopsie-data config``.
+    Two entries can name the same directory — ``$OOPSIE_ROBOT_PROFILES_DIR`` pointing at
+    the project-local one, say — and a chain that lists it twice is confusing when printed
+    by ``oopsie-data show-config``.
     """
     seen = set()
     unique = []
@@ -82,14 +89,15 @@ def user_config_dir() -> Path:
     return base / "oopsie-data"
 
 
-def repo_config_dir() -> Path | None:
-    """The checkout's ``configs/`` directory, or None when not running from source."""
-    return _REPO_CONFIG_DIR if _REPO_CONFIG_DIR.is_dir() else None
+def project_config_dirs() -> list[Path]:
+    """Credential directories relative to the working directory, in precedence order."""
+    cwd = Path.cwd()
+    return [cwd, cwd / "configs"]
 
 
 def config_search_dirs() -> list[Path]:
     """Candidate directories for the contributor config, highest precedence first."""
-    return _unique([env_config_dir(), user_config_dir(), repo_config_dir()])
+    return _unique([env_config_dir(), *project_config_dirs(), user_config_dir()])
 
 
 def write_config_dir() -> Path:
@@ -116,10 +124,10 @@ def config_dir_source() -> str:
     resolved = contributor_config_path().parent
     if resolved == env_config_dir():
         return f"${ENV_CONFIG_DIR}"
+    if resolved in project_config_dirs():
+        return "project directory"
     if resolved == user_config_dir():
         return "user config dir"
-    if resolved == repo_config_dir():
-        return "repo checkout"
     return str(resolved)
 
 
@@ -139,14 +147,7 @@ def project_profiles_dirs() -> list[Path]:
 
 def profiles_search_dirs() -> list[Path]:
     """Candidate directories for robot profiles, highest precedence first."""
-    repo_dir = repo_config_dir()
-    return _unique(
-        [
-            env_profiles_dir(),
-            *project_profiles_dirs(),
-            repo_dir / PROFILES_DIR_NAME if repo_dir is not None else None,
-        ]
-    )
+    return _unique([env_profiles_dir(), *project_profiles_dirs()])
 
 
 def write_profiles_dir() -> Path:
