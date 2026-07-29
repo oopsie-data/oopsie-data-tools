@@ -835,46 +835,46 @@
                   <textarea name="episode_description" data-qname="episode_description"></textarea>
                 </div>
 
-                <div class="form-group" data-question-id="side_effect_category" data-qtype="checkbox" hidden>
-                  <label>Side-effect categories (select all that apply)</label>
+                <div class="form-group" data-question-id="failure_category" data-qtype="checkbox" hidden>
+                  <label id="failureCategoryLabel">Side-effect categories (select all that apply)</label>
                   <div>
                     <label class="opt-row">
-                      <input type="checkbox" name="side_effect_category" value="reaching" data-qname="side_effect_category" />
+                      <input type="checkbox" name="failure_category" value="reaching" data-qname="failure_category" />
                       <span>Reaching (pre contact)</span>
                       <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="The robot did not reach the target object or location, so no contact was made. If a grasp just barely misses the object, count this as grasp rather than reaching.">ⓘ</span>
                     </label>
                     <label class="opt-row">
-                      <input type="checkbox" name="side_effect_category" value="grasp" data-qname="side_effect_category" />
+                      <input type="checkbox" name="failure_category" value="grasp" data-qname="failure_category" />
                       <span>Grasp (at contact)</span>
                       <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="The target object was not grasped properly. Includes slipping, dropping, or an incorrect grasp.">ⓘ</span>
                     </label>
                     <label class="opt-row">
-                      <input type="checkbox" name="side_effect_category" value="manipulation" data-qname="side_effect_category" />
+                      <input type="checkbox" name="failure_category" value="manipulation" data-qname="failure_category" />
                       <span>Manipulation (post contact)</span>
                       <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="The object was grasped but not manipulated as intended. For example, successfully grasping a door handle but failing to open the door.">ⓘ</span>
                     </label>
                     <label class="opt-row">
-                      <input type="checkbox" name="side_effect_category" value="sequencing_semantic" data-qname="side_effect_category" />
+                      <input type="checkbox" name="failure_category" value="sequencing_semantic" data-qname="failure_category" />
                       <span>Sequencing or semantic</span>
                       <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="Error in planning or sequencing of actions. This includes executing a related but wrong action, such as pick-and-place of the wrong object, or executing a pick motion when a push motion was specified.">ⓘ</span>
                     </label>
                     <label class="opt-row">
-                      <input type="checkbox" name="side_effect_category" value="collision" data-qname="side_effect_category" />
+                      <input type="checkbox" name="failure_category" value="collision" data-qname="failure_category" />
                       <span>Collision</span>
                       <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="Collision with an obstacle or the environment. This can co-occur with other categories; please select all that apply.">ⓘ</span>
                     </label>
                     <label class="opt-row">
-                      <input type="checkbox" name="side_effect_category" value="hardware" data-qname="side_effect_category" />
+                      <input type="checkbox" name="failure_category" value="hardware" data-qname="failure_category" />
                       <span>Hardware/mechanical issue</span>
                       <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="Hardware or mechanical problem with the robot.">ⓘ</span>
                     </label>
                     <label class="opt-row">
-                      <input type="checkbox" name="side_effect_category" value="not_attempted" data-qname="side_effect_category" />
+                      <input type="checkbox" name="failure_category" value="not_attempted" data-qname="failure_category" />
                       <span>Task not attempted</span>
                       <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="The robot made no discernible attempt at the task, e.g. by stalling.">ⓘ</span>
                     </label>
                     <label class="opt-row">
-                      <input type="checkbox" name="side_effect_category" value="other" data-qname="side_effect_category" />
+                      <input type="checkbox" name="failure_category" value="other" data-qname="failure_category" />
                       <span>Other</span>
                       <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="A side-effect or failure mode not covered by the categories above.">ⓘ</span>
                     </label>
@@ -1286,7 +1286,7 @@
       const FIELDS = [
         { id: "outcome", type: "radio" },
         { id: "episode_description", type: "textarea" },
-        { id: "side_effect_category", type: "checkbox" },
+        { id: "failure_category", type: "checkbox" },
         { id: "severity", type: "radio" },
         { id: "additional_notes", type: "text" },
       ];
@@ -1296,8 +1296,8 @@
       const OUTCOME_FIELDS = {
         success: [],
         success_suboptimal: ["episode_description"],
-        success_side_effect: ["episode_description", "side_effect_category", "severity"],
-        failure: ["episode_description", "side_effect_category", "severity"],
+        success_side_effect: ["episode_description", "failure_category", "severity"],
+        failure: ["episode_description", "failure_category", "severity"],
       };
 
       /**
@@ -1475,12 +1475,21 @@
 
       // Show only the fields the selected outcome asks about (#29). With no outcome
       // chosen, all three conditional fields stay hidden.
+      // The category list is one question (slug `failure_category`) shared by the
+      // side-effect and failure branches, so only its heading changes with the outcome.
       function applyOutcomeVisibility() {
         const outcome = questionCurrentValue("outcome");
         const shown = OUTCOME_FIELDS[outcome] || [];
-        for (const id of ["episode_description", "side_effect_category", "severity"]) {
+        for (const id of ["episode_description", "failure_category", "severity"]) {
           const group = document.querySelector(`[data-question-id="${CSS.escape(id)}"]`);
           if (group) group.hidden = !shown.includes(id);
+        }
+        const catLabel = el("failureCategoryLabel");
+        if (catLabel) {
+          catLabel.textContent =
+            outcome === "failure"
+              ? "Failure categories (select all that apply)"
+              : "Side-effect categories (select all that apply)";
         }
       }
 

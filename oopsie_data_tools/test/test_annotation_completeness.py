@@ -35,7 +35,7 @@ def _h5_attrs(outcome, category, description, severity) -> dict:
         "taxonomy": json.dumps(
             {
                 "outcome": outcome,
-                "side_effect_category": category,
+                "failure_category": category,
                 "severity": severity,
             }
         ),
@@ -46,7 +46,7 @@ def _form_dict(outcome, category, description, severity) -> dict:
     """The same annotation as the form hands it over: flat keys."""
     return {
         "outcome": outcome,
-        "side_effect_category": category,
+        "failure_category": category,
         "episode_description": description,
         "severity": severity,
     }
@@ -75,14 +75,14 @@ def test_whitespace_does_not_count_as_filled():
     flags = completeness_flags(_form_dict("failure", [], "   ", "\t"))
     assert flags == {
         "episode_description": False,
-        "side_effect_category": False,
+        "failure_category": False,
         "severity": False,
     }
 
 
 def test_an_empty_category_list_is_not_filled():
     flags = completeness_flags(_form_dict("failure", [], "x", "x"))
-    assert flags["side_effect_category"] is False
+    assert flags["failure_category"] is False
     assert flags["episode_description"] is True
 
 

@@ -81,18 +81,18 @@ Structure: `episode_annotations/{annotator_name}/` — a group with HDF5 attribu
 |---|---|---|
 | `success` | float | Required; must be in [0.0, 1.0] |
 | `episode_description` | str | Optional free text |
-| `taxonomy` | str | JSON: `{"outcome": "...", "side_effect_category": [...], "severity": "..."}` |
+| `taxonomy` | str | JSON: `{"outcome": "...", "failure_category": [...], "severity": "..."}` |
 
 `outcome` is one of four slugs — `success`, `success_suboptimal`, `success_side_effect`,
 `failure` — and is the only taxonomy field that matters to validation. It must agree in sign
 with `success` (`failure` iff `success < 0.5`); all three `success_*` outcomes write
 `success = 1.0`, so a consumer that only reads the float sees them alike.
 
-`side_effect_category` and `severity` are stored as stable slugs, not prose:
+`failure_category` and `severity` are stored as stable slugs, not prose:
 
 | Field | Allowed values |
 |---|---|
-| `side_effect_category` | `reaching`, `grasp`, `manipulation`, `sequencing_semantic`, `collision`, `hardware`, `not_attempted`, `other` |
+| `failure_category` | `reaching`, `grasp`, `manipulation`, `sequencing_semantic`, `collision`, `hardware`, `not_attempted`, `other` |
 | `severity` | `low`, `medium`, `catastrophic` |
 
 Every field except `outcome` is optional — a partial annotation is valid, and so is a failure
@@ -252,7 +252,7 @@ For a failure, add whatever you know — none of these are required:
         annotator_name="my_annotator",
         success=0.0,
         episode_description="Robot grasped the cup but dropped it in transit.",
-        side_effect_category=["grasp"],
+        failure_category=["grasp"],
         severity="medium",
     )
 ```
@@ -267,7 +267,7 @@ For a failure, add whatever you know — none of these are required:
         success=1.0,
         outcome="success_side_effect",
         episode_description="Completed the task but knocked over a nearby cup.",
-        side_effect_category=["collision"],
+        failure_category=["collision"],
         severity="low",
     )
 ```

@@ -18,8 +18,8 @@ from typing import Any, Mapping
 OUTCOME_EXPECTED_FIELDS: dict = {
     "success": (),
     "success_suboptimal": ("episode_description",),
-    "success_side_effect": ("episode_description", "side_effect_category", "severity"),
-    "failure": ("episode_description", "side_effect_category", "severity"),
+    "success_side_effect": ("episode_description", "failure_category", "severity"),
+    "failure": ("episode_description", "failure_category", "severity"),
 }
 
 
@@ -33,7 +33,7 @@ def _is_filled(value: Any) -> bool:
 
 
 def _category_is_filled(value: Any) -> bool:
-    """``side_effect_category`` may arrive as a list (the form) or a scalar (older records).
+    """``failure_category`` may arrive as a list (the form) or a scalar (older records).
 
     Blank entries do not count, so ``[""]`` is empty. The stored form drops them on the way
     to disk, and a list that looks filled here but not after a round-trip would make the
@@ -46,7 +46,7 @@ def _category_is_filled(value: Any) -> bool:
 
 def _field_is_filled(annotation: Mapping[str, Any], field: str) -> bool:
     value = annotation.get(field)
-    if field == "side_effect_category":
+    if field == "failure_category":
         return _category_is_filled(value)
     return _is_filled(value)
 

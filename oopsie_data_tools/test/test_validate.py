@@ -424,7 +424,7 @@ class TestAnnotationSemantics:
             g.attrs["taxonomy"] = json.dumps(
                 {
                     "outcome": "success_side_effect",
-                    "side_effect_category": [],
+                    "failure_category": [],
                     "severity": "low",
                 }
             )
@@ -442,7 +442,7 @@ class TestAnnotationSemantics:
             g.attrs["success"] = 0.0
             g.attrs["episode_description"] = ""
             g.attrs["taxonomy"] = json.dumps(
-                {"outcome": "failure", "side_effect_category": [], "severity": "low"}
+                {"outcome": "failure", "failure_category": [], "severity": "low"}
             )
         assert validate_h5_file(str(h5_path), strict_annotation_check=True) is True
 
@@ -453,7 +453,7 @@ class TestAnnotationSemantics:
             g.attrs["success"] = 0.0
             g.attrs["episode_description"] = ""
             g.attrs["taxonomy"] = json.dumps(
-                {"outcome": "failure", "side_effect_category": [], "severity": ""}
+                {"outcome": "failure", "failure_category": [], "severity": ""}
             )
         assert validate_h5_file(str(h5_path), strict_annotation_check=True) is True
 

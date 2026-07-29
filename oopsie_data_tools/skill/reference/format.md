@@ -81,7 +81,7 @@ it second; it is only between those two steps that an unannotated episode is leg
 - If that object carries an `outcome`, it must be one of `success`, `success_suboptimal`,
   `success_side_effect`, `failure`, and must agree in sign with `success` (`failure` iff
   `success < 0.5`).
-- Nothing else is required. `episode_description`, `side_effect_category` and `severity` are
+- Nothing else is required. `episode_description`, `failure_category` and `severity` are
   all optional in every branch, so a partial annotation — including a failure with no taxonomy
   at all — is valid. Taxonomy v1 files, which carry no `outcome`, skip the outcome check and
   remain valid unchanged.

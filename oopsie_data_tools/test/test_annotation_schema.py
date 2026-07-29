@@ -18,7 +18,7 @@ from oopsie_data_tools.annotation_tool.annotation_schema import (
     OUTCOME_SUCCESS,
     OUTCOMES,
     SEVERITIES,
-    SIDE_EFFECT_CATEGORIES,
+    FAILURE_CATEGORIES,
     SUCCESS_THRESHOLD,
     outcome_to_success,
     read_annotation_attrs,
@@ -110,7 +110,7 @@ def test_v1_prose_values_read_back_as_slugs():
     out = read_annotation_attrs(attrs)
 
     assert out["episode_description"] == "dropped it"
-    assert out["side_effect_category"] == ["grasp", "collision"]
+    assert out["failure_category"] == ["grasp", "collision"]
     assert out["severity"] == "low"
 
 
@@ -118,7 +118,7 @@ def test_an_unknown_category_value_is_preserved():
     """Stale labels stay visible to the annotator instead of being guessed at."""
     attrs = _v1_attrs(success=0.0, failure_category=["grasp_failure"])
 
-    assert read_annotation_attrs(attrs)["side_effect_category"] == ["grasp_failure"]
+    assert read_annotation_attrs(attrs)["failure_category"] == ["grasp_failure"]
 
 
 def test_absent_keys_stay_absent():
@@ -133,7 +133,7 @@ def test_a_malformed_taxonomy_reads_as_empty_rather_than_raising():
     out = read_annotation_attrs({"success": 0.0, "taxonomy": "{not json"})
 
     assert out["outcome"] == "failure"
-    assert "side_effect_category" not in out
+    assert "failure_category" not in out
 
 
 def test_the_legacy_v1_fixture_reads_as_v2(legacy_v1_episode):
@@ -142,7 +142,7 @@ def test_the_legacy_v1_fixture_reads_as_v2(legacy_v1_episode):
         out = read_annotation_attrs(f["episode_annotations"]["test_annotator"].attrs)
 
     assert out["outcome"] == "failure"
-    assert out["side_effect_category"] == ["grasp", "collision"]
+    assert out["failure_category"] == ["grasp", "collision"]
     assert out["severity"] == "medium"
     assert out["episode_description"].startswith("Gripper closed early")
 
@@ -165,7 +165,7 @@ def _html_values(field: str) -> list:
     "field,expected",
     [
         ("outcome", OUTCOMES),
-        ("side_effect_category", SIDE_EFFECT_CATEGORIES),
+        ("failure_category", FAILURE_CATEGORIES),
         ("severity", SEVERITIES),
     ],
 )

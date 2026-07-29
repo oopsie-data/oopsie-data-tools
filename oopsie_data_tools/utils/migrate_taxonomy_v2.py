@@ -27,7 +27,7 @@ from oopsie_data_tools.annotation_tool.annotation_schema import (
     ANNOTATION_SCHEMA_V2,
     OUTCOME_SUCCESS,
     SEVERITIES,
-    SIDE_EFFECT_CATEGORIES,
+    FAILURE_CATEGORIES,
     TAXONOMY_SCHEMA_V2,
     V1_SUCCESS_CATEGORY_TO_OUTCOME,
     as_value_list,
@@ -48,9 +48,9 @@ def unmapped_values(attrs: Mapping[str, Any]) -> list:
     """
     taxonomy = parse_taxonomy(attrs.get("taxonomy", ""))
     out = []
-    raw_categories = taxonomy.get("side_effect_category", taxonomy.get("failure_category"))
+    raw_categories = taxonomy.get("failure_category", taxonomy.get("side_effect_category"))
     for value in as_value_list(raw_categories):
-        if normalize_category(value) not in SIDE_EFFECT_CATEGORIES:
+        if normalize_category(value) not in FAILURE_CATEGORIES:
             out.append(decode_attr(value))
     severity = taxonomy.get("severity")
     if severity is not None and decode_attr(severity):
@@ -91,7 +91,7 @@ def migrate_annotation_attrs(attrs: Mapping[str, Any]) -> "dict | None":
     if outcome == "success" and legacy_category:
         outcome = V1_SUCCESS_CATEGORY_TO_OUTCOME.get(legacy_category, outcome)
 
-    raw_categories = taxonomy.get("side_effect_category", taxonomy.get("failure_category"))
+    raw_categories = taxonomy.get("failure_category", taxonomy.get("side_effect_category"))
 
     out = dict(attrs)
     out["schema"] = ANNOTATION_SCHEMA_V2
@@ -103,7 +103,7 @@ def migrate_annotation_attrs(attrs: Mapping[str, Any]) -> "dict | None":
     out["taxonomy"] = json.dumps(
         {
             "outcome": outcome,
-            "side_effect_category": [
+            "failure_category": [
                 normalize_category(c) for c in as_value_list(raw_categories)
             ],
             "severity": normalize_severity(taxonomy.get("severity", "")),
