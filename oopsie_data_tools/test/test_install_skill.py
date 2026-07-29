@@ -66,9 +66,8 @@ def test_default_install_lands_where_an_agent_actually_scans(home, tmp_path):
     "agent,subdir",
     [
         ("claude", ".claude/skills"),
-        ("cursor", ".cursor/skills"),
-        ("codex", ".codex/skills"),
-        ("agents", ".agents/skills"),
+        ("codex", ".agents/skills"),
+        ("cursor", ".agents/skills"),
         ("none", "skills"),
     ],
 )
@@ -76,6 +75,18 @@ def test_agent_selects_the_destination(home, tmp_path, agent, subdir):
     assert cli.main(["install-skill", "--agent", agent]) == 0
 
     assert (tmp_path / "project" / subdir / "oopsie-data" / "SKILL.md").is_file()
+
+
+def test_only_supported_agent_choices_are_available():
+    assert set(claude_skill.AGENT_SKILL_DIRS) == {"claude", "codex", "cursor", "none"}
+
+
+def test_install_reports_destination_without_invocation_guidance(home, caplog):
+    with caplog.at_level("INFO"):
+        assert cli.main(["install-skill", "--agent", "codex"]) == 0
+
+    assert "Installed the 'oopsie-data' skill to" in caplog.text
+    assert "invoke" not in caplog.text
 
 
 def test_install_copies_the_whole_payload_tree(home, tmp_path):
@@ -96,6 +107,14 @@ def test_user_scope_installs_into_the_home_directory(home, tmp_path):
 
     assert (home / ".claude" / "skills" / "oopsie-data" / "SKILL.md").is_file()
     assert not (tmp_path / "project" / ".claude").exists()
+
+
+def test_codex_user_scope_uses_shared_agents_directory(home, tmp_path):
+    assert cli.main(["install-skill", "--agent", "codex", "--user"]) == 0
+
+    assert (home / ".agents" / "skills" / "oopsie-data" / "SKILL.md").is_file()
+    assert not (home / ".codex").exists()
+    assert not (tmp_path / "project" / ".agents").exists()
 
 
 def test_refuses_to_overwrite_without_force(home, tmp_path):
