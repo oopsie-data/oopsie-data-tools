@@ -144,7 +144,7 @@ def _write_annotation(
     annotator: str,
     outcome: str,
     episode_description: str = "",
-    side_effect_category: list[str] | None = None,
+    failure_category: list[str] | None = None,
     severity: str = "",
     additional_notes: str = "",
 ) -> None:
@@ -162,7 +162,7 @@ def _write_annotation(
             "outcome": outcome,
             "timestamp": "2026-04-21T10:00:00+00:00",
             "episode_description": episode_description,
-            "side_effect_category": list(side_effect_category or []),
+            "failure_category": list(failure_category or []),
             "severity": severity,
             "additional_notes": additional_notes,
         },
@@ -311,7 +311,7 @@ def make_failure(out_dir: Path) -> None:
             annotator="test_annotator",
             outcome="failure",
             episode_description="Robot grasped the block but dropped it during transport.",
-            side_effect_category=["grasp", "manipulation"],
+            failure_category=["grasp", "manipulation"],
             severity="medium",
             additional_notes="Happens consistently at the same waypoint.",
         )

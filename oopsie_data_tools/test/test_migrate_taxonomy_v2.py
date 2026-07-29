@@ -15,7 +15,7 @@ import pytest
 
 from oopsie_data_tools.annotation_tool.annotation_schema import (
     ANNOTATION_SCHEMA_V2,
-    SIDE_EFFECT_CATEGORIES,
+    FAILURE_CATEGORIES,
     TAXONOMY_SCHEMA_V2,
     V1_CATEGORY_TO_SLUG,
     read_annotation_attrs,
@@ -86,8 +86,8 @@ def test_every_v1_category_maps_to_a_known_slug(prose, slug):
     """Parametrized over the whole table, so a new category cannot be added untested."""
     out = migrate_annotation_attrs(_v1_attrs(failure_category=[prose]))
 
-    assert json.loads(out["taxonomy"])["side_effect_category"] == [slug]
-    assert slug in SIDE_EFFECT_CATEGORIES
+    assert json.loads(out["taxonomy"])["failure_category"] == [slug]
+    assert slug in FAILURE_CATEGORIES
 
 
 @pytest.mark.parametrize(
@@ -134,7 +134,7 @@ def test_unmapped_values_are_preserved_verbatim():
     )
     taxonomy = json.loads(out["taxonomy"])
 
-    assert taxonomy["side_effect_category"] == ["grasp_failure", "transport_failure"]
+    assert taxonomy["failure_category"] == ["grasp_failure", "transport_failure"]
     assert taxonomy["severity"] == "major"
 
 
@@ -179,7 +179,7 @@ def test_migration_and_read_time_upcast_agree(tmp_path):
 
     assert before == after
     assert after["outcome"] == "failure"
-    assert after["side_effect_category"] == ["grasp", "collision"]
+    assert after["failure_category"] == ["grasp", "collision"]
     assert after["severity"] == "low"
 
 

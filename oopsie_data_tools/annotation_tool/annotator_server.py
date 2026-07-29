@@ -34,7 +34,7 @@ from oopsie_data_tools.annotation_tool.annotation_schema import (
     OUTCOME_SUCCESS,
     OUTCOMES,
     SEVERITIES,
-    SIDE_EFFECT_CATEGORIES,
+    FAILURE_CATEGORIES,
     parse_taxonomy,
     read_annotation_attrs,
     write_annotation_attrs,
@@ -64,12 +64,12 @@ def validate_annotation_payload(payload: dict[str, Any]) -> str:
     if outcome not in OUTCOME_SUCCESS:
         return f"outcome must be one of {list(OUTCOMES)}, got {payload.get('outcome')!r}"
 
-    categories = payload.get("side_effect_category") or []
+    categories = payload.get("failure_category") or []
     if not isinstance(categories, (list, tuple)):
         categories = [categories]
-    unknown = [c for c in categories if str(c).strip() not in SIDE_EFFECT_CATEGORIES]
+    unknown = [c for c in categories if str(c).strip() not in FAILURE_CATEGORIES]
     if unknown:
-        return f"unrecognized side_effect_category: {unknown}"
+        return f"unrecognized failure_category: {unknown}"
 
     severity = str(payload.get("severity", "") or "").strip()
     if severity and severity not in SEVERITIES:
@@ -612,8 +612,8 @@ def api_recent_annotations():
             continue
         key = json.dumps(
             {
-                "side_effect_category": sorted(
-                    str(x) for x in (ann.get("side_effect_category") or [])
+                "failure_category": sorted(
+                    str(x) for x in (ann.get("failure_category") or [])
                 ),
                 "severity": str(ann.get("severity", "")).strip(),
                 "episode_description": str(ann.get("episode_description", "")).strip(),

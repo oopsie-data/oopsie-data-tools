@@ -116,7 +116,7 @@ def test_save_outcome_roundtrip(client, tmp_path: Path) -> None:
         json={
             "outcome": "success_side_effect",
             "severity": "low",
-            "side_effect_category": ["collision"],
+            "failure_category": ["collision"],
             "episode_description": "clipped a nearby cup",
             "additional_notes": "no damage",
         },
@@ -129,7 +129,7 @@ def test_save_outcome_roundtrip(client, tmp_path: Path) -> None:
     assert data["metadata"]["success"] == 1.0
     ann = data["existing_annotation"]
     assert ann["outcome"] == "success_side_effect"
-    assert ann["side_effect_category"] == ["collision"]
+    assert ann["failure_category"] == ["collision"]
     assert ann["severity"] == "low"
 
 
@@ -139,7 +139,7 @@ def test_save_rejects_unknown_vocabulary(client, tmp_path: Path) -> None:
 
     resp = client.post(
         "/api/h5/annotations?path=ep.h5",
-        json={"outcome": "success_side_effect", "side_effect_category": ["grasp_failure"]},
+        json={"outcome": "success_side_effect", "failure_category": ["grasp_failure"]},
     )
     assert resp.status_code == 400
     assert "grasp_failure" in resp.get_json()["error"]
@@ -176,7 +176,7 @@ def test_recent_annotations_returns_distinct(client, tmp_path: Path) -> None:
             f"/api/h5/annotations?path={stem}.h5",
             json={
                 "outcome": "failure",
-                "side_effect_category": ["other"],
+                "failure_category": ["other"],
                 "episode_description": description,
                 "severity": "low",
             },
@@ -218,7 +218,7 @@ def test_list_reports_other_human_annotator(client, tmp_path: Path) -> None:
             {
                 "outcome": "failure",
                 "source": "human",
-                "side_effect_category": ["other"],
+                "failure_category": ["other"],
                 "episode_description": "x",
                 "severity": "low",
             },

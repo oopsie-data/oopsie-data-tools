@@ -44,7 +44,7 @@ OUTCOME_SUCCESS: dict[str, float] = {
 }
 OUTCOMES: tuple[str, ...] = tuple(OUTCOME_SUCCESS)
 
-SIDE_EFFECT_CATEGORIES: tuple[str, ...] = (
+FAILURE_CATEGORIES: tuple[str, ...] = (
     "reaching",
     "grasp",
     "manipulation",
@@ -145,7 +145,7 @@ def normalize_category(value: Any) -> str:
     text = decode_attr(value)
     if not text:
         return ""
-    if text in SIDE_EFFECT_CATEGORIES:
+    if text in FAILURE_CATEGORIES:
         return text
     return V1_CATEGORY_TO_SLUG.get(text.lower(), text)
 
@@ -212,9 +212,11 @@ def read_annotation_attrs(attrs: Mapping[str, Any]) -> dict:
     elif "failure_description" in attrs:  # v1
         out["episode_description"] = decode_attr(attrs.get("failure_description"))
 
-    raw_categories = taxonomy.get("side_effect_category", taxonomy.get("failure_category"))
+    # ``side_effect_category`` is an interim v2 spelling of the same field; v1 and current v2
+    # both call it ``failure_category``, so it is read as a fallback and never written.
+    raw_categories = taxonomy.get("failure_category", taxonomy.get("side_effect_category"))
     if raw_categories is not None:
-        out["side_effect_category"] = [normalize_category(c) for c in as_value_list(raw_categories)]
+        out["failure_category"] = [normalize_category(c) for c in as_value_list(raw_categories)]
 
     if taxonomy.get("severity") is not None:
         out["severity"] = normalize_severity(taxonomy.get("severity"))
@@ -251,8 +253,8 @@ def annotation_attrs_dict(annotation: Mapping[str, Any]) -> dict:
 
     taxonomy = {
         "outcome": outcome,
-        "side_effect_category": [
-            normalize_category(c) for c in as_value_list(annotation.get("side_effect_category"))
+        "failure_category": [
+            normalize_category(c) for c in as_value_list(annotation.get("failure_category"))
         ],
         "severity": normalize_severity(annotation.get("severity", "")),
     }

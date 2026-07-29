@@ -234,7 +234,7 @@ def make_taxonomy_not_json(out_dir: Path) -> None:
                 "outcome": "failure",
                 "timestamp": "2026-04-21T10:00:00+00:00",
                 "episode_description": "Robot dropped the object.",
-                "side_effect_category": ["grasp"],
+                "failure_category": ["grasp"],
                 "severity": "medium",
             },
         )

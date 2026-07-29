@@ -42,13 +42,13 @@ def test_a_qualified_success_needs_an_explicit_outcome(tmp_path):
         tmp_path,
         success=1.0,
         outcome="success_side_effect",
-        side_effect_category=["collision"],
+        failure_category=["collision"],
         severity="low",
     )
     taxonomy = json.loads(attrs["taxonomy"])
 
     assert taxonomy["outcome"] == "success_side_effect"
-    assert taxonomy["side_effect_category"] == ["collision"]
+    assert taxonomy["failure_category"] == ["collision"]
     assert float(attrs["success"]) == 1.0
 
 
