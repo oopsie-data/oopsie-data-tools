@@ -4,10 +4,10 @@ Agents discover skills by scanning the filesystem for ``<dir>/SKILL.md``, so "in
 one is a directory copy — no agent CLI, and no network access, is involved.
 
 ``--agent`` picks that directory and defaults to Claude Code's, because a skill that lands
-somewhere nothing scans is not installed in any useful sense. ``--agent agents`` writes the
-vendor-neutral ``.agents/skills/`` and ``--agent none`` the plain ``skills/`` directory, for
-anyone who would rather copy it onward themselves. ``--user`` swaps the working directory
-for the home directory, making the skill available in every project.
+somewhere nothing scans is not installed in any useful sense. Claude Code uses
+``.claude/skills/``; Codex and Cursor share ``.agents/skills/``; ``--agent none`` writes
+to plain ``skills/``. ``--user`` swaps the working directory for the home directory,
+making the skill available in every project.
 
 Installing is an explicit opt-in subcommand rather than anything that runs at install time:
 contributors who do not use an agent never have files written for them at all.
@@ -31,12 +31,11 @@ VERSION_STAMP = ".skill-version"
 
 # Where each agent scans, keyed by the --agent value. Kept as data rather than prose so
 # adding an agent is one line and cannot drift from what is printed.
-AGENT_SKILL_DIRS: dict[str, tuple[str, str]] = {
-    "claude": ("Claude Code", ".claude/skills"),
-    "cursor": ("Cursor", ".cursor/skills"),
-    "codex": ("Codex", ".codex/skills"),
-    "agents": ("any agent following the convention", ".agents/skills"),
-    "none": ("a plain directory, scanned by nothing", "skills"),
+AGENT_SKILL_DIRS: dict[str, str] = {
+    "claude": ".claude/skills",
+    "codex": ".agents/skills",
+    "cursor": ".agents/skills",
+    "none": "skills",
 }
 
 DEFAULT_AGENT = "claude"
@@ -68,7 +67,7 @@ def skill_destination(
     if root is not None:
         return root / SKILL_NAME
     base = Path.home() if user else Path.cwd()
-    return base / AGENT_SKILL_DIRS[agent][1] / SKILL_NAME
+    return base / AGENT_SKILL_DIRS[agent] / SKILL_NAME
 
 
 def installed_version(dest: Path) -> str | None:
@@ -82,8 +81,9 @@ def installed_version(dest: Path) -> str | None:
 def find_installations() -> list[Path]:
     """Every installed copy of the skill under the working directory or the home directory."""
     found = []
+    subdirs = dict.fromkeys(AGENT_SKILL_DIRS.values())
     for base in (Path.cwd(), Path.home()):
-        for _, subdir in AGENT_SKILL_DIRS.values():
+        for subdir in subdirs:
             candidate = base / subdir / SKILL_NAME
             if (candidate / "SKILL.md").is_file() and candidate not in found:
                 found.append(candidate)

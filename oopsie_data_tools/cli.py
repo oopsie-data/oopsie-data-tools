@@ -779,9 +779,8 @@ restructure.help = restructure.help.format(limit=FILE_LIMIT, batch=BATCH_SIZE)
     type=click.Choice(list(_AGENT_CHOICES)),
     default=_DEFAULT_AGENT,
     help=(
-        f"Which agent's skills directory to install into (default: {_DEFAULT_AGENT}). "
-        "'agents' is the vendor-neutral .agents/skills/; 'none' writes a plain ./skills/ "
-        "that no agent scans, for copying onward yourself"
+        f"Which agent's skills directory to install into (default: {_DEFAULT_AGENT}); "
+        "'none' writes to plain ./skills/"
     ),
 )
 @click.option(
@@ -802,18 +801,19 @@ def install_skill_cmd(agent, user, force, check):
 
     Copy the skill that ships with this package into a directory your coding agent scans, so
     it knows how to drive the contributor workflow. SKILL.md is a shared format, so the same
-    payload works for Claude Code, Cursor, Codex and anything else that reads it — --agent
-    only chooses the destination. Defaults to ./.claude/skills/oopsie-data/, which Claude
-    Code and Cursor both read; --user installs into your home directory instead. Entirely
-    optional: nothing else in oopsie-data needs an agent, and no files are written anywhere
-    unless you run this command.
+    payload works for Claude Code, Cursor and Codex — --agent only chooses the destination.
+    Claude uses .claude/skills/; Cursor and Codex share .agents/skills/. Defaults to
+    ./.claude/skills/oopsie-data/; --user installs into your home directory instead.
+    Entirely optional: nothing else in oopsie-data needs an agent, and no files are written
+    anywhere unless you run this command.
 
     \b
     Examples:
       oopsie-data install-skill
       oopsie-data install-skill --user             # available in every project
       oopsie-data install-skill --agent cursor
-      oopsie-data install-skill --agent none       # a plain ./skills/ to copy onward
+      oopsie-data install-skill --agent codex
+      oopsie-data install-skill --agent none       # plain ./skills/
       oopsie-data install-skill --check            # is an installed copy out of date?
     """
     from oopsie_data_tools.utils.claude_skill import check_installations, install_skill
