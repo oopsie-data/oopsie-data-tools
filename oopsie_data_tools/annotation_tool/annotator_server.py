@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import socket
 import threading
 import webbrowser
 from dataclasses import dataclass
@@ -527,6 +528,49 @@ def _has_other_human_annotation(h5f: h5py.File, annotator_name: str) -> bool:
     return False
 
 
+_H5_META_CACHE: dict[tuple[str, str], tuple[tuple[float, int], dict[str, Any]]] = {}
+_H5_META_LOCK = threading.Lock()
+_H5_META_CACHE_MAX = 5000
+
+
+def _h5_meta(path: Path, annotator_name: str) -> dict[str, Any]:
+    """Annotation summary of one episode, cached on (mtime, size).
+
+    The browser polls ``/api/h5/list`` every 1.5 s per open tab, so without this every
+    poll would reopen every episode in the tree.
+    """
+    try:
+        st = path.stat()
+    except OSError:
+        return {"tick_level": 0, "annotated_by_others": False, "annotation": None}
+    key = (str(path), annotator_name)
+    stamp = (st.st_mtime, st.st_size)
+    with _H5_META_LOCK:
+        hit = _H5_META_CACHE.get(key)
+        if hit is not None and hit[0] == stamp:
+            return hit[1]
+
+    meta: dict[str, Any] = {"tick_level": 0, "annotated_by_others": False, "annotation": None}
+    try:
+        with h5py.File(path, "r") as h5f:
+            meta["tick_level"] = _h5_annotation_tick_level(h5f, annotator_name)
+            meta["annotated_by_others"] = _has_other_human_annotation(h5f, annotator_name)
+            ea = h5f.get("episode_annotations")
+            # Only the current annotator's OWN subgroup — never the legacy
+            # episode-level failure_annotation fallback, which isn't annotator-scoped
+            # and could surface someone else's labels (#27).
+            if isinstance(ea, h5py.Group) and isinstance(ea.get(annotator_name), h5py.Group):
+                meta["annotation"] = _read_existing_annotation_dict(ea, annotator_name)
+    except Exception:
+        meta = {"tick_level": 0, "annotated_by_others": False, "annotation": None}
+
+    with _H5_META_LOCK:
+        if len(_H5_META_CACHE) >= _H5_META_CACHE_MAX:
+            _H5_META_CACHE.clear()
+        _H5_META_CACHE[key] = (stamp, meta)
+    return meta
+
+
 @app.get("/api/h5/list")
 def api_h5_list():
     rt = _get_runtime()
@@ -536,15 +580,9 @@ def api_h5_list():
         if not p.is_file():
             continue
         rel = p.resolve().relative_to(root).as_posix()
-        tick_level = 0
-        others = False
-        try:
-            with h5py.File(p, "r") as h5f:
-                tick_level = _h5_annotation_tick_level(h5f, rt.cfg.annotator_name)
-                others = _has_other_human_annotation(h5f, rt.cfg.annotator_name)
-        except Exception:
-            tick_level = 0
-            others = False
+        meta = _h5_meta(p, rt.cfg.annotator_name)
+        tick_level = meta["tick_level"]
+        others = meta["annotated_by_others"]
         annotated = tick_level >= 1
         entries.append(
             {
@@ -581,18 +619,8 @@ def api_recent_annotations():
     for p in files:
         if len(recent) >= limit:
             break
-        try:
-            with h5py.File(p, "r") as h5f:
-                ea = h5f.get("episode_annotations")
-                if not isinstance(ea, h5py.Group):
-                    continue
-                # Only the current annotator's OWN subgroup — never the legacy
-                # episode-level failure_annotation fallback, which isn't
-                # annotator-scoped and could surface someone else's labels (#27).
-                if ann_name not in ea.keys() or not isinstance(ea[ann_name], h5py.Group):
-                    continue
-                ann = _read_existing_annotation_dict(ea, ann_name)
-        except Exception:
+        ann = _h5_meta(p, ann_name)["annotation"]
+        if ann is None:
             continue
         # Anything but a clean success has details worth copying — a suboptimal-execution
         # description is as reusable as a failure's.
@@ -743,6 +771,19 @@ def _load_template(filename: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _port_in_use(port: int, host: str = "localhost") -> bool:
+    """Whether something is already listening on ``host:port``.
+
+    Connecting rather than test-binding: a bind probe also trips on sockets in TIME_WAIT,
+    which werkzeug's SO_REUSEADDR would have accepted anyway.
+    """
+    try:
+        with socket.create_connection((host, port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
 def run_server(
     samples_dir: Path,
     annotator_name: str,
@@ -761,6 +802,17 @@ def run_server(
         annotator_name=annotator_name.strip(),
         browse_only=bool(not with_rollouts),
     )
+
+    # Checked before the browser opens: werkzeug would otherwise fail its own bind a
+    # moment later, leaving a tab pointed at whatever already owns the port.
+    if _port_in_use(port):
+        logging.getLogger(__name__).error(
+            "Port %d is already in use — another annotator is probably still running "
+            "(open http://localhost:%d/ to check). Stop it, or pass --port with a free port.",
+            port,
+            port,
+        )
+        return 1
 
     if open_browser:
         webbrowser.open(f"http://localhost:{port}/")
