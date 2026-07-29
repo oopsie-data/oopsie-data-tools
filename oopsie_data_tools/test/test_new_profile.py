@@ -1,11 +1,12 @@
 """Tests for ``oopsie-data new-profile``.
 
-The command replaces the old "copy configs/robot_profiles/template.yaml" instruction,
-which only worked from a source checkout. Nothing is read out of the installed package,
-so the template text lives in Python.
+The command writes a template a pip-installed user can reach; nothing is read out of the
+installed package, so the template text lives in Python.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 import pytest
 
@@ -13,6 +14,8 @@ from oopsie_data_tools import cli
 from oopsie_data_tools.utils import paths
 from oopsie_data_tools.utils.robot_profile.robot_profile import load_robot_profile
 from oopsie_data_tools.utils.robot_profile.template import PROFILE_TEMPLATE
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture
@@ -25,9 +28,7 @@ def project(tmp_path, monkeypatch):
 
 def test_checked_in_template_matches_the_python_source():
     """configs/robot_profiles/template.yaml is a copy for browsing; it must not drift."""
-    repo_config = paths.repo_config_dir()
-    assert repo_config is not None, "this test runs from a checkout"
-    checked_in = repo_config / paths.PROFILES_DIR_NAME / "template.yaml"
+    checked_in = REPO_ROOT / "configs" / paths.PROFILES_DIR_NAME / "template.yaml"
 
     assert checked_in.read_text(encoding="utf-8") == PROFILE_TEMPLATE, (
         "configs/robot_profiles/template.yaml has drifted from "

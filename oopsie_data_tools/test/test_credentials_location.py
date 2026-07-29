@@ -55,22 +55,39 @@ def test_config_file_is_ignored():
     assert ignored.returncode == 0, "configs/contributor_config.yaml must stay gitignored"
 
 
-def test_wizard_defaults_away_from_the_checkout(isolated, monkeypatch):
-    """Pressing Enter must not put a token inside a git working tree."""
+def test_wizard_defaults_to_the_user_dir(isolated, monkeypatch):
+    """Pressing Enter must not put a token where a commit can pick it up."""
     answers = iter([""])  # accept the default
+    monkeypatch.setattr("builtins.input", lambda *_: next(answers))
+
+    assert init_wizard.choose_target_dir() == paths.user_config_dir()
+
+
+def test_wizard_offers_the_working_directory(isolated, tmp_path, monkeypatch):
+    """A second lab or a shared machine wants a config that is local to the project."""
+    project = tmp_path / "my_robot_code"
+    project.mkdir()
+    monkeypatch.chdir(project)
+    answers = iter(["2"])  # the second option is this directory
     monkeypatch.setattr("builtins.input", lambda *_: next(answers))
 
     target = init_wizard.choose_target_dir()
 
-    assert target == paths.user_config_dir()
-    assert target != paths.repo_config_dir()
+    assert target == project
+    assert target in paths.config_search_dirs(), "init must not write where reads cannot find"
 
 
-def test_wizard_still_allows_the_checkout_when_asked(isolated, monkeypatch):
-    answers = iter(["2"])  # the second option is the checkout
-    monkeypatch.setattr("builtins.input", lambda *_: next(answers))
+def test_the_working_directory_is_not_offered_when_it_is_the_user_dir(isolated, monkeypatch):
+    """Running init from ~/.config/oopsie-data must not print the same path twice."""
 
-    assert init_wizard.choose_target_dir() == paths.repo_config_dir()
+    def refuse(*_):
+        raise AssertionError("there is only one option, so nothing should be asked")
+
+    paths.user_config_dir().mkdir(parents=True)
+    monkeypatch.chdir(paths.user_config_dir())
+    monkeypatch.setattr("builtins.input", refuse)
+
+    assert init_wizard.choose_target_dir() == paths.user_config_dir()
 
 
 def test_wizard_uses_user_dir_when_not_interactive(isolated, monkeypatch):
@@ -79,25 +96,38 @@ def test_wizard_uses_user_dir_when_not_interactive(isolated, monkeypatch):
     assert init_wizard.choose_target_dir() == paths.user_config_dir()
 
 
-def test_reading_from_the_checkout_warns(tmp_path, monkeypatch, caplog):
-    """Existing clones still have a filled-in copy; point them at the user config dir."""
-    monkeypatch.setattr(contributor_config, "_warned_about_checkout_config", False)
-    repo_configs = tmp_path / "configs"
-    repo_configs.mkdir()
-    config = repo_configs / "contributor_config.yaml"
+def test_reading_from_a_git_working_tree_warns(tmp_path, monkeypatch, caplog):
+    """A token under version control can be committed; say so whichever repo it is."""
+    monkeypatch.setattr(contributor_config, "_warned_about_config_in_worktree", False)
+    worktree = tmp_path / "some_project"
+    (worktree / ".git").mkdir(parents=True)
+    config = worktree / "contributor_config.yaml"
     config.write_text("lab_id: MyLab\nhuggingface_token: hf_secret\n", encoding="utf-8")
-    monkeypatch.setattr(paths, "_REPO_CONFIG_DIR", repo_configs)
 
     lab_id, token = _real_read_contributor_config(config)
 
     assert (lab_id, token) == ("MyLab", "hf_secret"), "must still work, only warn"
-    assert "inside the repository working tree" in caplog.text
+    assert "git working tree" in caplog.text
     assert "oopsie-data init" in caplog.text
     assert "hf_secret" not in caplog.text, "never log the token itself"
 
 
+def test_the_warning_does_not_depend_on_which_repo_it_is(tmp_path, monkeypatch, caplog):
+    """Nothing privileges this toolkit's clone; a nested worktree counts just the same."""
+    monkeypatch.setattr(contributor_config, "_warned_about_config_in_worktree", False)
+    (tmp_path / ".git").mkdir()
+    nested = tmp_path / "deep" / "inside"
+    nested.mkdir(parents=True)
+    config = nested / "contributor_config.yaml"
+    config.write_text("lab_id: MyLab\n", encoding="utf-8")
+
+    _real_read_contributor_config(config)
+
+    assert str(tmp_path) in caplog.text, "the warning names the worktree root it found"
+
+
 def test_reading_from_the_user_dir_is_silent(tmp_path, monkeypatch, caplog):
-    monkeypatch.setattr(contributor_config, "_warned_about_checkout_config", False)
+    monkeypatch.setattr(contributor_config, "_warned_about_config_in_worktree", False)
     config = tmp_path / "contributor_config.yaml"
     config.write_text("lab_id: MyLab\n", encoding="utf-8")
 

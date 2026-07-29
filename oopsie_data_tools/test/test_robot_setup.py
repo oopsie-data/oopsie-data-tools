@@ -8,7 +8,7 @@ from pathlib import Path
 
 import yaml
 
-from oopsie_data_tools.utils.paths import PROFILES_DIR_NAME, repo_config_dir
+from oopsie_data_tools.utils.paths import PROFILES_DIR_NAME
 from oopsie_data_tools.utils.robot_profile.robot_profile import (
     RobotProfile,
     load_robot_profile,
@@ -18,7 +18,7 @@ from oopsie_data_tools.utils.robot_profile.robot_profile import (
 # openpi_example_robot_profile_path(), which resolved via the cwd-sensitive profile lookup
 # chain and so failed whenever $OOPSIE_ROBOT_PROFILES_DIR was set or pytest ran from a
 # directory containing ./robot_profiles.
-BUNDLED_PROFILES = repo_config_dir() / PROFILES_DIR_NAME if repo_config_dir() else None
+BUNDLED_PROFILES = Path(__file__).resolve().parents[2] / "configs" / PROFILES_DIR_NAME
 
 VALID_PROFILE = {
     "policy_name": "test_policy",
@@ -41,7 +41,7 @@ def _write_profile(data: dict, tmp_dir: str) -> Path:
 
 class TestRobotProfileValid(unittest.TestCase):
     def test_load_openpi_example_yaml(self) -> None:
-        self.assertIsNotNone(BUNDLED_PROFILES, "these tests run from a checkout")
+        self.assertTrue(BUNDLED_PROFILES.is_dir(), "these tests run from a checkout")
         path = BUNDLED_PROFILES / "openpi_example_robot_profile.yaml"
         self.assertTrue(path.is_file(), msg=f"Missing {path}")
         profile = load_robot_profile(path)

@@ -39,22 +39,30 @@ Confirm `oopsie-data --version` works before continuing.
 The two kinds of config are looked up through **separate chains**, because they belong to
 different things. In each chain, the first location that exists wins.
 
-**Credentials** (`contributor_config.yaml`) belong to the user and are shared by every project:
+**Credentials** (`contributor_config.yaml`) usually belong to the user and are shared by every
+project:
 
 1. `$OOPSIE_CONFIG_DIR` — explicit override
-2. `~/.config/oopsie-data` (or `$XDG_CONFIG_HOME/oopsie-data`)
-3. the repository's `configs/` directory — only when working from a clone
+2. `.` or `./configs`, relative to the working directory
+3. `~/.config/oopsie-data` (or `$XDG_CONFIG_HOME/oopsie-data`)
+
+The project-local legs allow a per-project identity — a second lab, a shared machine — and
+win over the per-user one. `oopsie-data init` offers both and defaults to the per-user
+directory, because a config in a project holds a token where a commit can pick it up.
 
 **Robot profiles** belong to the robot code that loads them, and are *never* looked up in the
 user config directory:
 
 1. `$OOPSIE_ROBOT_PROFILES_DIR` — explicit override
 2. `./robot_profiles` or `./configs/robot_profiles`, relative to the working directory
-3. the repository's `configs/robot_profiles` — only when working from a clone
 
-So: let `oopsie-data init` write the contributor config (it defaults to `~/.config/oopsie-data`,
-never the checkout, because the file holds a token and a token inside a git working tree can be
-committed). Put the robot profile next to the user's robot code — a `robot_profiles/` directory
+Neither chain treats a source checkout as special. Working inside a clone, its
+`configs/robot_profiles` is found by the ordinary cwd-relative leg and nothing else about it
+is privileged.
+
+So: let `oopsie-data init` write the contributor config (it defaults to `~/.config/oopsie-data`
+over the working directory, because the file holds a token and a token under version control
+can be committed). Put the robot profile next to the user's robot code — a `robot_profiles/` directory
 beside their eval script is the normal choice — and load it by explicit path.
 
 To keep either somewhere custom, persist it in the shell rc file:

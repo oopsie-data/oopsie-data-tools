@@ -6,6 +6,8 @@ per-user, profiles live next to the robot code and never in the user config dire
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from oopsie_data_tools.utils import paths
@@ -27,13 +29,7 @@ def test_user_config_dir_follows_xdg(isolated_home):
     assert paths.user_config_dir() == isolated_home
 
 
-# The repo-fallback leg of the credential chain is deliberately not tested here: it only
-# triggers when configs/contributor_config.yaml exists, and that file is gitignored (it holds
-# a token), so any such test passes or fails according to whether the developer happens to
-# have created one. What the chain does with a config that *is* present is covered below.
-
-
-def test_user_dir_wins_over_repo_for_credentials(isolated_home):
+def test_user_dir_holds_the_credentials(isolated_home):
     isolated_home.mkdir(parents=True)
     (isolated_home / "contributor_config.yaml").write_text("lab_id: UserLab\n")
 
@@ -101,10 +97,35 @@ def test_project_configs_subdir_is_also_searched(isolated_home, tmp_path, monkey
     assert paths.robot_profiles_dir() == project / "configs" / paths.PROFILES_DIR_NAME
 
 
-def test_profiles_fall_back_to_the_checkout(isolated_home, tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)  # nothing project-local here
+def test_a_checkout_is_found_only_as_an_ordinary_working_directory(isolated_home, monkeypatch):
+    """Inside a clone, its configs/robot_profiles is just the cwd-relative leg matching."""
+    checkout = Path(paths.__file__).resolve().parents[2]
+    monkeypatch.chdir(checkout)
 
-    assert paths.robot_profiles_dir() == paths.repo_config_dir() / paths.PROFILES_DIR_NAME
+    assert paths.robot_profiles_dir() == checkout / "configs" / paths.PROFILES_DIR_NAME
+
+
+def test_nothing_resolves_through_the_installed_package(isolated_home, tmp_path, monkeypatch):
+    """An editable install must not follow the user into unrelated directories.
+
+    The package imports from a clone whenever one is installed editable, which says nothing
+    about where the user is working or which config they want.
+    """
+    project = tmp_path / "my_robot_code"
+    project.mkdir()
+    monkeypatch.chdir(project)
+
+    assert paths.profiles_search_dirs() == [
+        project / paths.PROFILES_DIR_NAME,
+        project / "configs" / paths.PROFILES_DIR_NAME,
+    ]
+    assert paths.config_search_dirs() == [
+        project,
+        project / "configs",
+        paths.user_config_dir(),
+    ]
+    assert paths.robot_profiles_dir() == project / paths.PROFILES_DIR_NAME
+    assert not paths.robot_profiles_dir().exists(), "reported as the place to create one"
 
 
 def test_profiles_env_override_wins(isolated_home, tmp_path, monkeypatch):
@@ -134,4 +155,4 @@ def test_config_dir_override_does_not_move_profiles(isolated_home, tmp_path, mon
     monkeypatch.setenv(paths.ENV_CONFIG_DIR, str(env_dir))
     monkeypatch.chdir(tmp_path)
 
-    assert paths.robot_profiles_dir() == paths.repo_config_dir() / paths.PROFILES_DIR_NAME
+    assert paths.robot_profiles_dir() == tmp_path / paths.PROFILES_DIR_NAME

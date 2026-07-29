@@ -64,10 +64,7 @@ def test_env_token_is_reported_as_the_override(env, capsys, monkeypatch):
     assert "overrides the config" in out
 
 
-def test_missing_config_says_where_init_would_write(env, capsys, monkeypatch):
-    # Hide the checkout so the chain has no fallback, as for a pip install without a clone.
-    monkeypatch.setattr(paths, "_REPO_CONFIG_DIR", env / "no_such_checkout")
-
+def test_missing_config_says_where_init_would_write(env, capsys):
     assert cli.main(["show-config"]) == 0
 
     out = capsys.readouterr().out
@@ -99,13 +96,16 @@ def test_project_local_profiles_are_listed(env, tmp_path, capsys):
 
 
 def test_chain_lists_each_directory_once(env, monkeypatch, tmp_path, capsys):
-    """From a checkout root, ./configs/robot_profiles and the repo's dir are the same path."""
-    checkout = tmp_path / "checkout"
-    (checkout / "configs" / paths.PROFILES_DIR_NAME).mkdir(parents=True)
-    monkeypatch.setattr(paths, "_REPO_CONFIG_DIR", checkout / "configs")
-    monkeypatch.chdir(checkout)
+    """$OOPSIE_ROBOT_PROFILES_DIR can name the project-local dir the chain already has."""
+    project = tmp_path / "project"
+    profiles = project / paths.PROFILES_DIR_NAME
+    profiles.mkdir(parents=True)
+    monkeypatch.setenv(paths.ENV_PROFILES_DIR, str(profiles))
+    monkeypatch.chdir(project)
 
     assert cli.main(["show-config"]) == 0
 
-    listed = capsys.readouterr().out.count(str(checkout / "configs" / paths.PROFILES_DIR_NAME))
-    assert listed == 2, f"expected one chain entry plus the 'Reading:' line, got {listed}"
+    # The override and the project-local leg name the same directory; the chain must show it
+    # once. The other two lines are the "$OOPSIE_ROBOT_PROFILES_DIR =" echo and "Reading:".
+    listed = capsys.readouterr().out.count(str(profiles))
+    assert listed == 3, f"expected the env echo, one chain entry and 'Reading:', got {listed}"
