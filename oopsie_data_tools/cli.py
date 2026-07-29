@@ -300,8 +300,8 @@ def _restructure_for_upload(samples_dir: str) -> str | None:
 def cmd_upload(args: argparse.Namespace) -> int:
     from oopsie_data_tools.utils.hf_upload import (
         check_folder_size,
-        ensure_repo,
         hf_login,
+        require_repo,
         resolve_hf_target,
         run_validation,
         upload_dataset,
@@ -364,7 +364,8 @@ def cmd_upload(args: argparse.Namespace) -> int:
         )
         return 1
     api = HfApi(token=hf_token)
-    ensure_repo(api, hf_repo)
+    if not require_repo(api, hf_repo):
+        return 1
     upload_dataset(api, hf_repo, samples_dir)
     return 0
 
@@ -647,7 +648,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_annotate.add_argument(
         "--with-rollouts",
         action="store_true",
-        help="Enable in-the-loop rollout mode (HDF5 browser + questionnaire + rollouts)",
+        help="Enable in-the-loop rollout mode (HDF5 browser + annotation form + rollouts)",
     )
     p_annotate.set_defaults(func=cmd_annotate)
 

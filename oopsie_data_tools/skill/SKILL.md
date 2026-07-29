@@ -44,8 +44,9 @@ pip- or uv-installed package puts `oopsie-data` on `PATH` directly.
 ## Rules
 
 **Never invent identity or annotation content.** `lab_id` comes from the registration form,
-`operator_name` and `annotator_name` are the human's, and failure descriptions describe what
-actually happened in a rollout. If one is missing, ask. Do not fill in a plausible value.
+`operator_name` and `annotator_name` are the human's, and an episode's `outcome` and
+`episode_description` record what actually happened in a rollout. If one is missing, ask. Do
+not fill in a plausible value.
 
 **Never hand-write `contributor_config.yaml`.** Run `oopsie-data init`. It rejects the
 `your_lab_id` placeholder, writes the file mode 0600, and keeps the token out of the checkout

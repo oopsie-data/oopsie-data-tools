@@ -86,17 +86,34 @@ def run_validation(base_path: str, episode_id: str | None = None, log_path: str 
     return 1
 
 
-# ── Repo creation ─────────────────────────────────────────────────────────────
+# ── Repo check ────────────────────────────────────────────────────────────────
 
 
-def ensure_repo(api, repo: str) -> None:
+def require_repo(api, repo: str) -> bool:
+    """Confirm the lab's submissions repo exists, without creating anything.
+
+    Submission repos are provisioned by the project when a lab registers, and they are
+    private until release — creating a missing one here would either fail on permissions
+    or, worse, succeed and publish the lab's data. A missing repo means the lab_id is
+    wrong or the registration has not landed yet, so say that instead.
+
+    Returns:
+        True if the repo is there, False if the caller should abort.
+    """
     try:
         api.repo_info(repo_id=repo, repo_type="dataset")
-        logger.info("[hf]    Repo already exists: https://huggingface.co/datasets/%s", repo)
-    except Exception:
-        logger.info("[hf]    Creating repo: %s", repo)
-        api.create_repo(repo_id=repo, repo_type="dataset", private=False)
-        logger.info("[hf]    Created: https://huggingface.co/datasets/%s", repo)
+    except Exception as e:
+        logger.error(
+            "[hf]    Submissions repo not found: %s (%s)\n"
+            "        Check that lab_id in your contributor config matches the one you were "
+            "issued, exactly, including capitalization.\n"
+            "        If it does, the repo has not been set up for your lab yet — contact the "
+            "Oopsie team rather than creating it yourself.",
+            repo, e,
+        )
+        return False
+    logger.info("[hf]    Repo: https://huggingface.co/datasets/%s", repo)
+    return True
 
 
 # ── Upload ────────────────────────────────────────────────────────────────────

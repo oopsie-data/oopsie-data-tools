@@ -100,3 +100,5 @@ Stored for reproducibility, never validated:
 - `intrinsic_calibration_matrix` / `extrinsic_calibration_matrix`, keyed by camera name. Both
   the underscored and the spaced spelling (`intrinsic calibration matrix`) are read; the
   underscored one is canonical.
+
+Please ask explicitly if the user wants to provide the optional inputs!

@@ -12,6 +12,7 @@ episode_no_annotations  – no annotation group at all: passes lenient validatio
 episode_success         – annotated as success by "test_annotator", with notes
 episode_failure         – annotated as failure with taxonomy by "test_annotator"
 episode_multi_camera    – two cameras (left + wrist), annotated as success
+episode_legacy_v1       – a taxonomy v1 annotation, prose values and all, for back-compat
 
 Usage
 -----
@@ -31,6 +32,8 @@ from pathlib import Path
 import h5py
 import imageio
 import numpy as np
+
+from oopsie_data_tools.annotation_tool.annotation_schema import write_annotation_attrs
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -139,25 +142,64 @@ def _write_annotation(
     f: h5py.File,
     *,
     annotator: str,
-    success: float,
-    failure_description: str,
-    failure_category: list[str],
-    severity: str,
+    outcome: str,
+    episode_description: str = "",
+    side_effect_category: list[str] | None = None,
+    severity: str = "",
     additional_notes: str = "",
 ) -> None:
+    """Write a v2 annotation through the real writer.
+
+    Going through ``write_annotation_attrs`` rather than hand-rolling the attrs is the
+    point: a fixture that spells the attr set out itself keeps passing after a schema
+    change, which is exactly when it should fail.
+    """
     ea = f.require_group("episode_annotations")
     ag = ea.require_group(annotator)
+    write_annotation_attrs(
+        ag,
+        {
+            "outcome": outcome,
+            "timestamp": "2026-04-21T10:00:00+00:00",
+            "episode_description": episode_description,
+            "side_effect_category": list(side_effect_category or []),
+            "severity": severity,
+            "additional_notes": additional_notes,
+        },
+    )
+
+
+def _write_legacy_v1_annotation(
+    f: h5py.File,
+    *,
+    annotator: str,
+    success: float,
+    failure_description: str = "",
+    failure_category: list[str] | None = None,
+    severity: str = "",
+    success_category: str = "",
+) -> None:
+    """Write the pre-v2 attr set verbatim, prose values and all.
+
+    Deliberately hand-rolled: this fixture's job is to pin what v1 files actually look
+    like on disk, so it must not follow the writer as it moves on.
+    """
+    ea = f.require_group("episode_annotations")
+    ag = ea.require_group(annotator)
+    taxonomy: dict = {
+        "failure_category": list(failure_category or []),
+        "severity": severity,
+    }
+    if success_category:
+        taxonomy["success_category"] = success_category
     ag.attrs["schema"] = "oopsie_failure_taxonomy_v1"
     ag.attrs["source"] = "human"
     ag.attrs["timestamp"] = "2026-04-21T10:00:00+00:00"
     ag.attrs["success"] = success
     ag.attrs["failure_description"] = failure_description
     ag.attrs["taxonomy_schema"] = "oopsiedata_taxonomy_schema_v1"
-    ag.attrs["taxonomy"] = json.dumps(
-        {"failure_category": failure_category, "severity": severity},
-        ensure_ascii=False,
-    )
-    ag.attrs["additional_notes"] = additional_notes
+    ag.attrs["taxonomy"] = json.dumps(taxonomy, ensure_ascii=False)
+    ag.attrs["additional_notes"] = ""
 
 
 # ---------------------------------------------------------------------------
@@ -191,10 +233,7 @@ def write_valid_episode(
         _write_annotation(
             f,
             annotator="test_annotator",
-            success=1.0,
-            failure_description="",
-            failure_category=[],
-            severity="none",
+            outcome="success",
         )
     return h5_path
 
@@ -220,10 +259,7 @@ def make_unannotated(out_dir: Path) -> None:
         _write_annotation(
             f,
             annotator="test_annotator",
-            success=1.0,
-            failure_description="",
-            failure_category=[],
-            severity="none",
+            outcome="success",
         )
 
 
@@ -256,10 +292,7 @@ def make_success(out_dir: Path) -> None:
         _write_annotation(
             f,
             annotator="test_annotator",
-            success=1.0,
-            failure_description="",
-            failure_category=[],
-            severity="none",
+            outcome="success",
             additional_notes="Clean success, no issues.",
         )
 
@@ -276,10 +309,10 @@ def make_failure(out_dir: Path) -> None:
         _write_annotation(
             f,
             annotator="test_annotator",
-            success=0.0,
-            failure_description="Robot grasped the block but dropped it during transport.",
-            failure_category=["grasp_failure", "transport_failure"],
-            severity="major",
+            outcome="failure",
+            episode_description="Robot grasped the block but dropped it during transport.",
+            side_effect_category=["grasp", "manipulation"],
+            severity="medium",
             additional_notes="Happens consistently at the same waypoint.",
         )
 
@@ -301,10 +334,32 @@ def make_multi_camera(out_dir: Path) -> None:
         _write_annotation(
             f,
             annotator="test_annotator",
-            success=1.0,
-            failure_description="",
-            failure_category=[],
-            severity="none",
+            outcome="success",
+        )
+
+
+def make_legacy_v1(out_dir: Path) -> None:
+    """A file still carrying the v1 annotation schema.
+
+    Readers upcast v1 on the fly and never rewrite it, so this pins that path: prose
+    category and severity values, ``failure_description`` rather than
+    ``episode_description``, and a partial taxonomy that v1 validation used to reject.
+    """
+    _write_video(out_dir / "episode_legacy_v1_front.mp4", color=(90, 140, 90))
+    with h5py.File(out_dir / "episode_legacy_v1.h5", "w") as f:
+        _write_base_h5(
+            f,
+            episode_id="episode_legacy_v1",
+            language_instruction="stack the red block on the blue block",
+            camera_video_paths={"front": "episode_legacy_v1_front.mp4"},
+        )
+        _write_legacy_v1_annotation(
+            f,
+            annotator="test_annotator",
+            success=0.0,
+            failure_description="Gripper closed early and knocked the block over.",
+            failure_category=["Grasp failure (at contact)", "Collision failure"],
+            severity="Medium severity - some damage or risk of damage or significant reset required, but can be reattempted",
         )
 
 
@@ -334,6 +389,7 @@ def main() -> None:
         make_success,
         make_failure,
         make_multi_camera,
+        make_legacy_v1,
     ]:
         name = maker.__name__.replace("make_", "")
         print(f"  writing {name}...", end=" ", flush=True)

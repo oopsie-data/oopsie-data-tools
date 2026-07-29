@@ -77,9 +77,14 @@ Annotations — **always checked by `validate` and `upload`.** The `strict_annot
 it second; it is only between those two steps that an unannotated episode is legal.
 
 - Every annotator subgroup needs a numeric, non-NaN `success` in `[0.0, 1.0]`.
-- For failures only (`success < 0.5`), the failure trio — `failure_category` and `severity`
-  (both inside the `taxonomy` JSON attr) and `failure_description` — must be all filled or all
-  empty. Successes, including qualified ones, are exempt.
+- A present `taxonomy` attr must parse as a JSON object.
+- If that object carries an `outcome`, it must be one of `success`, `success_suboptimal`,
+  `success_side_effect`, `failure`, and must agree in sign with `success` (`failure` iff
+  `success < 0.5`).
+- Nothing else is required. `episode_description`, `side_effect_category` and `severity` are
+  all optional in every branch, so a partial annotation — including a failure with no taxonomy
+  at all — is valid. Taxonomy v1 files, which carry no `outcome`, skip the outcome check and
+  remain valid unchanged.
 
 ## Recording-time checks
 

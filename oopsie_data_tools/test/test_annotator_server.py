@@ -107,59 +107,105 @@ def test_set_instruction_rejects_empty(client, tmp_path: Path) -> None:
     assert resp.status_code == 400
 
 
-def test_save_success_category_roundtrip(client, tmp_path: Path) -> None:
-    """A qualified success stores success_category in the taxonomy and reads back (#29)."""
+def test_save_outcome_roundtrip(client, tmp_path: Path) -> None:
+    """A qualified success stores its outcome in the taxonomy and reads back (#29)."""
     write_valid_episode(tmp_path, stem="ep")
 
     resp = client.post(
         "/api/h5/annotations?path=ep.h5",
         json={
-            "binary_success": "Success",
-            "success_category": "Success with side-effects",
-            "severity": "Low severity - no damage, can be reset and reattempted",
-            "failure_category": [],
-            "failure_description": "",
-            "additional_notes": "clipped a nearby cup",
+            "outcome": "success_side_effect",
+            "severity": "low",
+            "side_effect_category": ["collision"],
+            "episode_description": "clipped a nearby cup",
+            "additional_notes": "no damage",
         },
     )
     assert resp.status_code == 200, resp.data
 
     data = _get_sample(client, "ep.h5")
+    # All three success_* outcomes still store success=1.0, so existing converters and
+    # uploaders keep reading the file unchanged.
     assert data["metadata"]["success"] == 1.0
     ann = data["existing_annotation"]
-    assert ann["binary_success"] == "Success"
-    assert ann["success_category"] == "Success with side-effects"
-    assert ann["severity"].startswith("Low severity")
+    assert ann["outcome"] == "success_side_effect"
+    assert ann["side_effect_category"] == ["collision"]
+    assert ann["severity"] == "low"
+
+
+def test_save_rejects_unknown_vocabulary(client, tmp_path: Path) -> None:
+    """Slugs are opaque, so a typo must be caught before it reaches disk."""
+    write_valid_episode(tmp_path, stem="ep")
+
+    resp = client.post(
+        "/api/h5/annotations?path=ep.h5",
+        json={"outcome": "success_side_effect", "side_effect_category": ["grasp_failure"]},
+    )
+    assert resp.status_code == 400
+    assert "grasp_failure" in resp.get_json()["error"]
+
+    resp = client.post("/api/h5/annotations?path=ep.h5", json={"outcome": "sort_of"})
+    assert resp.status_code == 400
+
+
+def test_save_accepts_a_partial_taxonomy(client, tmp_path: Path) -> None:
+    """Only the outcome is required — a failure with just a severity saves cleanly."""
+    write_valid_episode(tmp_path, stem="ep")
+
+    resp = client.post(
+        "/api/h5/annotations?path=ep.h5",
+        json={"outcome": "failure", "severity": "low"},
+    )
+    assert resp.status_code == 200, resp.data
+
+    ann = _get_sample(client, "ep.h5")["existing_annotation"]
+    assert ann["outcome"] == "failure"
+    assert ann["episode_description"] == ""
 
 
 def test_recent_annotations_returns_distinct(client, tmp_path: Path) -> None:
     """/api/annotations/recent surfaces the annotator's distinct prior failures (#27).
 
-    The endpoint feeds the failure-taxonomy autofill picker, so successes are
-    filtered out and identical failure labels are deduplicated.
+    The endpoint feeds the taxonomy autofill picker, so clean successes are filtered
+    out and identical labels are deduplicated.
     """
-    write_valid_episode(tmp_path, stem="a")  # success by test_annotator — not offered
+    write_valid_episode(tmp_path, stem="a")  # clean success by test_annotator — not offered
     for stem, description in (("b", "dropped the object"), ("c", "dropped the object"), ("d", "missed the grasp")):
         write_valid_episode(tmp_path, stem=stem)
         resp = client.post(
             f"/api/h5/annotations?path={stem}.h5",
             json={
-                "binary_success": "Failure",
-                "failure_category": ["Other"],
-                "failure_description": description,
-                "severity": "Low severity - no damage, can be reset and reattempted",
+                "outcome": "failure",
+                "side_effect_category": ["other"],
+                "episode_description": description,
+                "severity": "low",
             },
         )
         assert resp.status_code == 200, resp.data
 
     items = client.get("/api/annotations/recent?limit=10").get_json()
 
-    assert {i["binary_success"] for i in items} == {"Failure"}
+    assert {i["outcome"] for i in items} == {"failure"}
     # b and c share a label; only one of them is offered.
-    assert sorted(i["failure_description"] for i in items) == [
+    assert sorted(i["episode_description"] for i in items) == [
         "dropped the object",
         "missed the grasp",
     ]
+
+
+def test_recent_annotations_includes_qualified_successes(client, tmp_path: Path) -> None:
+    """A suboptimal-execution description is as worth copying as a failure's."""
+    write_valid_episode(tmp_path, stem="a")  # clean success — still filtered out
+    write_valid_episode(tmp_path, stem="b")
+    resp = client.post(
+        "/api/h5/annotations?path=b.h5",
+        json={"outcome": "success_suboptimal", "episode_description": "took a long detour"},
+    )
+    assert resp.status_code == 200, resp.data
+
+    items = client.get("/api/annotations/recent?limit=10").get_json()
+
+    assert [i["episode_description"] for i in items] == ["took a long detour"]
 
 
 def test_list_reports_other_human_annotator(client, tmp_path: Path) -> None:
@@ -170,11 +216,11 @@ def test_list_reports_other_human_annotator(client, tmp_path: Path) -> None:
         write_annotation_attrs(
             g,
             {
-                "binary_success": "Failure",
+                "outcome": "failure",
                 "source": "human",
-                "failure_category": ["Other"],
-                "failure_description": "x",
-                "severity": "Low severity - no damage, can be reset and reattempted",
+                "side_effect_category": ["other"],
+                "episode_description": "x",
+                "severity": "low",
             },
         )
 

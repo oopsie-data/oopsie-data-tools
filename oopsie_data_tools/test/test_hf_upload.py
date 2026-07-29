@@ -21,7 +21,6 @@ class FakeApi:
 
     def __init__(self, existing_repos=()):
         self.existing = set(existing_repos)
-        self.created: list[str] = []
         self.uploaded: list[tuple[str, str]] = []
         self.remote_files: list[str] = []
 
@@ -30,9 +29,8 @@ class FakeApi:
             raise RuntimeError("404")
         return {"id": repo_id}
 
-    def create_repo(self, repo_id, repo_type, private):
-        self.existing.add(repo_id)
-        self.created.append(repo_id)
+    # No create_repo: the toolkit must never create a submissions repo, so an attempt to
+    # call it here fails with AttributeError rather than passing silently.
 
     def upload_large_folder(self, folder_path, repo_id, repo_type):
         self.uploaded.append((repo_id, str(folder_path)))
@@ -127,23 +125,23 @@ def test_hf_token_env_var_overrides_the_config(monkeypatch):
     assert token == "hf_from_the_environment"
 
 
-# ── ensure_repo / upload_dataset ───────────────────────────────────────────────
+# ── require_repo / upload_dataset ─────────────────────────────────────────────
 
 
-def test_missing_repo_is_created():
+def test_missing_repo_aborts_instead_of_being_created(caplog):
     api = FakeApi()
 
-    hf_upload.ensure_repo(api, "OopsieData-Submissions/lab")
+    with caplog.at_level(logging.ERROR):
+        assert hf_upload.require_repo(api, "OopsieData-Submissions/lab") is False
 
-    assert api.created == ["OopsieData-Submissions/lab"]
+    assert "not found" in caplog.text
+    assert "lab_id" in caplog.text
 
 
-def test_existing_repo_is_left_alone():
+def test_existing_repo_passes_the_check():
     api = FakeApi(existing_repos={"OopsieData-Submissions/lab"})
 
-    hf_upload.ensure_repo(api, "OopsieData-Submissions/lab")
-
-    assert api.created == []
+    assert hf_upload.require_repo(api, "OopsieData-Submissions/lab") is True
 
 
 def test_upload_sends_the_whole_folder(tmp_path):

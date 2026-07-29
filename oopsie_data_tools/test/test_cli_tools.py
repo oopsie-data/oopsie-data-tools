@@ -314,7 +314,7 @@ def test_upload_with_restructure_uploads_the_restructured_copy(tmp_path, monkeyp
         "oopsie_data_tools.utils.hf_upload.resolve_hf_target", lambda: ("tok", "repo/x")
     )
     monkeypatch.setattr("oopsie_data_tools.utils.hf_upload.hf_login", lambda token: "someone")
-    monkeypatch.setattr("oopsie_data_tools.utils.hf_upload.ensure_repo", lambda api, repo: None)
+    monkeypatch.setattr("oopsie_data_tools.utils.hf_upload.require_repo", lambda api, repo: True)
     monkeypatch.setattr(
         "oopsie_data_tools.utils.hf_upload.upload_dataset",
         lambda api, repo, d: uploaded.update(dir=d),

@@ -6,7 +6,7 @@ Use this skill whenever writing or debugging a converter that produces Oopsie HD
 
 You follow these steps:
 
-1. Create a new robot profile with `oopsie-data new-profile`. Double check with the user that this robot profile is correct and no unverified information has been entered. The profile should be placed in `./configs/`.
+1. Create a new robot profile with `oopsie-data new-profile`, which writes into `./robot_profiles/` by default. Leave it where the command put it — profiles are looked up at `$OOPSIE_ROBOT_PROFILES_DIR`, then `./robot_profiles` or `./configs/robot_profiles`, so a bare `./configs/` is not found. Double check with the user that this robot profile is correct and no unverified information has been entered.
 2. Create the conversion script. Follow DRY and make sure to reuse utilities from `oopsie_data_tools.utils.conversion_utils`. Make sure to read all relevant information before attempting to write the conversion script.
 3. Wait for the user to run the conversion script with the full correct input path.
 
@@ -80,10 +80,29 @@ Structure: `episode_annotations/{annotator_name}/` — a group with HDF5 attribu
 | Attr | Type | Notes |
 |---|---|---|
 | `success` | float | Required; must be in [0.0, 1.0] |
-| `failure_description` | str | Optional; if set, must also set `taxonomy` |
-| `taxonomy` | str | JSON: `{"failure_category": [...], "severity": "..."}` |
+| `episode_description` | str | Optional free text |
+| `taxonomy` | str | JSON: `{"outcome": "...", "side_effect_category": [...], "severity": "..."}` |
 
-Either all three of `(failure_category via taxonomy, failure_description, severity)` are filled, or all three are empty — **but only for failures** (`success < 0.5`). Successes, including qualified ones, are exempt.
+`outcome` is one of four slugs — `success`, `success_suboptimal`, `success_side_effect`,
+`failure` — and is the only taxonomy field that matters to validation. It must agree in sign
+with `success` (`failure` iff `success < 0.5`); all three `success_*` outcomes write
+`success = 1.0`, so a consumer that only reads the float sees them alike.
+
+`side_effect_category` and `severity` are stored as stable slugs, not prose:
+
+| Field | Allowed values |
+|---|---|
+| `side_effect_category` | `reaching`, `grasp`, `manipulation`, `sequencing_semantic`, `collision`, `hardware`, `not_attempted`, `other` |
+| `severity` | `low`, `medium`, `catastrophic` |
+
+Every field except `outcome` is optional — a partial annotation is valid, and so is a failure
+with no taxonomy at all.
+
+Files written by an older release carry `schema = oopsie_failure_taxonomy_v1`,
+`failure_description` instead of `episode_description`, prose values instead of slugs, and no
+`outcome`. Readers upcast those on the fly and never rewrite them, so both versions can sit in
+one dataset. `oopsie_data_tools/utils/migrate_taxonomy_v2.py` converts them in place if you
+want them normalized.
 
 A converter that emits no `episode_annotations` produces structurally valid files that still fail `oopsie-data validate` with `Annotations dict is empty, must be provided for upload`. Either carry the source dataset's labels across, or plan to run `oopsie-data annotate` afterwards.
 
@@ -146,6 +165,14 @@ quaternions itself. Declaring `orientation_representation: euler_xyz` and then w
 angles produces a file that is rejected on width (6 ≠ 7) — or, worse, silently mislabels data
 if the widths happen to line up.
 
+`to_quaternion_poses(poses, "euler_xyz", is_biarm=...)` does the conversion `record_step`
+would have done, for a whole `(T, D)` trajectory at once. Declare the *result* in the profile
+(`"quat"`), not the source format — the profile describes what is on disk. Frames that exceed
+the 1280 px limit go through `resize_frames` for the same reason: the check is downstream, so
+the fix has to be upstream.
+
+Worked examples of all of this live in `examples/conversion_script_examples/`.
+
 ---
 
 ## Minimal write pattern (Python)
@@ -157,7 +184,8 @@ they are written against the definitions the validator uses, so they cannot drif
 import h5py, numpy as np
 from oopsie_data_tools.utils.robot_profile.robot_profile import RobotProfile
 from oopsie_data_tools.utils.conversion_utils import (
-    write_root_attrs, write_video_paths, write_actions, write_episode_annotations,
+    write_root_attrs, write_video_paths, write_robot_states, write_actions,
+    write_episode_annotations, to_quaternion_poses, resize_frames,
 )
 
 profile = RobotProfile(
@@ -193,9 +221,16 @@ with h5py.File(h5_path, "w") as f:
         h5_path,
     )
 
-    rs = f["observations"].create_group("robot_states")
-    rs.create_dataset("joint_position", data=joint_pos_array, dtype=np.float64)     # (T, 7)
-    rs.create_dataset("gripper_position", data=gripper_pos_array, dtype=np.float64) # (T, 1)
+    # Keys must equal profile.robot_state_keys exactly — write_robot_states enforces that
+    # in both directions rather than letting the validator find it later.
+    write_robot_states(
+        f,
+        {
+            "joint_position": joint_pos_array,      # (T, 7)
+            "gripper_position": gripper_pos_array,  # (T, 1)
+        },
+        profile.robot_state_keys,
+    )
 
     # Fills in h5py.Empty for every canonical key outside action_space.
     write_actions(
@@ -209,15 +244,33 @@ with h5py.File(h5_path, "w") as f:
     write_episode_annotations(f, annotator_name="my_annotator", success=1.0)
 ```
 
-For a failure, pass the whole trio — it is all-or-nothing below `success = 0.5`:
+For a failure, add whatever you know — none of these are required:
 
 ```python
     write_episode_annotations(
         f,
         annotator_name="my_annotator",
         success=0.0,
-        failure_description="Robot grasped the cup but dropped it in transit.",
-        failure_category=["grasp_failure"],
-        severity="major",
+        episode_description="Robot grasped the cup but dropped it in transit.",
+        side_effect_category=["grasp"],
+        severity="medium",
     )
 ```
+
+`outcome` defaults to the coarse reading of `success`, which can only ever be `success` or
+`failure`. Pass it explicitly to record one of the two qualified successes:
+
+```python
+    write_episode_annotations(
+        f,
+        annotator_name="my_annotator",
+        success=1.0,
+        outcome="success_side_effect",
+        episode_description="Completed the task but knocked over a nearby cup.",
+        side_effect_category=["collision"],
+        severity="low",
+    )
+```
+
+## For reference
+Example conversion scripts can be found at https://github.com/oopsie-data/oopsie-data-tools/tree/main/examples/conversion_script_examples

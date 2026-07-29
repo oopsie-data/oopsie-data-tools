@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import datetime
-import json
 import logging
 import os
 from pathlib import Path
@@ -13,7 +12,11 @@ import h5py
 import imageio
 import numpy as np
 
-from oopsie_data_tools.annotation_tool.annotation_schema import write_annotation_attrs
+from oopsie_data_tools.annotation_tool.annotation_schema import (
+    annotation_attrs_dict,
+    success_to_outcome,
+    write_annotation_attrs,
+)
 from oopsie_data_tools.utils.contributor_config import read_contributor_config
 from oopsie_data_tools.utils.robot_profile.robot_profile import RobotProfile, robot_profile_to_json
 from oopsie_data_tools.utils.robot_profile.rotation_utils import ActionQuatConversion
@@ -224,20 +227,17 @@ class EpisodeRecorder:
                 },
         }
         if success is not None:
-            data["episode_annotations"] = {
-                self.operator_name: {
-                    "schema": "oopsie_failure_taxonomy_v1",
-                    "source": "human",
+            # A stub the human annotator fills in later: the outcome the float implies, and
+            # nothing else. Built through annotation_attrs_dict so it cannot drift from what
+            # the annotation tool writes.
+            stub = annotation_attrs_dict(
+                {
+                    "outcome": success_to_outcome(success),
                     "timestamp": datetime.datetime.now().timestamp(),
-                    "failure_description": "",
-                    "taxonomy_schema": "none",
-                    "taxonomy": json.dumps(
-                        {}, ensure_ascii=False,
-                    ),
-                    "additional_notes": "",
-                    "success": success,
-                },
-            }
+                }
+            )
+            stub["success"] = success
+            data["episode_annotations"] = {self.operator_name: stub}
         self._validate_pre_save(data)
         # 1. Save videos under the recorder's per-session folder
         video_paths = self._save_videos()
@@ -625,7 +625,8 @@ class EpisodeRecorder:
         """Patch an existing episode HDF5 with a human annotation.
 
         This is used when the episode is saved immediately after rollout and the
-        human annotation arrives later.
+        human annotation arrives later. *annotation* is the annotation-tool dict —
+        ``annotator``, ``outcome`` and whatever taxonomy fields that outcome asks about.
         """
         if not h5_path.exists():
             raise FileNotFoundError(str(h5_path))

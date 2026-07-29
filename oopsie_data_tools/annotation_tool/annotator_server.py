@@ -4,8 +4,8 @@
 Flow for in the loop annotation (with rollouts):
 1) Browser submits a language instruction.
 2) External rollout loop polls the instruction, runs policy, saves MP4s & HDF5, then
-   signals this server to show the videos + questionnaire.
-3) Browser fills questionnaire + clicks Save.
+   signals this server to show the videos + annotation form.
+3) Browser fills the annotation form + clicks Save.
 4) Rollout loop polls the saved annotation and writes it into the episode HDF5
    (via EpisodeRecorder).
 
@@ -27,12 +27,19 @@ from typing import Any
 from urllib.parse import quote, unquote
 
 import h5py
-import yaml
 from flask import Flask, abort, jsonify, request, send_file
 
-from oopsie_data_tools.annotation_tool import QUESTIONNAIRE_PATH
-from oopsie_data_tools.annotation_tool.annotation_schema import write_annotation_attrs
-from oopsie_data_tools.utils.validation.annotation_completeness import failure_trio_flags
+from oopsie_data_tools.annotation_tool.annotation_schema import (
+    ANNOTATION_SCHEMA_CURRENT,
+    OUTCOME_SUCCESS,
+    OUTCOMES,
+    SEVERITIES,
+    SIDE_EFFECT_CATEGORIES,
+    parse_taxonomy,
+    read_annotation_attrs,
+    write_annotation_attrs,
+)
+from oopsie_data_tools.utils.validation.annotation_completeness import is_complete
 
 app = Flask(__name__)
 
@@ -46,19 +53,36 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def load_questionnaire() -> dict[str, Any]:
-    if QUESTIONNAIRE_PATH.exists():
-        parsed = yaml.safe_load(QUESTIONNAIRE_PATH.read_text(encoding="utf-8"))
-        if isinstance(parsed, dict):
-            return parsed
-    return {"title": "Annotation", "questions": []}
+def validate_annotation_payload(payload: dict[str, Any]) -> str:
+    """Return an error message if the payload uses vocabulary the schema does not know.
+
+    Stored values are opaque slugs, so a typo would otherwise reach disk unnoticed — where
+    v1's prose values at least looked obviously wrong. Only ``outcome`` is required; every
+    other field is optional and is checked only if present.
+    """
+    outcome = str(payload.get("outcome", "") or "").strip().lower()
+    if outcome not in OUTCOME_SUCCESS:
+        return f"outcome must be one of {list(OUTCOMES)}, got {payload.get('outcome')!r}"
+
+    categories = payload.get("side_effect_category") or []
+    if not isinstance(categories, (list, tuple)):
+        categories = [categories]
+    unknown = [c for c in categories if str(c).strip() not in SIDE_EFFECT_CATEGORIES]
+    if unknown:
+        return f"unrecognized side_effect_category: {unknown}"
+
+    severity = str(payload.get("severity", "") or "").strip()
+    if severity and severity not in SEVERITIES:
+        return f"severity must be one of {list(SEVERITIES)}, got {severity!r}"
+
+    return ""
 
 
 @dataclass
 class ServerConfig:
     samples_dir: Path
     annotator_name: str
-    # HDF5 browser + questionnaire only (no instruction / rollout cards).
+    # HDF5 browser + annotation form only (no instruction / rollout cards).
     browse_only: bool = False
 
 
@@ -109,7 +133,7 @@ class Runtime:
             self.task_state["current_sample"] = None
 
     def stamp_annotation(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Attach annotator, timestamp and schema to a questionnaire payload.
+        """Attach annotator, timestamp and schema to an annotation payload.
 
         Split out from :meth:`save_annotation` because the two annotation routes persist
         very differently: the rollout route parks the result in memory for the rollout loop
@@ -123,7 +147,7 @@ class Runtime:
                 "annotated_at": _now_iso(),
                 "annotator": self.cfg.annotator_name,
                 "source": "human",
-                "schema": "oopsie_failure_taxonomy_v1",
+                "schema": ANNOTATION_SCHEMA_CURRENT,
             }
         )
         return annotation
@@ -223,11 +247,6 @@ def api_task_done():
     return jsonify({"status": "ok"})
 
 
-@app.get("/api/questionnaire")
-def api_questionnaire():
-    return jsonify(load_questionnaire())
-
-
 @app.get("/api/annotations/<sample_id>")
 def api_get_annotation(sample_id: str):
     ann = _get_runtime().get_annotation(sample_id)
@@ -244,6 +263,9 @@ def api_save_annotation_json() -> Any:
     if not sample_id:
         return jsonify({"error": "sample_id is required"}), 400
     answers = {k: v for k, v in payload.items() if k != "sample_id"}
+    error = validate_annotation_payload(answers)
+    if error:
+        return jsonify({"error": error}), 400
     ann = _get_runtime().save_annotation(sample_id, answers)
     return jsonify({"status": "saved", "annotation": ann})
 
@@ -347,71 +369,29 @@ def _safe_h5_path_from_query(samples_root: Path) -> Path:
     return target
 
 
-def _binary_success_from_success_attr(val: Any) -> str | None:
-    """Map ``episode_annotations/<annotator>.attrs['success']`` float to questionnaire values."""
-    if val is None:
-        return None
-    try:
-        f = float(val)
-    except (TypeError, ValueError):
-        return None
-    return "Success" if f >= 0.5 else "Failure"
-
-
-def _parse_taxonomy_json(raw: Any) -> dict[str, Any]:
-    if isinstance(raw, dict):
-        return raw
-    s = str(raw or "").strip()
-    if not s:
-        return {}
-    try:
-        obj = json.loads(s)
-        return obj if isinstance(obj, dict) else {}
-    except json.JSONDecodeError:
-        return {}
-
-
 def _annotator_subgroup_looks_annotated(fa: h5py.Group) -> bool:
     src = str(_read_h5_attr(fa, "source", "") or "").strip().lower()
     if src == "human":
         return True
     if _read_h5_attr(fa, "success", None) is not None:
         return True
-    if str(_read_h5_attr(fa, "failure_description", "") or "").strip():
-        return True
-    if str(_read_h5_attr(fa, "taxonomy", "") or "").strip():
-        return True
+    # episode_description is v2; failure_description is the v1 spelling.
+    for key in ("episode_description", "failure_description", "taxonomy"):
+        if str(_read_h5_attr(fa, key, "") or "").strip():
+            return True
     return False
 
 
 def _read_existing_annotation_dict(ea: h5py.Group, annotator_name: str) -> dict[str, Any]:
-    """Same episode_annotations extraction as ``/api/h5/sample`` (subgroup first, else JSON)."""
+    """Same episode_annotations extraction as ``/api/h5/sample`` (subgroup first, else JSON).
+
+    Decoding — including the v1 upcast — is :func:`read_annotation_attrs`' job, so the form
+    sees v2 keys and slugs regardless of which schema the file on disk uses. Nothing is
+    rewritten here: a v1 file stays v1 until the annotator actually saves.
+    """
     existing_annotation: dict[str, Any] = {}
     if annotator_name in ea.keys() and isinstance(ea[annotator_name], h5py.Group):
-        fa = ea[annotator_name]
-        succ = _read_h5_attr(fa, "success", None)
-        bs_label = _binary_success_from_success_attr(succ)
-        if bs_label is not None:
-            existing_annotation["binary_success"] = bs_label
-        existing_annotation["failure_description"] = str(
-            _read_h5_attr(fa, "failure_description", "") or ""
-        )
-        existing_annotation["additional_notes"] = str(
-            _read_h5_attr(fa, "additional_notes", "") or ""
-        )
-        tax = _parse_taxonomy_json(_read_h5_attr(fa, "taxonomy", ""))
-        fc = tax.get("failure_category")
-        if fc is not None:
-            if isinstance(fc, (list, tuple)):
-                existing_annotation["failure_category"] = [str(x) for x in fc]
-            else:
-                existing_annotation["failure_category"] = [str(fc)]
-        sev = tax.get("severity")
-        if sev is not None:
-            existing_annotation["severity"] = str(sev)
-        sc = tax.get("success_category")
-        if sc is not None:
-            existing_annotation["success_category"] = str(sc)
+        existing_annotation = read_annotation_attrs(ea[annotator_name].attrs)
 
     if not existing_annotation:
         raw_failure = _read_h5_attr(ea, "failure_annotation", "")
@@ -420,10 +400,22 @@ def _read_existing_annotation_dict(ea: h5py.Group, annotator_name: str) -> dict[
             try:
                 parsed = json.loads(raw_s)
                 if isinstance(parsed, dict) and parsed:
-                    skip = {"annotated_at", "annotator", "source"}
-                    existing_annotation = {
-                        k: v for k, v in parsed.items() if k not in skip
-                    }
+                    # The pre-subgroup layout stored the flat annotation dict as JSON.
+                    # Route it through the same upcast so one definition serves both.
+                    existing_annotation = read_annotation_attrs(
+                        {
+                            "success": parsed.get("success"),
+                            "failure_description": parsed.get("failure_description", ""),
+                            "additional_notes": parsed.get("additional_notes", ""),
+                            "taxonomy": json.dumps(
+                                {
+                                    "failure_category": parsed.get("failure_category", []),
+                                    "severity": parsed.get("severity", ""),
+                                    "success_category": parsed.get("success_category", ""),
+                                }
+                            ),
+                        }
+                    )
             except Exception:
                 pass
 
@@ -431,24 +423,16 @@ def _read_existing_annotation_dict(ea: h5py.Group, annotator_name: str) -> dict[
 
 
 def _annotation_tick_level(ann: dict[str, Any]) -> int:
-    """0 = none, 1 = success/failure only (or incomplete failure bundle), 2 = complete.
+    """0 = not annotated, 1 = outcome only, 2 = complete for that outcome.
 
-    "Filled" means the same thing here as it does to the validator — the rule lives in
-    :mod:`annotation_completeness`. The *threshold* is deliberately stricter: the validator
-    accepts a failure with no taxonomy at all (all-or-nothing), while this tick treats it
-    as partial so the annotator is still prompted to finish it.
+    Validation no longer requires anything beyond ``outcome``, so this is purely a prompt:
+    it flags episodes where the chosen outcome asks about fields the annotator left blank.
+    Which fields each outcome asks about lives in :mod:`annotation_completeness`, alongside
+    the mirror of the form's conditional logic.
     """
-    bs = str(ann.get("binary_success", "")).strip()
-    if bs not in ("Success", "Failure"):
+    if str(ann.get("outcome", "")).strip().lower() not in OUTCOME_SUCCESS:
         return 0
-    if bs == "Success":
-        return 2
-    flags = failure_trio_flags(
-        failure_category=ann.get("failure_category"),
-        failure_description=ann.get("failure_description", ""),
-        severity=ann.get("severity", ""),
-    )
-    return 2 if all(flags) else 1
+    return 2 if is_complete(ann) else 1
 
 
 def _h5_annotation_tick_level(h5f: h5py.File, annotator_name: str) -> int:
@@ -498,7 +482,9 @@ def _summarize_episode_fields(h5f: h5py.File) -> dict[str, Any]:
     attr_keys = ("schema", "episode_id", "operator_name", "lab_id", "language_instruction", "timestamp")
     fields: dict[str, Any] = {
         "attributes": {k: _read_h5_attr(h5f, k, "") for k in attr_keys},
-        "robot_profile": _parse_taxonomy_json(_read_h5_attr(h5f, "robot_profile", "")),
+        # parse_taxonomy is reused here as a generic "JSON object attr, missing is empty"
+        # decoder — robot_profile is stored the same way the taxonomy is.
+        "robot_profile": parse_taxonomy(_read_h5_attr(h5f, "robot_profile", "")),
         "robot_states": {},
         "actions": {},
         "video_paths": {},
@@ -620,13 +606,17 @@ def api_recent_annotations():
                 ann = _read_existing_annotation_dict(ea, ann_name)
         except Exception:
             continue
-        if str(ann.get("binary_success", "")).strip() != "Failure":
+        # Anything but a clean success has details worth copying — a suboptimal-execution
+        # description is as reusable as a failure's.
+        if str(ann.get("outcome", "")).strip().lower() in ("", "success"):
             continue
         key = json.dumps(
             {
-                "failure_category": sorted(str(x) for x in (ann.get("failure_category") or [])),
+                "side_effect_category": sorted(
+                    str(x) for x in (ann.get("side_effect_category") or [])
+                ),
                 "severity": str(ann.get("severity", "")).strip(),
-                "failure_description": str(ann.get("failure_description", "")).strip(),
+                "episode_description": str(ann.get("episode_description", "")).strip(),
             },
             sort_keys=True,
         )
@@ -723,6 +713,9 @@ def api_h5_save_annotation():
     payload = _json_payload()
     if not isinstance(payload, dict):
         return jsonify({"error": "invalid JSON body"}), 400
+    error = validate_annotation_payload(payload)
+    if error:
+        return jsonify({"error": error}), 400
 
     # Stamp only. The annotation's home is the HDF5 file written below; keying the
     # in-memory rollout dict by an absolute path would put two unrelated kinds of key
@@ -831,7 +824,7 @@ def main() -> int:
     parser.add_argument(
         "--with-rollouts",
         action="store_true",
-        help="HDF5 browser + questionnaire + rollouts",
+        help="HDF5 browser + annotation form + rollouts",
     )
     parser.add_argument(
         "--debug",

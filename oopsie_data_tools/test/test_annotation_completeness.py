@@ -1,8 +1,10 @@
-"""The validator and the annotation UI must agree on what "filled in" means.
+"""What is stored on disk and what the form hands over must mean the same thing.
 
-They ask different questions of the same three fields — "acceptable to upload?" versus
-"fully annotated?" — and each used to carry its own copy of the field-level rule. The
-thresholds differ on purpose; the rule underneath must not.
+Validation no longer has an opinion here — only ``outcome`` is required, and every taxonomy
+field is optional. What remains is the UI's tick, which tells an annotator whether the
+outcome they picked still has blank fields. That answer must not depend on whether the
+annotation came out of an HDF5 file or straight off the form, so both shapes are run through
+:func:`read_annotation_attrs` and compared.
 """
 
 from __future__ import annotations
@@ -11,27 +13,41 @@ import json
 
 import pytest
 
+from oopsie_data_tools.annotation_tool.annotation_schema import (
+    OUTCOMES,
+    read_annotation_attrs,
+    write_annotation_attrs,
+)
 from oopsie_data_tools.annotation_tool.annotator_server import _annotation_tick_level
-from oopsie_data_tools.utils.validation.annotation_completeness import failure_trio_flags
-from oopsie_data_tools.utils.validation.episode_validator import _failure_trio_fill_flags
+from oopsie_data_tools.utils.validation.annotation_completeness import (
+    OUTCOME_EXPECTED_FIELDS,
+    completeness_flags,
+    is_complete,
+)
 
 NONE, PARTIAL, COMPLETE = 0, 1, 2
 
 
-def _h5_attrs(category, description, severity) -> dict:
+def _h5_attrs(outcome, category, description, severity) -> dict:
     """Annotation as the HDF5 stores it: category and severity inside a taxonomy blob."""
     return {
-        "failure_description": description,
-        "taxonomy": json.dumps({"failure_category": category, "severity": severity}),
+        "episode_description": description,
+        "taxonomy": json.dumps(
+            {
+                "outcome": outcome,
+                "side_effect_category": category,
+                "severity": severity,
+            }
+        ),
     }
 
 
-def _ui_dict(category, description, severity, binary_success="Failure") -> dict:
-    """The same annotation as the questionnaire hands it over: flat keys."""
+def _form_dict(outcome, category, description, severity) -> dict:
+    """The same annotation as the form hands it over: flat keys."""
     return {
-        "binary_success": binary_success,
-        "failure_category": category,
-        "failure_description": description,
+        "outcome": outcome,
+        "side_effect_category": category,
+        "episode_description": description,
         "severity": severity,
     }
 
@@ -40,68 +56,99 @@ def _ui_dict(category, description, severity, binary_success="Failure") -> dict:
     "category,description,severity",
     [
         ([], "", ""),
-        (["Grasp"], "slipped", "Low"),
+        (["grasp"], "slipped", "low"),
         ([], "slipped", ""),
-        (["Grasp"], "", "Low"),
+        (["grasp"], "", "low"),
         ([""], "  ", "  "),  # whitespace and an empty string are not "filled"
-        ("Grasp", "slipped", "Low"),  # category as a scalar, from older records
+        ("grasp", "slipped", "low"),  # category as a scalar, from older records
     ],
 )
 def test_both_shapes_agree_on_which_fields_are_filled(category, description, severity):
-    """The stored and in-flight representations must resolve to the same three flags."""
-    from_h5 = _failure_trio_fill_flags(_h5_attrs(category, description, severity))
-    direct = failure_trio_flags(
-        failure_category=category, failure_description=description, severity=severity
-    )
+    """The stored and in-flight representations must resolve to the same flags."""
+    stored = read_annotation_attrs(_h5_attrs("failure", category, description, severity))
+    direct = _form_dict("failure", category, description, severity)
 
-    assert from_h5 == direct
+    assert completeness_flags(stored) == completeness_flags(direct)
 
 
 def test_whitespace_does_not_count_as_filled():
-    assert failure_trio_flags(
-        failure_category=[], failure_description="   ", severity="\t"
-    ) == (False, False, False)
+    flags = completeness_flags(_form_dict("failure", [], "   ", "\t"))
+    assert flags == {
+        "episode_description": False,
+        "side_effect_category": False,
+        "severity": False,
+    }
 
 
 def test_an_empty_category_list_is_not_filled():
-    assert failure_trio_flags(
-        failure_category=[], failure_description="x", severity="x"
-    ) == (False, True, True)
+    flags = completeness_flags(_form_dict("failure", [], "x", "x"))
+    assert flags["side_effect_category"] is False
+    assert flags["episode_description"] is True
 
 
-# ── The thresholds, which are deliberately different ───────────────────────────
-
-
-def _validator_accepts(success: float, category, description, severity) -> bool:
-    if success >= 0.5:
-        return True
-    return sum(_failure_trio_fill_flags(_h5_attrs(category, description, severity))) in (0, 3)
+# ── The tick, per outcome ─────────────────────────────────────────────────────
 
 
 @pytest.mark.parametrize(
-    "label,success,category,description,severity,accepted,tick",
+    "label,outcome,category,description,severity,tick",
     [
-        # A failure with nothing filled is uploadable but not finished: the validator's rule
-        # is all-or-nothing, while the UI keeps prompting. This asymmetry is intended.
-        ("no taxonomy at all", 0.0, [], "", "", True, PARTIAL),
-        ("full trio", 0.0, ["Grasp"], "slipped", "Low", True, COMPLETE),
-        ("only a description", 0.0, [], "slipped", "", False, PARTIAL),
-        ("success needs nothing else", 1.0, [], "", "", True, COMPLETE),
+        # A clean success asks for nothing else, so it is complete the moment it is picked.
+        ("clean success", "success", [], "", "", COMPLETE),
+        # Anything set on a clean success is ignored: those fields are never shown for it.
+        ("clean success ignores extras", "success", ["grasp"], "x", "low", COMPLETE),
+        ("suboptimal without a description", "success_suboptimal", [], "", "", PARTIAL),
+        ("suboptimal with a description", "success_suboptimal", [], "clumsy", "", COMPLETE),
+        # Category and severity are not shown for suboptimal, so they cannot hold it back.
+        ("suboptimal ignores category", "success_suboptimal", [], "clumsy", "", COMPLETE),
+        ("side-effect, nothing filled", "success_side_effect", [], "", "", PARTIAL),
+        ("side-effect, partly filled", "success_side_effect", ["collision"], "", "", PARTIAL),
+        (
+            "side-effect, fully filled",
+            "success_side_effect",
+            ["collision"],
+            "clipped a cup",
+            "low",
+            COMPLETE,
+        ),
+        # Previously this combination was rejected outright; now it is simply unfinished.
+        ("failure, nothing filled", "failure", [], "", "", PARTIAL),
+        ("failure, only a description", "failure", [], "slipped", "", PARTIAL),
+        ("failure, fully filled", "failure", ["grasp"], "slipped", "low", COMPLETE),
     ],
 )
-def test_documented_thresholds(
-    label, success, category, description, severity, accepted, tick
-):
-    assert _validator_accepts(success, category, description, severity) is accepted, label
+def test_tick_level_per_outcome(label, outcome, category, description, severity, tick):
+    form = _form_dict(outcome, category, description, severity)
+    assert _annotation_tick_level(form) == tick, label
 
-    ui = _ui_dict(
-        category,
-        description,
-        severity,
-        binary_success="Success" if success >= 0.5 else "Failure",
-    )
-    assert _annotation_tick_level(ui) == tick, label
+    stored = read_annotation_attrs(_h5_attrs(outcome, category, description, severity))
+    assert _annotation_tick_level(stored) == tick, f"{label} (via stored attrs)"
 
 
 def test_an_unannotated_episode_ticks_none():
-    assert _annotation_tick_level({"binary_success": ""}) == NONE
+    assert _annotation_tick_level({"outcome": ""}) == NONE
+    assert _annotation_tick_level({}) == NONE
+
+
+def test_an_unrecognized_outcome_ticks_none():
+    """A slug the vocabulary does not know is not a partial annotation — it is no signal."""
+    assert _annotation_tick_level({"outcome": "sort_of_worked"}) == NONE
+
+
+def test_expected_fields_cover_every_outcome():
+    """The tick's field table and the schema's outcome list must not drift apart."""
+    assert set(OUTCOME_EXPECTED_FIELDS) == set(OUTCOMES)
+
+
+def test_a_round_trip_through_hdf5_preserves_completeness(tmp_path):
+    """Whatever the writer stores must read back with the same tick it went in with."""
+    import h5py
+
+    form = _form_dict("success_side_effect", ["collision"], "clipped a cup", "low")
+    path = tmp_path / "round_trip.h5"
+    with h5py.File(path, "w") as f:
+        write_annotation_attrs(f.require_group("episode_annotations/a"), form)
+    with h5py.File(path, "r") as f:
+        stored = read_annotation_attrs(f["episode_annotations/a"].attrs)
+
+    assert is_complete(stored) is True
+    assert _annotation_tick_level(stored) == COMPLETE

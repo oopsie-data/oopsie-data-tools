@@ -301,7 +301,7 @@ class TestPreviouslyUnreferencedFixtures:
             ),
             (
                 "invalid_taxonomy_not_json",
-                "must be all filled or all empty",
+                "taxonomy is not valid JSON",
             ),
         ],
     )
@@ -415,32 +415,64 @@ class TestBetterErrors:
 
 
 class TestAnnotationSemantics:
-    def test_success_with_standalone_severity_passes(self, tmp_path: Path) -> None:
-        """A qualified success may set severity without the failure trio (#29)."""
+    def test_success_side_effect_with_severity_passes(self, tmp_path: Path) -> None:
+        """A qualified success may set severity without a full taxonomy (#29)."""
         h5_path = write_valid_episode(tmp_path, stem="ep")
         with h5py.File(h5_path, "r+") as f:
             g = f["episode_annotations"]["test_annotator"]
             g.attrs["success"] = 1.0
             g.attrs["taxonomy"] = json.dumps(
                 {
-                    "failure_category": [],
-                    "severity": "Low severity - no damage, can be reset and reattempted",
-                    "success_category": "Success with side-effects",
+                    "outcome": "success_side_effect",
+                    "side_effect_category": [],
+                    "severity": "low",
                 }
             )
         assert validate_h5_file(str(h5_path), strict_annotation_check=True) is True
 
-    def test_failure_still_requires_full_trio(self, tmp_path: Path) -> None:
-        """A failure with only severity (partial trio) is still rejected."""
+    def test_partial_failure_taxonomy_is_now_valid(self, tmp_path: Path) -> None:
+        """v2 relaxed the rule: only the outcome is required, so a partial trio passes.
+
+        Under v1 this exact file was rejected ("all filled or all empty"). Keeping it
+        rejected would mean an annotator could not save work in progress.
+        """
         h5_path = write_valid_episode(tmp_path, stem="ep")
         with h5py.File(h5_path, "r+") as f:
             g = f["episode_annotations"]["test_annotator"]
             g.attrs["success"] = 0.0
-            g.attrs["failure_description"] = ""
+            g.attrs["episode_description"] = ""
             g.attrs["taxonomy"] = json.dumps(
-                {"failure_category": [], "severity": "Low severity - no damage, can be reset and reattempted"}
+                {"outcome": "failure", "side_effect_category": [], "severity": "low"}
             )
-        with pytest.raises(AssertionError, match="all filled or all empty"):
+        assert validate_h5_file(str(h5_path), strict_annotation_check=True) is True
+
+    def test_failure_with_no_taxonomy_at_all_is_valid(self, tmp_path: Path) -> None:
+        h5_path = write_valid_episode(tmp_path, stem="ep")
+        with h5py.File(h5_path, "r+") as f:
+            g = f["episode_annotations"]["test_annotator"]
+            g.attrs["success"] = 0.0
+            g.attrs["episode_description"] = ""
+            g.attrs["taxonomy"] = json.dumps(
+                {"outcome": "failure", "side_effect_category": [], "severity": ""}
+            )
+        assert validate_h5_file(str(h5_path), strict_annotation_check=True) is True
+
+    def test_outcome_disagreeing_with_success_is_rejected(self, tmp_path: Path) -> None:
+        """A float and a slug that contradict each other would split downstream readers."""
+        h5_path = write_valid_episode(tmp_path, stem="ep")
+        with h5py.File(h5_path, "r+") as f:
+            g = f["episode_annotations"]["test_annotator"]
+            g.attrs["success"] = 1.0
+            g.attrs["taxonomy"] = json.dumps({"outcome": "failure", "severity": ""})
+        with pytest.raises(AssertionError, match="disagrees with success"):
+            validate_h5_file(str(h5_path), strict_annotation_check=True)
+
+    def test_unrecognized_outcome_is_rejected(self, tmp_path: Path) -> None:
+        h5_path = write_valid_episode(tmp_path, stem="ep")
+        with h5py.File(h5_path, "r+") as f:
+            g = f["episode_annotations"]["test_annotator"]
+            g.attrs["taxonomy"] = json.dumps({"outcome": "sort_of_worked"})
+        with pytest.raises(AssertionError, match="unrecognized outcome"):
             validate_h5_file(str(h5_path), strict_annotation_check=True)
 
     def test_incomplete_extra_subgroup_fails(self, tmp_path: Path) -> None:
