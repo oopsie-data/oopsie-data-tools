@@ -15,10 +15,10 @@ import pytest
 
 from oopsie_data_tools.annotation_tool import ANNOTATION_TOOL_DIR
 from oopsie_data_tools.annotation_tool.annotation_schema import (
+    FAILURE_CATEGORIES,
     OUTCOME_SUCCESS,
     OUTCOMES,
     SEVERITIES,
-    FAILURE_CATEGORIES,
     SUCCESS_THRESHOLD,
     outcome_to_success,
     read_annotation_attrs,

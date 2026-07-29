@@ -31,10 +31,10 @@ from flask import Flask, abort, jsonify, request, send_file
 
 from oopsie_data_tools.annotation_tool.annotation_schema import (
     ANNOTATION_SCHEMA_CURRENT,
+    FAILURE_CATEGORIES,
     OUTCOME_SUCCESS,
     OUTCOMES,
     SEVERITIES,
-    FAILURE_CATEGORIES,
     parse_taxonomy,
     read_annotation_attrs,
     write_annotation_attrs,
