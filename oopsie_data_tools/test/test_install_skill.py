@@ -81,12 +81,29 @@ def test_only_supported_agent_choices_are_available():
     assert set(claude_skill.AGENT_SKILL_DIRS) == {"claude", "codex", "cursor", "none"}
 
 
-def test_install_reports_destination_without_invocation_guidance(home, caplog):
-    with caplog.at_level("INFO"):
-        assert cli.main(["install-skill", "--agent", "codex"]) == 0
+def test_agent_mapping_keeps_labels_and_destinations_together():
+    assert claude_skill.AGENT_SKILL_DIRS == {
+        "claude": ("Claude Code", ".claude/skills"),
+        "codex": ("Codex", ".agents/skills"),
+        "cursor": ("Cursor", ".agents/skills"),
+        "none": ("a plain directory, scanned by nothing", "skills"),
+    }
 
-    assert "Installed the 'oopsie-data' skill to" in caplog.text
-    assert "invoke" not in caplog.text
+
+@pytest.mark.parametrize(
+    "agent,message",
+    [
+        ("claude", "Claude Code picks it up from there"),
+        ("codex", "Codex picks it up from there"),
+        ("cursor", "Cursor picks it up from there"),
+        ("none", "No agent scans this directory"),
+    ],
+)
+def test_install_reports_the_selected_destination_kind(home, caplog, agent, message):
+    with caplog.at_level("INFO"):
+        assert cli.main(["install-skill", "--agent", agent]) == 0
+
+    assert message in caplog.text
 
 
 def test_install_copies_the_whole_payload_tree(home, tmp_path):
