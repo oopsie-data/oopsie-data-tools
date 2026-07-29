@@ -1,8 +1,8 @@
 """Tests for ``oopsie-data install-skill``.
 
 The command is a directory copy, so what is worth pinning down is the destination for
-each scope, that an existing directory is never clobbered without --force, and that the
-payload really is inside the package rather than only in a source checkout.
+each scope, replacement of an older installed copy, and that the payload really is inside
+the package rather than only in a source checkout.
 """
 
 from __future__ import annotations
@@ -67,7 +67,7 @@ def test_default_install_lands_where_an_agent_actually_scans(home, tmp_path):
     [
         ("claude", ".claude/skills"),
         ("cursor", ".cursor/skills"),
-        ("codex", ".codex/skills"),
+        ("codex", ".agents/skills"),
         ("agents", ".agents/skills"),
         ("none", "skills"),
     ],
@@ -76,6 +76,36 @@ def test_agent_selects_the_destination(home, tmp_path, agent, subdir):
     assert cli.main(["install-skill", "--agent", agent]) == 0
 
     assert (tmp_path / "project" / subdir / "oopsie-data" / "SKILL.md").is_file()
+
+
+def test_all_installs_for_claude_cursor_and_codex(home, tmp_path):
+    assert cli.main(["install-skill", "--agent", "all"]) == 0
+
+    project = tmp_path / "project"
+    for subdir in (".claude/skills", ".cursor/skills", ".agents/skills"):
+        assert (project / subdir / "oopsie-data" / "SKILL.md").is_file()
+    assert not (project / ".codex").exists()
+
+
+def test_all_user_scope_installs_every_copy_under_home(home, tmp_path):
+    assert cli.main(["install-skill", "--agent", "all", "--user"]) == 0
+
+    for subdir in (".claude/skills", ".cursor/skills", ".agents/skills"):
+        assert (home / subdir / "oopsie-data" / "SKILL.md").is_file()
+    assert not (tmp_path / "project" / ".claude").exists()
+
+
+def test_all_replaces_existing_copy_and_installs_the_other_destinations(home, tmp_path):
+    claude = tmp_path / "project" / ".claude" / "skills" / "oopsie-data"
+    claude.mkdir(parents=True)
+    (claude / "SKILL.md").write_text("local edits", encoding="utf-8")
+
+    assert cli.main(["install-skill", "--agent", "all"]) == 0
+
+    assert (claude / "SKILL.md").read_text(encoding="utf-8") != "local edits"
+    project = tmp_path / "project"
+    assert (project / ".cursor" / "skills" / "oopsie-data" / "SKILL.md").is_file()
+    assert (project / ".agents" / "skills" / "oopsie-data" / "SKILL.md").is_file()
 
 
 def test_install_copies_the_whole_payload_tree(home, tmp_path):
@@ -98,23 +128,14 @@ def test_user_scope_installs_into_the_home_directory(home, tmp_path):
     assert not (tmp_path / "project" / ".claude").exists()
 
 
-def test_refuses_to_overwrite_without_force(home, tmp_path):
-    assert cli.main(["install-skill"]) == 0
-    edited = tmp_path / "project" / ".claude" / "skills" / "oopsie-data" / "SKILL.md"
-    edited.write_text("local edits", encoding="utf-8")
-
-    assert cli.main(["install-skill"]) == 1
-    assert edited.read_text(encoding="utf-8") == "local edits"
-
-
-def test_force_replaces_the_existing_installation(home, tmp_path):
+def test_reinstall_replaces_the_existing_installation(home, tmp_path):
     assert cli.main(["install-skill"]) == 0
     installed = tmp_path / "project" / ".claude" / "skills" / "oopsie-data"
     (installed / "SKILL.md").write_text("local edits", encoding="utf-8")
     stale = installed / "stale.md"
-    stale.write_text("removed by --force", encoding="utf-8")
+    stale.write_text("removed on reinstall", encoding="utf-8")
 
-    assert cli.main(["install-skill", "--force"]) == 0
+    assert cli.main(["install-skill"]) == 0
 
     assert "local edits" not in (installed / "SKILL.md").read_text(encoding="utf-8")
     assert not stale.exists()

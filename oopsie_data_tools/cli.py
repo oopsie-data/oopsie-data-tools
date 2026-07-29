@@ -25,7 +25,7 @@ import click
 
 # Imported eagerly, unlike the heavier command modules below: the parser needs the agent
 # names to build --agent's choices, and this module costs nothing but the standard library.
-from oopsie_data_tools.utils.claude_skill import AGENT_SKILL_DIRS as _AGENT_CHOICES
+from oopsie_data_tools.utils.claude_skill import AGENT_CHOICES as _AGENT_CHOICES
 from oopsie_data_tools.utils.claude_skill import DEFAULT_AGENT as _DEFAULT_AGENT
 from oopsie_data_tools.utils.hf_limits import BATCH_SIZE, FILE_LIMIT
 from oopsie_data_tools.utils.paths import ENV_CONFIG_DIR
@@ -780,6 +780,7 @@ restructure.help = restructure.help.format(limit=FILE_LIMIT, batch=BATCH_SIZE)
     default=_DEFAULT_AGENT,
     help=(
         f"Which agent's skills directory to install into (default: {_DEFAULT_AGENT}). "
+        "'all' installs for Claude Code, Cursor, and Codex; "
         "'agents' is the vendor-neutral .agents/skills/; 'none' writes a plain ./skills/ "
         "that no agent scans, for copying onward yourself"
     ),
@@ -788,7 +789,6 @@ restructure.help = restructure.help.format(limit=FILE_LIMIT, batch=BATCH_SIZE)
     "--user", is_flag=True,
     help="Install under your home directory instead of the working directory",
 )
-@click.option("--force", is_flag=True, help="Overwrite an existing installation of the skill")
 @click.option(
     "--check",
     is_flag=True,
@@ -797,20 +797,23 @@ restructure.help = restructure.help.format(limit=FILE_LIMIT, batch=BATCH_SIZE)
         "instead of installing anything. Exits 1 if any copy is stale or missing"
     ),
 )
-def install_skill_cmd(agent, user, force, check):
+def install_skill_cmd(agent, user, check):
     """Install the bundled agent skill for oopsie-data.
 
     Copy the skill that ships with this package into a directory your coding agent scans, so
     it knows how to drive the contributor workflow. SKILL.md is a shared format, so the same
-    payload works for Claude Code, Cursor, Codex and anything else that reads it — --agent
-    only chooses the destination. Defaults to ./.claude/skills/oopsie-data/, which Claude
-    Code and Cursor both read; --user installs into your home directory instead. Entirely
-    optional: nothing else in oopsie-data needs an agent, and no files are written anywhere
-    unless you run this command.
+    payload works for Claude Code, Cursor, Codex and anything else that reads it. Pass
+    --agent all to install for all three supported agents in one pass, or select one agent's
+    destination. Defaults to ./.claude/skills/oopsie-data/, which Claude Code and Cursor
+    both read; --user installs under your home directory instead. Entirely optional: nothing
+    else in oopsie-data needs an agent, and no files are written anywhere unless you run
+    this command.
 
     \b
     Examples:
       oopsie-data install-skill
+      oopsie-data install-skill --agent all
+      oopsie-data install-skill --agent all --user  # all agents, every project
       oopsie-data install-skill --user             # available in every project
       oopsie-data install-skill --agent cursor
       oopsie-data install-skill --agent none       # a plain ./skills/ to copy onward
@@ -820,7 +823,7 @@ def install_skill_cmd(agent, user, force, check):
 
     if check:
         return check_installations()
-    return install_skill(user=user, force=force, agent=agent)
+    return install_skill(user=user, agent=agent)
 
 
 # ── entry point ───────────────────────────────────────────────────────────────

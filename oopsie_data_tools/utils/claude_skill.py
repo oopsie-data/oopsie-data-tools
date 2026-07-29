@@ -4,10 +4,11 @@ Agents discover skills by scanning the filesystem for ``<dir>/SKILL.md``, so "in
 one is a directory copy — no agent CLI, and no network access, is involved.
 
 ``--agent`` picks that directory and defaults to Claude Code's, because a skill that lands
-somewhere nothing scans is not installed in any useful sense. ``--agent agents`` writes the
-vendor-neutral ``.agents/skills/`` and ``--agent none`` the plain ``skills/`` directory, for
-anyone who would rather copy it onward themselves. ``--user`` swaps the working directory
-for the home directory, making the skill available in every project.
+somewhere nothing scans is not installed in any useful sense. ``--agent all`` installs for
+Claude Code, Cursor, and Codex in one pass; ``--agent agents`` writes the vendor-neutral
+``.agents/skills/`` and ``--agent none`` the plain ``skills/`` directory, for anyone who
+would rather copy it onward themselves. ``--user`` swaps the working directory for the home
+directory, making the skill available in every project.
 
 Installing is an explicit opt-in subcommand rather than anything that runs at install time:
 contributors who do not use an agent never have files written for them at all.
@@ -34,12 +35,16 @@ VERSION_STAMP = ".skill-version"
 AGENT_SKILL_DIRS: dict[str, tuple[str, str]] = {
     "claude": ("Claude Code", ".claude/skills"),
     "cursor": ("Cursor", ".cursor/skills"),
-    "codex": ("Codex", ".codex/skills"),
+    # Codex follows the shared Agent Skills convention rather than using .codex/skills.
+    "codex": ("Codex", ".agents/skills"),
     "agents": ("any agent following the convention", ".agents/skills"),
     "none": ("a plain directory, scanned by nothing", "skills"),
 }
 
 DEFAULT_AGENT = "claude"
+ALL_AGENT = "all"
+AGENT_CHOICES = (*AGENT_SKILL_DIRS, ALL_AGENT)
+_ALL_AGENT_TARGETS = ("claude", "cursor", "codex")
 
 
 def bundled_skill_dir() -> Path:
@@ -65,10 +70,28 @@ def skill_destination(
     user: bool = False, agent: str = DEFAULT_AGENT, root: Path | None = None
 ) -> Path:
     """Where the skill would be installed for the given scope and agent."""
+    destinations = skill_destinations(user=user, agent=agent, root=root)
+    if len(destinations) != 1:
+        raise ValueError(f"{agent!r} selects more than one skill destination")
+    return destinations[0]
+
+
+def skill_destinations(
+    user: bool = False, agent: str = DEFAULT_AGENT, root: Path | None = None
+) -> list[Path]:
+    """Every destination selected for the given scope and agent."""
     if root is not None:
-        return root / SKILL_NAME
+        return [root / SKILL_NAME]
+
     base = Path.home() if user else Path.cwd()
-    return base / AGENT_SKILL_DIRS[agent][1] / SKILL_NAME
+    selected = _ALL_AGENT_TARGETS if agent == ALL_AGENT else (agent,)
+    destinations = []
+    for key in selected:
+        destination = base / AGENT_SKILL_DIRS[key][1] / SKILL_NAME
+        # Codex and the vendor-neutral target intentionally resolve to the same directory.
+        if destination not in destinations:
+            destinations.append(destination)
+    return destinations
 
 
 def installed_version(dest: Path) -> str | None:
@@ -121,7 +144,7 @@ def check_installations() -> int:
 
     if stale:
         logger.info(
-            "\nRe-install the copies above with 'oopsie-data install-skill --force' "
+            "\nRe-install the copies above with 'oopsie-data install-skill' "
             "(add --agent/--user to match where each one lives)."
         )
     return 1 if stale else 0
@@ -129,7 +152,6 @@ def check_installations() -> int:
 
 def install_skill(
     user: bool = False,
-    force: bool = False,
     agent: str = DEFAULT_AGENT,
     root: Path | None = None,
 ) -> int:
@@ -138,23 +160,24 @@ def install_skill(
         logger.error("The installed package does not contain a skill payload at %s.", source)
         return 1
 
-    dest = skill_destination(user, agent, root)
-    if dest.exists():
-        if not force:
-            logger.error(
-                "%s already exists. Pass --force to overwrite it.\n"
-                "Anything you added inside that directory would be lost, so it is not "
-                "overwritten by default.",
-                dest,
-            )
-            return 1
-        shutil.rmtree(dest)
+    destinations = skill_destinations(user, agent, root)
+    package_version = _package_version()
+    for dest in destinations:
+        if dest.exists():
+            shutil.rmtree(dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(source, dest)
+        (dest / VERSION_STAMP).write_text(package_version + "\n", encoding="utf-8")
+        logger.info("Installed the '%s' skill to %s", SKILL_NAME, dest)
 
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(source, dest)
-    (dest / VERSION_STAMP).write_text(_package_version() + "\n", encoding="utf-8")
-
-    logger.info("Installed the '%s' skill to %s", SKILL_NAME, dest)
+    if agent == ALL_AGENT:
+        scope = "in every project" if user else "in this project"
+        logger.info(
+            "Claude Code, Cursor, and Codex pick up these copies %s. Start a new agent "
+            "session to use the skill.",
+            scope,
+        )
+        return 0
 
     if agent == "none":
         # A plain directory: visible, committable, and not tied to any one agent. No agent
@@ -165,6 +188,7 @@ def install_skill(
             for key, (label, subdir) in AGENT_SKILL_DIRS.items()
             if key != "none"
         )
+        dest = destinations[0]
         try:
             copy_from = dest.relative_to(Path.cwd())
         except ValueError:
@@ -193,6 +217,6 @@ def install_skill(
         label,
         scope,
         SKILL_NAME,
-        ",".join(key for key in AGENT_SKILL_DIRS if key != agent),
+        ",".join(key for key in AGENT_CHOICES if key != agent),
     )
     return 0
