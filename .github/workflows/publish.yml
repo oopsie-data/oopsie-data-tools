@@ -1,0 +1,67 @@
+name: Publish to PyPI
+
+# Release flow: bump `version` in pyproject.toml, merge to main, then
+#   git tag v0.2.1 && git push origin v0.2.1
+# The tag must sit on a commit that is on main, and its version must match
+# pyproject.toml — both are enforced below before anything is uploaded.
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The ancestry check below needs main, which a tag checkout does not fetch.
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Tag must be on main
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::${GITHUB_REF_NAME} points at a commit that is not on main."
+            exit 1
+          fi
+
+      # A tag whose version disagrees with pyproject.toml publishes a release under a
+      # name nobody expects, and PyPI uploads cannot be replaced. Fail before building.
+      - name: Tag must match the project version
+        run: |
+          project_version="$(uv version --short)"
+          tag_version="${GITHUB_REF_NAME#v}"
+          if [ "$project_version" != "$tag_version" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} != pyproject.toml version ${project_version}."
+            exit 1
+          fi
+
+      - run: uv build
+      - name: Check metadata renders on PyPI
+        run: uvx twine check --strict dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    # Trusted Publishing: PyPI verifies this workflow's OIDC token instead of an API
+    # token, so there is no long-lived credential in the repo. The environment name
+    # must match the one configured on the PyPI publisher.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/oopsie-data-tools
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
