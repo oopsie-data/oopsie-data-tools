@@ -25,9 +25,9 @@ import h5py
 
 from oopsie_data_tools.annotation_tool.annotation_schema import (
     ANNOTATION_SCHEMA_V2,
+    FAILURE_CATEGORIES,
     OUTCOME_SUCCESS,
     SEVERITIES,
-    FAILURE_CATEGORIES,
     TAXONOMY_SCHEMA_V2,
     V1_SUCCESS_CATEGORY_TO_OUTCOME,
     as_value_list,
