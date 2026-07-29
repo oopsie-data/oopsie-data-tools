@@ -34,7 +34,6 @@ def test_user_dir_holds_the_credentials(isolated_home):
     (isolated_home / "contributor_config.yaml").write_text("lab_id: UserLab\n")
 
     assert paths.contributor_config_path() == isolated_home / "contributor_config.yaml"
-    assert paths.config_dir_source() == "user config dir"
 
 
 def test_env_var_wins_when_it_holds_the_config(isolated_home, tmp_path, monkeypatch):
@@ -47,7 +46,6 @@ def test_env_var_wins_when_it_holds_the_config(isolated_home, tmp_path, monkeypa
 
     assert paths.contributor_config_path() == env_dir / "contributor_config.yaml"
     assert paths.write_config_dir() == env_dir
-    assert paths.config_dir_source() == f"${paths.ENV_CONFIG_DIR}"
 
 
 def test_env_var_is_the_write_target_but_reads_still_fall_back(

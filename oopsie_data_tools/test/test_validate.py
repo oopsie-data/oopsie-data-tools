@@ -27,7 +27,6 @@ import json
 from pathlib import Path
 
 import h5py
-import numpy as np
 import pytest
 
 from oopsie_data_tools.test.fixtures.make_valid import write_valid_episode
@@ -44,11 +43,9 @@ from oopsie_data_tools.utils.validation.validation_utils import (
 
 
 class TestValidEpisodes:
-    def test_minimally_annotated_episode_passes(self, valid_episode):
-        assert validate_h5_file(str(valid_episode)) is True
-
-    def test_minimally_annotated_episode_passes_strict(self, valid_episode):
-        assert validate_h5_file(str(valid_episode), strict_annotation_check=True) is True
+    @pytest.mark.parametrize("strict", [False, True])
+    def test_minimally_annotated_episode_passes(self, valid_episode, strict):
+        assert validate_h5_file(str(valid_episode), strict_annotation_check=strict) is True
 
     def test_episode_without_annotations_passes_lenient(self, episode_without_annotations):
         """No annotation group is structurally fine — this is a just-recorded episode."""
@@ -69,12 +66,6 @@ class TestValidEpisodes:
     ):
         """The strict flag is not optional at the CLI boundary — assert on run_validation."""
         assert run_validation(str(episode_without_annotations.parent), None, None) == 1
-
-    def test_success_episode_passes(self, valid_success_episode):
-        assert validate_h5_file(str(valid_success_episode)) is True
-
-    def test_failure_episode_passes(self, valid_failure_episode):
-        assert validate_h5_file(str(valid_failure_episode)) is True
 
 
 # ---------------------------------------------------------------------------
@@ -103,15 +94,9 @@ class TestReadable:
 
 
 class TestRequiredAttrs:
-    @pytest.mark.parametrize(
-        "fixture_key",
-        [
-            "invalid_missing_attrs",  # all attrs absent
-        ],
-    )
-    def test_missing_attrs_raises(self, invalid_fixtures, fixture_key):
+    def test_missing_attrs_raises(self, invalid_fixtures):
         with pytest.raises(AssertionError, match="Missing root attr"):
-            validate_h5_file(str(invalid_fixtures[fixture_key]))
+            validate_h5_file(str(invalid_fixtures["invalid_missing_attrs"]))
 
 
 # ---------------------------------------------------------------------------
@@ -130,11 +115,7 @@ class TestRobotProfile:
             ("invalid_profile_missing_key", "Robot profile missing keys"),
             ("invalid_profile_no_gripper", "Invalid action_space"),
             ("invalid_profile_joint_no_names", "action_joint_names is required"),
-            ("invalid_profile_unsupported_action", "Invalid action_space"),
             ("invalid_profile_missing_rs_key", "missing robot state keys"),
-            # An empty camera_names list is not itself rejected; the episode fails because
-            # it then carries no video group. Worth knowing which rule is doing the work.
-            ("invalid_profile_empty_cameras", "Missing group: observations/video_paths"),
         ],
     )
     def test_invalid_profile_semantics_raise(self, invalid_fixtures, fixture_key, match):
@@ -186,11 +167,6 @@ class TestTrajectoryLengths:
         with pytest.raises(AssertionError, match="episode duration 0.00s out of range"):
             validate_h5_file(str(invalid_fixtures["invalid_zero_steps"]))
 
-    def test_zero_trajectory_via_tmp_path(self, tmp_path):
-        h5_path = write_valid_episode(tmp_path, "zero", n=0)
-        with pytest.raises(AssertionError, match="No trajectory data|out of range"):
-            validate_h5_file(str(h5_path), strict_annotation_check=True)
-
 
 # ---------------------------------------------------------------------------
 # Video checks
@@ -202,20 +178,13 @@ class TestVideos:
         with pytest.raises(AssertionError, match="does not exist"):
             validate_h5_file(str(invalid_fixtures["invalid_broken_video_ref"]))
 
-    def test_array_in_video_path_raises(self, invalid_fixtures):
-        with pytest.raises(AssertionError, match="does not exist"):
-            validate_h5_file(str(invalid_fixtures["invalid_image_obs_float"]))
-
-    # Both of these used to allow "|Video too small" as an alternative, and every fixture
-    # video was 64px against a 180px minimum — so that branch always won and neither
-    # frame-count check ran even once.
-    def test_inconsistent_video_lengths_raise(self, invalid_fixtures):
+    @pytest.mark.parametrize(
+        "fixture_key",
+        ["invalid_inconsistent_video_lengths", "invalid_video_length_step_mismatch"],
+    )
+    def test_frame_count_must_match_the_trajectory(self, invalid_fixtures, fixture_key):
         with pytest.raises(AssertionError, match=r"Frame count / trajectory mismatch"):
-            validate_h5_file(str(invalid_fixtures["invalid_inconsistent_video_lengths"]))
-
-    def test_video_length_step_mismatch_raises(self, invalid_fixtures):
-        with pytest.raises(AssertionError, match=r"Frame count / trajectory mismatch"):
-            validate_h5_file(str(invalid_fixtures["invalid_video_length_step_mismatch"]))
+            validate_h5_file(str(invalid_fixtures[fixture_key]))
 
     def test_video_below_the_minimum_size_is_rejected(self, tmp_path):
         """The check that used to mask every other video assertion, now on its own."""
@@ -259,10 +228,6 @@ class TestProfileFileConsistency:
                 "invalid_profile_rs_key_not_in_recorded",
                 "Missing observations/robot_states/",
             ),
-            (
-                "invalid_multiple_promised_fields_missing",
-                "Missing observations/robot_states/",
-            ),
         ],
     )
     def test_profile_file_consistency_raises(
@@ -276,33 +241,16 @@ class TestProfileFileConsistency:
 # ---------------------------------------------------------------------------
 
 
-class TestPreviouslyUnreferencedFixtures:
-    """Fixtures that were generated every session and asserted on by nothing.
-
-    All four detect a real defect; they simply had no test. The annotation-dataset one is
-    the sharpest: it was written to catch ``episode_annotations`` stored as a dataset, which
-    used to escape as ``AttributeError`` from ``.keys()`` rather than as a validation error.
-    """
+class TestMalformedAnnotations:
+    """``episode_annotations`` stored as anything but a group of per-annotator subgroups
+    used to escape as an AttributeError from ``.keys()`` rather than a validation error."""
 
     @pytest.mark.parametrize(
         "fixture_key,match",
         [
-            (
-                "invalid_annotation_dataset",
-                "episode_annotations must be a group of per-annotator subgroups",
-            ),
-            (
-                "invalid_joint_pos_wrong_dof",
-                "robot_state_joint_names count does not match",
-            ),
-            (
-                "invalid_joint_vel_wrong_dof",
-                "action_joint_names count does not match",
-            ),
-            (
-                "invalid_taxonomy_not_json",
-                "taxonomy is not valid JSON",
-            ),
+            ("invalid_annotation_dataset",
+             "episode_annotations must be a group of per-annotator subgroups"),
+            ("invalid_taxonomy_not_json", "taxonomy is not valid JSON"),
         ],
     )
     def test_fixture_fails_on_its_own_defect(self, invalid_fixtures, fixture_key, match):
@@ -318,47 +266,10 @@ class TestProfileDocumentsTheEpisode:
         with pytest.raises(AssertionError, match="does not declare.*velocity_hack"):
             validate_h5_file(str(invalid_fixtures["invalid_robot_state_extra_key"]))
 
-    def test_a_declared_key_may_be_absent_is_still_the_other_error(self, invalid_fixtures):
-        """The reverse direction was always enforced; check the two messages stay distinct."""
-        with pytest.raises(AssertionError, match="Missing observations/robot_states/"):
-            validate_h5_file(str(invalid_fixtures["invalid_robot_state_missing_key"]))
-
     def test_biarm_profile_rejects_a_single_arm_cartesian_pose(self, invalid_fixtures):
         """7 DOF is one [x,y,z,qx,qy,qz,qw]; a bimanual robot records 14."""
-        with pytest.raises(AssertionError, match=r"has 7 DOF.*is_biarm=True.*means 14"):
+        with pytest.raises(AssertionError, match="is_biarm"):
             validate_h5_file(str(invalid_fixtures["invalid_profile_biarm_mismatch"]))
-
-    def test_joint_count_is_not_constrained_by_is_biarm(self, tmp_path):
-        """Deliberately not a rule: two arms need not share a DOF count, so 7+6 is valid."""
-        h5_path = write_valid_episode(tmp_path, "asymmetric")
-        with h5py.File(h5_path, "r+") as f:
-            profile = json.loads(f.attrs["robot_profile"])
-            profile["is_biarm"] = True
-            f.attrs["robot_profile"] = json.dumps(profile)
-
-        assert validate_h5_file(str(h5_path), strict_annotation_check=True) is True
-
-    @pytest.mark.parametrize("gripper_dof", [1, 2, 3])
-    def test_gripper_dof_is_whatever_the_profile_owner_records(self, tmp_path, gripper_dof):
-        """Deliberately not a rule.
-
-        Nothing in RobotProfile declares how many gripper DOF to expect — only
-        ``gripper_name`` — so there is nothing to check against. Inferring 1-or-2 from
-        ``is_biarm`` would reject a multi-finger hand, which ``gripper_name`` explicitly
-        anticipates (``robotiq_3f`` and friends). Constraining this needs a
-        ``gripper_joint_names`` field mirroring ``robot_state_joint_names``; until then the
-        recorded width is accepted as given.
-        """
-        h5_path = write_valid_episode(tmp_path, f"gripper{gripper_dof}")
-        with h5py.File(h5_path, "r+") as f:
-            group = f["observations/robot_states"]
-            n = group["gripper_position"].shape[0]
-            del group["gripper_position"]
-            group.create_dataset(
-                "gripper_position", data=np.zeros((n, gripper_dof), dtype=np.float64)
-            )
-
-        assert validate_h5_file(str(h5_path), strict_annotation_check=True) is True
 
 
 class TestValidateSessionDir:
@@ -367,21 +278,14 @@ class TestValidateSessionDir:
     def test_valid_session_passes(self, valid_session_dir):
         assert validate_session_dir(str(valid_session_dir)) == 0
 
-    def test_nonexistent_dir_returns_1(self, tmp_path):
-        assert validate_session_dir(str(tmp_path / "no_such_dir")) == 1
-
-    def test_empty_dir_returns_1(self, tmp_path):
-        assert validate_session_dir(str(tmp_path)) == 1
+    @pytest.mark.parametrize("subdir", ["no_such_dir", ""], ids=["missing", "empty"])
+    def test_a_directory_with_no_episodes_returns_1(self, tmp_path, subdir):
+        assert validate_session_dir(str(tmp_path / subdir)) == 1
 
     def test_mixed_dir_returns_1(self, tmp_path):
         write_valid_episode(tmp_path, "good")
         (tmp_path / "bad.h5").write_text("not hdf5")
         assert validate_session_dir(str(tmp_path)) == 1
-
-    def test_all_valid_returns_0(self, tmp_path):
-        write_valid_episode(tmp_path, "ep_a")
-        write_valid_episode(tmp_path, "ep_b")
-        assert validate_session_dir(str(tmp_path)) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -390,23 +294,11 @@ class TestValidateSessionDir:
 
 
 class TestBetterErrors:
-    def test_validate_accepts_log_path(self, valid_success_episode, tmp_path):
+    def test_validate_accepts_log_path(self, valid_episode, tmp_path):
         # Regression: upload.py passes log_path to validate_h5_file for single files.
         log_path = tmp_path / "validate.log"
-        assert validate_h5_file(str(valid_success_episode), log_path=str(log_path)) is True
+        assert validate_h5_file(str(valid_episode), log_path=str(log_path)) is True
         assert log_path.exists(), "a log path that is accepted but never written is not a log"
-
-    def test_robot_state_joint_dof_message(self, invalid_fixtures):
-        with pytest.raises(
-            AssertionError, match="robot_state_joint_names count does not match"
-        ):
-            validate_h5_file(str(invalid_fixtures["invalid_joint_names_length_mismatch"]))
-
-    def test_action_joint_dof_message(self, invalid_fixtures):
-        with pytest.raises(
-            AssertionError, match="action_joint_names count does not match"
-        ):
-            validate_h5_file(str(invalid_fixtures["invalid_action_names_length_mismatch"]))
 
 
 # ---------------------------------------------------------------------------

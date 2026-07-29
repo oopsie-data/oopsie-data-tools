@@ -16,7 +16,6 @@ upcast cannot disagree about what a v1 value means.
 
 from __future__ import annotations
 
-import argparse
 import json
 from pathlib import Path
 from typing import Any, Mapping
@@ -176,40 +175,3 @@ def migrate_h5_file(h5_path: "str | Path", *, apply: bool = True) -> dict:
 def migrate_tree(root: "str | Path", *, apply: bool = True) -> list:
     """Migrate every episode file under *root*; one report per file."""
     return [migrate_h5_file(p, apply=apply) for p in find_episode_files(Path(root))]
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("path", type=Path, help="episode .h5 file or a directory of them")
-    parser.add_argument(
-        "--apply",
-        action="store_true",
-        help="actually write the changes (without this it is a dry run)",
-    )
-    args = parser.parse_args()
-
-    if args.path.is_dir():
-        reports = migrate_tree(args.path, apply=args.apply)
-    else:
-        reports = [migrate_h5_file(args.path, apply=args.apply)]
-
-    migrated = 0
-    for report in reports:
-        if report["error"]:
-            print(f"ERROR {report['path']}: {report['error']}")
-            continue
-        if report["migrated"]:
-            migrated += 1
-            print(f"{'migrated' if args.apply else 'would migrate'} {report['path']}: "
-                  f"{', '.join(report['migrated'])}")
-        for name, values in report["unmapped"].items():
-            print(f"  unmapped values kept verbatim in {name}: {values}")
-
-    verb = "Migrated" if args.apply else "Would migrate"
-    print(f"\n{verb} {migrated} of {len(reports)} file(s).")
-    if not args.apply:
-        print("Dry run — re-run with --apply to write.")
-
-
-if __name__ == "__main__":
-    main()

@@ -65,6 +65,8 @@ Trajectories:
 
 Videos:
 
+- The stored path must be relative to the `.h5`; an absolute path is rejected, because it
+  resolves only on the machine that recorded the episode.
 - Each side between 180 and 1280 px.
 - Frame count within `max(5, 0.1 * T)` of `T`.
 - Video duration within 0.5 s of `T / control_freq`.
@@ -76,15 +78,44 @@ Annotations — **always checked by `validate` and `upload`.** The `strict_annot
 `Annotations dict is empty, must be provided for upload`. Record an episode first and annotate
 it second; it is only between those two steps that an unannotated episode is legal.
 
+Each `episode_annotations/<annotator_name>/` subgroup carries these attrs:
+
+| attr | value |
+| --- | --- |
+| `schema` | `oopsie_failure_taxonomy_v2` |
+| `taxonomy_schema` | `oopsiedata_taxonomy_schema_v2` |
+| `source` | `human`, or the name of whatever produced it |
+| `timestamp` | ISO 8601 string |
+| `success` | float in `[0.0, 1.0]` |
+| `episode_description` | free text (the v1 spelling was `failure_description`) |
+| `additional_notes` | free text |
+| `taxonomy` | JSON object: `outcome`, `failure_category`, `severity` |
+
+The stored `failure_category` and `severity` values are stable slugs, not the prose the form
+shows. The vocabularies are defined once in `annotation_tool/annotation_schema.py`:
+
+- `outcome` — `success`, `success_suboptimal`, `success_side_effect`, `failure`. All three
+  `success_*` outcomes write `success = 1.0`.
+- `failure_category` (a list) — `reaching`, `grasp`, `manipulation`, `sequencing_semantic`,
+  `collision`, `hardware`, `not_attempted`, `other`.
+- `severity` — `low`, `medium`, `catastrophic`.
+
+What the validator checks:
+
 - Every annotator subgroup needs a numeric, non-NaN `success` in `[0.0, 1.0]`.
 - A present `taxonomy` attr must parse as a JSON object.
-- If that object carries an `outcome`, it must be one of `success`, `success_suboptimal`,
-  `success_side_effect`, `failure`, and must agree in sign with `success` (`failure` iff
-  `success < 0.5`).
+- If that object carries an `outcome`, it must be one of the four above and must agree in sign
+  with `success` (`failure` iff `success < 0.5`). A `failure_category` or `severity` outside the
+  vocabulary is rejected too.
 - Nothing else is required. `episode_description`, `failure_category` and `severity` are
   all optional in every branch, so a partial annotation — including a failure with no taxonomy
-  at all — is valid. Taxonomy v1 files, which carry no `outcome`, skip the outcome check and
-  remain valid unchanged.
+  at all — is valid.
+
+Taxonomy v1 (`oopsie_failure_taxonomy_v1` / `oopsiedata_taxonomy_schema_v1`) carries no
+`outcome` and spells the description `failure_description`. Such files skip the outcome check
+and remain valid unchanged: `read_annotation_attrs` upcasts them to v2 on read and never
+rewrites them, so a dataset can hold both versions. `utils/migrate_taxonomy_v2.py` converts
+them in place; it is deliberately not exposed on the CLI.
 
 ## Recording-time checks
 
@@ -92,9 +123,7 @@ it second; it is only between those two steps that an unannotated episode is leg
 
 - `observation` to be a dict with both `robot_state` and `image_observation`;
 - `robot_state` to contain every `robot_state_keys` entry, and `image_observation` a key named
-  exactly `<cam>` for every `camera_names` entry — the alternative spellings `image_<cam>` and
-  `<cam>_image` are recognized when the frame is read, but the presence check runs first and
-  rejects the step, so they are not a usable substitute for the plain name;
+  exactly `<cam>` for every `camera_names` entry — no other spelling is accepted;
 - `action` keys to equal `action_space` exactly, with no `None` values.
 
 `cartesian_position` is converted to `(x, y, z, qx, qy, qz, qw)` via

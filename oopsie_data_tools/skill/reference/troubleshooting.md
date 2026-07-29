@@ -77,7 +77,8 @@ subcommand.
 **`--robot-profile` missing** when running an `examples/inference_examples/` script. It is
 required and deliberately has no default. Those examples also need `uv sync --extra droid`.
 
-Exit codes: 1 on a handled failure, 2 for a bare invocation or argparse error, 130 on Ctrl-C.
+Exit codes: 1 on a handled failure, 2 for a bare invocation or a usage error (an unknown
+flag, a missing required option, or a `--path`/`--source` that does not exist), 130 on Ctrl-C.
 
 ## Mistakes that pass validation silently
 

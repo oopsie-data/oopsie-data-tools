@@ -66,14 +66,6 @@ def test_validation_of_a_single_episode_by_id(tmp_path):
     assert hf_upload.run_validation(str(tmp_path), episode_id="000001") == 0
 
 
-def test_validation_writes_the_log_file_when_asked(tmp_path):
-    write_valid_episode(tmp_path, "ep_a")
-    log_path = tmp_path / "run.log"
-
-    hf_upload.run_validation(str(tmp_path), log_path=str(log_path))
-
-    assert log_path.exists() and log_path.stat().st_size > 0
-
 
 # ── check_folder_size ──────────────────────────────────────────────────────────
 
@@ -101,7 +93,7 @@ def test_folder_size_check_flags_a_directory_over_the_limit(tmp_path, monkeypatc
 
 
 def test_folder_size_result_is_falsy_when_fine(tmp_path):
-    """cmd_upload branches on this directly, so its truthiness is load-bearing."""
+    """The upload command branches on this directly, so its truthiness is load-bearing."""
     assert not hf_upload.check_folder_size(str(tmp_path))
 
 

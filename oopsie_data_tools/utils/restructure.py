@@ -15,11 +15,6 @@ path but as ``0000/``, ``0500/``, … underneath it, while directories that are 
 enough are copied through unchanged. Nesting therefore works, including re-running this on
 output it produced.
 
-Detection and repair used to disagree — oversized directories were found recursively but
-only the source *root* was ever split, so a source with episodes at the root and an
-oversized subdirectory would restructure the wrong directory and report success, leaving
-the upload just as blocked. Both halves walk the tree now.
-
 Video paths stored inside the HDF5 files are resolved to absolute paths before copying, so
 relative paths, absolute paths, and paths containing ``..`` all work. Each video is copied
 flat into the same subfolder as the HDF5 that references it, and the path stored in the
@@ -33,6 +28,7 @@ import os
 import shutil
 from pathlib import Path
 
+import click
 import h5py
 
 from oopsie_data_tools.utils.hf_limits import BATCH_SIZE, FILE_LIMIT
@@ -45,8 +41,9 @@ def files_per_dir(root: Path) -> dict[Path, int]:
     return {Path(dirpath): len(filenames) for dirpath, _, filenames in os.walk(root)}
 
 
-def oversized_dirs(root: Path) -> list[tuple[Path, int]]:
-    return [(d, n) for d, n in files_per_dir(root).items() if n > FILE_LIMIT]
+def oversized_dirs(root: Path, limit: int | None = None) -> list[tuple[Path, int]]:
+    limit = FILE_LIMIT if limit is None else limit
+    return [(d, n) for d, n in files_per_dir(root).items() if n > limit]
 
 
 def collect_h5_files(directory: Path) -> list[Path]:
@@ -269,22 +266,14 @@ def copy_through(source: Path, output: Path, consumed: set[Path]) -> int:
 def run_restructure(source: Path, output: Path | None, assume_yes: bool) -> int:
     """Full interactive flow: check, estimate, confirm, copy. Returns an exit code."""
     source = Path(source).expanduser().resolve()
-    if not source.is_dir():
-        logger.error("Source is not a directory: %s", source)
-        return 1
-
     output = (
         Path(output).expanduser().resolve()
         if output
         else source.parent / (source.name + "_restructured")
     )
 
-    logger.info("=" * 60)
-    logger.info("  Large-Folder Restructure Utility")
-    logger.info("=" * 60)
-
     # ── Step 1: does any directory exceed the file limit? ─────────────────────
-    logger.info("\n[check] Scanning %s ...", source)
+    logger.info("[check] Scanning %s ...", source)
     over = oversized_dirs(source)
     if not over:
         logger.info("[check] No directory exceeds %d files. No restructuring needed.", FILE_LIMIT)
@@ -334,47 +323,23 @@ def run_restructure(source: Path, output: Path | None, assume_yes: bool) -> int:
 
     # ── Step 4: explicit consent ──────────────────────────────────────────────
     n_batches = sum((len(f) + BATCH_SIZE - 1) // BATCH_SIZE for f in h5_by_dir.values())
-    logger.info("\n" + "=" * 60)
-    logger.info("  ACTION REQUIRED — please read carefully before proceeding")
-    logger.info("=" * 60)
     logger.info(
-        "\nThis will CREATE a new folder:\n"
-        "  %s\n"
-        "\nIt will hold a complete copy of the source tree. Each of the %d\n"
-        "oversized director(ies) above is replaced by %d subfolder(s) in total,\n"
-        "named by starting HDF5 index (e.g. 000/, 500/, 1000/, …), each holding\n"
-        "up to %d HDF5 files and the video files they reference. Directories\n"
-        "already under the limit are copied through unchanged.\n"
-        "\nVideo paths stored inside each HDF5 file will be rewritten to\n"
-        "point to the copied video location.\n"
-        "\nEstimated disk space needed:  %.2f GB\n"
-        "\nThe SOURCE FOLDER WILL NOT BE MODIFIED. Once you have verified\n"
-        "that the restructured copy is complete and valid, you must\n"
-        "MANUALLY DELETE the original source to reclaim space:\n"
-        "  %s\n"
-        "  (approx. %.2f GB to free)",
-        output, len(splittable), n_batches, BATCH_SIZE,
-        total_bytes / 1e9,
-        source, total_bytes / 1e9,
+        "\n[plan]  Writing a full copy of %s to %s: the %d oversized director(ies) above "
+        "become %d subfolder(s) of at most %d episodes, named by starting HDF5 index, with "
+        "the stored video paths rewritten to match. Everything else is copied through "
+        "unchanged. The source is not modified — delete it yourself once you have checked "
+        "the copy.",
+        source, output, len(splittable), n_batches, BATCH_SIZE,
     )
-
     if output.exists() and any(output.iterdir()):
-        logger.warning(
-            "\n[warn]  Output folder already exists and is not empty:\n"
-            "          %s\n"
-            "        Existing files with the same names will be overwritten.",
-            output,
-        )
-    logger.info(
-        "\nThis operation is not robust to interruptions! Please ensure that it\n"
-        "runs in full. If it is interrupted, delete the output folder and restart."
-    )
+        logger.warning("[warn]  %s already exists; same-named files will be overwritten.", output)
+    logger.info("[warn]  Not robust to interruption: if it stops, delete %s and restart.", output)
 
-    if not assume_yes:
-        confirm = input('\nType exactly "yes" to proceed, anything else to abort: ').strip()
-        if confirm != "yes":
-            logger.info("\nAborted. No files were written.")
-            return 0
+    if not assume_yes and not click.confirm(
+        f"\nCopy approximately {total_bytes / 1e9:.2f} GB to {output}?", default=False
+    ):
+        logger.info("Aborted. No files were written.")
+        return 0
 
     # ── Step 5: split each oversized directory, then copy the rest through ────
     output.mkdir(parents=True, exist_ok=True)
@@ -388,15 +353,8 @@ def run_restructure(source: Path, output: Path | None, assume_yes: bool) -> int:
     copied = copy_through(source, output, consumed)
     logger.info("\n[copy]  %d file(s) copied through unchanged.", copied)
 
-    logger.info("\n" + "=" * 60)
-    logger.info("  Done!")
-    logger.info("=" * 60)
-    logger.info("\nRestructured data written to:\n  %s", output)
     logger.info(
-        "\nREMINDER: Verify the restructured folder before deleting the original.\n"
-        "To delete the original once satisfied:\n"
-        "  rm -rf %s\n"
-        "  (will free approx. %.2f GB)",
-        source, total_bytes / 1e9,
+        "\n[done]  Written to %s. Check it, then 'rm -rf %s' to free approx. %.2f GB.",
+        output, source, total_bytes / 1e9,
     )
     return 0

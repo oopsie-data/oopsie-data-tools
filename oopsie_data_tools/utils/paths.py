@@ -114,23 +114,6 @@ def contributor_config_path() -> Path:
     return write_config_dir() / "contributor_config.yaml"
 
 
-def config_dir() -> Path:
-    """Directory the contributor config resolves to."""
-    return contributor_config_path().parent
-
-
-def config_dir_source() -> str:
-    """Human-readable reason the resolved config dir was chosen (for messages)."""
-    resolved = contributor_config_path().parent
-    if resolved == env_config_dir():
-        return f"${ENV_CONFIG_DIR}"
-    if resolved in project_config_dirs():
-        return "project directory"
-    if resolved == user_config_dir():
-        return "user config dir"
-    return str(resolved)
-
-
 # ── robot profiles ────────────────────────────────────────────────────────────
 
 

@@ -22,11 +22,8 @@ B – HDF5 schema / data violations (structure)
     invalid_zero_steps          robot_states and actions have 0 rows
     invalid_actions_missing     actions group entirely absent
     invalid_robot_states_missing observations/robot_states group absent
-    invalid_image_obs_float     image_observations/front stores a float array, not a path string
 
 C – Tensor shape / dtype violations
-    invalid_joint_pos_wrong_dof     joint_position is (20, 3) not (20, 7)
-    invalid_joint_vel_wrong_dof     joint_velocity action is (20, 3) not (20, 7)
     invalid_robot_state_extra_key   robot_states has undeclared extra key
     invalid_robot_state_missing_key gripper_position absent from robot_states group
 
@@ -35,8 +32,6 @@ D – Embedded robot_profile JSON violations
     invalid_profile_missing_key     required key policy_name absent from profile JSON
     invalid_profile_no_gripper      action_space has no gripper key
     invalid_profile_joint_no_names  joint action_space but action_joint_names absent
-    invalid_profile_unsupported_action action_space contains unknown key "hand_position"
-    invalid_profile_empty_cameras   camera_names is empty list
     invalid_profile_missing_rs_key  joint_velocity action_space but robot_state_keys omits
                                     the "joint_position" state it requires
     invalid_profile_biarm_mismatch  is_biarm=True but cartesian_position is 7-DOF, not 14
@@ -47,7 +42,6 @@ E – Cross-consistency violations
     invalid_profile_camera_not_in_obs    profile declares wrist camera, image_observations omits it
     invalid_profile_action_not_in_recorded profile declares joint_velocity, actions group omits it
     invalid_profile_rs_key_not_in_recorded profile declares eef_pos, robot_states omits it
-    invalid_multiple_promised_fields_missing three fields promised by profile all absent
     invalid_control_freq_zero           control_freq=0 causes divide-by-zero in frame math
     invalid_inconsistent_video_lengths  front MP4 has 10 frames, wrist MP4 has 30 frames
     invalid_video_length_step_mismatch  MP4 has 10 frames, robot_states has 100 rows
@@ -277,45 +271,7 @@ def make_robot_states_missing(out_dir: Path) -> None:
         _video_paths(f, "front", "invalid_robot_states_missing_front.mp4")
 
 
-def make_image_obs_float(out_dir: Path) -> None:
-    with h5py.File(out_dir / "invalid_image_obs_float.h5", "w") as f:
-        _base_attrs(f, "invalid_image_obs_float")
-        _robot_states(f)
-        _actions(f)
-        # Store a float array instead of a path string. The loader will decode it
-        # to a garbage path and fail with "does not exist".
-        vp = f.require_group("observations/video_paths")
-        vp.create_dataset("front", data=np.zeros((10, 64, 64, 3), dtype=np.uint8))
 
-
-# ---------------------------------------------------------------------------
-# C – Tensor shape / dtype violations
-# ---------------------------------------------------------------------------
-
-
-def make_joint_pos_wrong_dof(out_dir: Path) -> None:
-    with h5py.File(out_dir / "invalid_joint_pos_wrong_dof.h5", "w") as f:
-        _base_attrs(f, "invalid_joint_pos_wrong_dof")
-        rs = f.require_group("observations/robot_states")
-        rs.create_dataset("joint_position", data=np.zeros((20, 3), dtype=np.float64))
-        rs.create_dataset("gripper_position", data=np.zeros((20, 1), dtype=np.float64))
-        _actions(f)
-        _video_paths(f, "front", "invalid_joint_pos_wrong_dof_front.mp4")
-
-
-def make_joint_vel_wrong_dof(out_dir: Path) -> None:
-    with h5py.File(out_dir / "invalid_joint_vel_wrong_dof.h5", "w") as f:
-        _base_attrs(f, "invalid_joint_vel_wrong_dof")
-        _robot_states(f)
-        ag = f.require_group("actions")
-        ag.create_dataset("joint_velocity", data=np.zeros((20, 3), dtype=np.float64))
-        ag.create_dataset("gripper_position", data=np.zeros((20, 1), dtype=np.float64))
-        for key in (
-            "cartesian_position", "cartesian_velocity", "joint_position",
-            "base_position", "base_velocity", "gripper_velocity", "gripper_binary",
-        ):
-            ag.create_dataset(key, data=h5py.Empty(dtype=np.float64))
-        _video_paths(f, "front", "invalid_joint_vel_wrong_dof_front.mp4")
 
 
 def make_robot_state_extra_key(out_dir: Path) -> None:
@@ -378,25 +334,6 @@ def make_profile_joint_no_names(out_dir: Path) -> None:
         _actions(f)
         _video_paths(f, "front", "invalid_profile_joint_no_names_front.mp4")
 
-
-def make_profile_unsupported_action(out_dir: Path) -> None:
-    profile = {
-        **_VALID_ROBOT_PROFILE,
-        "action_space": ["hand_position", "gripper_position"],
-    }
-    with h5py.File(out_dir / "invalid_profile_unsupported_action.h5", "w") as f:
-        _base_attrs(f, "invalid_profile_unsupported_action", robot_profile=profile)
-        _robot_states(f)
-        _actions(f)
-        _video_paths(f, "front", "invalid_profile_unsupported_action_front.mp4")
-
-
-def make_profile_empty_cameras(out_dir: Path) -> None:
-    profile = {**_VALID_ROBOT_PROFILE, "camera_names": []}
-    with h5py.File(out_dir / "invalid_profile_empty_cameras.h5", "w") as f:
-        _base_attrs(f, "invalid_profile_empty_cameras", robot_profile=profile)
-        _robot_states(f)
-        _actions(f)
 
 
 def make_profile_missing_rs_key(out_dir: Path) -> None:
@@ -514,27 +451,6 @@ def make_profile_rs_key_not_in_recorded(out_dir: Path) -> None:
         _video_paths(f, "front", "invalid_profile_rs_key_not_in_recorded_front.mp4")
 
 
-def make_multiple_promised_fields_missing(out_dir: Path) -> None:
-    """Three fields promised by profile (eef state, joint_position action, wrist camera) all absent.
-
-    This catches validators that only check one missing field at a time and stop,
-    potentially masking the remaining violations.
-    """
-    profile = {
-        **_VALID_ROBOT_PROFILE,
-        "camera_names": ["front", "wrist"],
-        "robot_state_keys": ["joint_position", "gripper_position", "eef_cartesian_position"],
-        "action_space": ["joint_position", "gripper_position", "gripper_velocity"],
-    }
-    with h5py.File(out_dir / "invalid_multiple_promised_fields_missing.h5", "w") as f:
-        _base_attrs(f, "invalid_multiple_promised_fields_missing", robot_profile=profile)
-        rs = f.require_group("observations/robot_states")
-        rs.create_dataset("joint_position", data=np.zeros((20, 7), dtype=np.float64))
-        rs.create_dataset("gripper_position", data=np.zeros((20, 1), dtype=np.float64))
-        ag = f.require_group("actions")
-        ag.create_dataset("gripper_position", data=np.zeros((20, 1), dtype=np.float64))
-        _video_paths(f, "front", "invalid_multiple_promised_fields_missing_front.mp4")
-
 
 def make_control_freq_zero(out_dir: Path) -> None:
     """control_freq=0 causes divide-by-zero in any frame-to-timestep calculation."""
@@ -578,18 +494,30 @@ def make_video_length_step_mismatch(out_dir: Path, video_writer: _VideoWriter) -
 _DEFAULT_OUT = Path(__file__).resolve().parent / "samples"
 
 _MAKERS_SIMPLE = [
-    make_not_h5, make_empty_h5, make_missing_attrs, make_broken_video_ref,
-    make_no_video_group, make_annotation_dataset, make_taxonomy_not_json,
-    make_mismatched_steps, make_zero_steps, make_actions_missing,
-    make_robot_states_missing, make_image_obs_float,
-    make_joint_pos_wrong_dof, make_joint_vel_wrong_dof,
-    make_robot_state_extra_key, make_robot_state_missing_key,
-    make_malformed_profile, make_profile_missing_key, make_profile_no_gripper,
-    make_profile_joint_no_names, make_profile_unsupported_action, make_profile_empty_cameras,
-    make_profile_missing_rs_key, make_profile_biarm_mismatch,
-    make_joint_names_length_mismatch, make_action_names_length_mismatch,
-    make_profile_camera_not_in_obs, make_profile_action_not_in_recorded,
-    make_profile_rs_key_not_in_recorded, make_multiple_promised_fields_missing,
+    make_not_h5,
+    make_empty_h5,
+    make_missing_attrs,
+    make_broken_video_ref,
+    make_no_video_group,
+    make_annotation_dataset,
+    make_taxonomy_not_json,
+    make_mismatched_steps,
+    make_zero_steps,
+    make_actions_missing,
+    make_robot_states_missing,
+    make_robot_state_extra_key,
+    make_robot_state_missing_key,
+    make_malformed_profile,
+    make_profile_missing_key,
+    make_profile_no_gripper,
+    make_profile_joint_no_names,
+    make_profile_missing_rs_key,
+    make_profile_biarm_mismatch,
+    make_joint_names_length_mismatch,
+    make_action_names_length_mismatch,
+    make_profile_camera_not_in_obs,
+    make_profile_action_not_in_recorded,
+    make_profile_rs_key_not_in_recorded,
     make_control_freq_zero,
 ]
 

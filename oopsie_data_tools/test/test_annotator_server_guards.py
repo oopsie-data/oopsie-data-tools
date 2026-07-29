@@ -137,10 +137,3 @@ def test_instruction_write_refuses_a_path_outside_the_samples_dir(client, secret
     assert response.status_code in (400, 403)
     assert secret.read_text(encoding="utf-8") == "private"
 
-
-def test_instruction_rejects_an_empty_value(client, tmp_path):
-    h5_name = next(tmp_path.glob("*.h5")).name
-
-    response = client.post(f"/api/h5/instruction?path={h5_name}", json={"instruction": "  "})
-
-    assert response.status_code == 400

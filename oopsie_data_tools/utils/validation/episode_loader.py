@@ -73,6 +73,14 @@ def load_video_info(mp4_path: str) -> VideoInfo:
 def _resolve_video_path(rel: str, h5_dir: str, label: str) -> str:
     if not rel:
         raise EpisodeValidationError(f"Empty video path for {label}")
+    if os.path.isabs(rel):
+        # Stored paths are relative to the .h5 so the episode survives being moved or
+        # uploaded. An absolute path resolves on the machine that recorded it and nowhere
+        # else, and it would still pass every other check here.
+        raise EpisodeValidationError(
+            f"Video path for {label} is absolute ({rel}); it must be relative to the "
+            "episode file so the session directory can be moved or uploaded."
+        )
     return os.path.normpath(os.path.join(h5_dir, rel))
 
 

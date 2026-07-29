@@ -104,28 +104,35 @@ def _validate_profile_consistency(data: EpisodeData) -> None:
     _validate_cartesian_arm_count(data)
 
     jp_obs = data.observations.get("joint_position")
-    if jp_obs is not None and jp_obs.ndim >= 2:
-        if len(profile.robot_state_joint_names) != jp_obs.shape[-1]:
+    if jp_obs is not None:
+        dof = _recorded_dof(jp_obs)
+        if len(profile.robot_state_joint_names) != dof:
             raise EpisodeValidationError(
                 "robot_state_joint_names count does not match observations/joint_position DOF: "
                 f"the robot profile lists {len(profile.robot_state_joint_names)} joint name(s) in "
                 f"robot_state_joint_names, but the recorded observations/joint_position has "
-                f"{jp_obs.shape[-1]} DOF (last axis). Fix robot_state_joint_names in the robot "
+                f"{dof} DOF (last axis). Fix robot_state_joint_names in the robot "
                 "profile (or the recorded joint_position) so the two counts match."
             )
 
     if profile.action_joint_names:
         for key in ("joint_position", "joint_velocity"):
             arr = data.actions.get(key)
-            if arr is not None and arr.ndim >= 2:
-                if len(profile.action_joint_names) != arr.shape[-1]:
+            if arr is not None:
+                dof = _recorded_dof(arr)
+                if len(profile.action_joint_names) != dof:
                     raise EpisodeValidationError(
                         f"action_joint_names count does not match actions/{key} DOF: "
                         f"the robot profile lists {len(profile.action_joint_names)} joint name(s) in "
-                        f"action_joint_names, but the recorded actions/{key} has {arr.shape[-1]} DOF "
+                        f"action_joint_names, but the recorded actions/{key} has {dof} DOF "
                         "(last axis). Fix action_joint_names in the robot profile (or the recorded "
                         "actions) so the two counts match."
                     )
+
+
+def _recorded_dof(arr) -> int:
+    """DOF per timestep: the last axis, or 1 for a flat ``(T,)`` trajectory."""
+    return arr.shape[-1] if arr.ndim >= 2 else 1
 
 
 def _reject_undeclared(

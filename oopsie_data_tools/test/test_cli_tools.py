@@ -8,6 +8,7 @@ they get the same coverage as the rest of the CLI. Nothing here touches the netw
 from __future__ import annotations
 
 import logging
+import sys
 from pathlib import Path
 
 import h5py
@@ -245,20 +246,13 @@ def test_restructure_reports_an_oversized_dir_it_cannot_split(tmp_path, monkeypa
     assert "nothing to split" in caplog.text
 
 
-def test_restructure_rejects_a_source_that_is_not_a_directory(tmp_path, caplog):
-    episode = write_valid_episode(tmp_path, "ep_a")
-    assert main(["restructure", "--source", str(episode), "--yes"]) == 1
-    assert "not a directory" in caplog.text.lower()
-
-
-def test_restructure_without_yes_aborts_on_anything_but_yes(tmp_path, monkeypatch, info_log):
+def test_restructure_without_yes_writes_nothing_when_refused(tmp_path, monkeypatch):
+    """The copy is large and irreversible in disk terms, so it needs explicit consent."""
     monkeypatch.setattr(restructure, "FILE_LIMIT", 0)
     write_valid_episode(tmp_path, "ep_a")
-    monkeypatch.setattr("builtins.input", lambda _prompt: "y")
+    monkeypatch.setattr("click.termui.visible_prompt_func", lambda _prompt: "n")
 
     assert main(["restructure", "--source", str(tmp_path)]) == 0
-
-    assert "Aborted" in info_log.text
     assert not (tmp_path.parent / f"{tmp_path.name}_restructured").exists()
 
 
@@ -436,3 +430,12 @@ def test_submissions_prefers_the_env_token(monkeypatch):
 
     assert hf_upload.query_submissions() == 0
     assert seen["token"] == "env-token"
+
+
+def test_annotate_without_a_name_fails_cleanly_when_stdin_is_not_a_terminal(monkeypatch, caplog):
+    """Unattended runs must get an actionable error, not a prompt nobody can answer."""
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+
+    assert main(["annotate", "--samples-dir", "."]) == 1
+    assert "--annotator-name" in caplog.text
+

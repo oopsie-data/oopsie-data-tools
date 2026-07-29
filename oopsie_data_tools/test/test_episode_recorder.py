@@ -2,17 +2,13 @@
 
 from __future__ import annotations
 
-import tempfile
-import unittest
 from pathlib import Path
 
 import h5py
 import numpy as np
+import pytest
 
-from oopsie_data_tools.annotation_tool.episode_recorder import (
-    EpisodeRecorder,
-    write_mp4,
-)
+from oopsie_data_tools.annotation_tool.episode_recorder import EpisodeRecorder, write_mp4
 from oopsie_data_tools.utils.robot_profile.robot_profile import RobotProfile
 
 
@@ -34,302 +30,172 @@ def _profile(**overrides) -> RobotProfile:
     return RobotProfile(**defaults)
 
 
-def _obs(profile: RobotProfile) -> dict:
+PROFILE = _profile()
+
+
+def _obs() -> dict:
     return {
         "robot_state": {
             "joint_position": np.zeros(7, dtype=np.float32),
             "gripper_position": np.zeros(1, dtype=np.float32),
         },
         "image_observation": {
-            cam: np.zeros((64, 64, 3), dtype=np.uint8) for cam in profile.camera_names
+            cam: np.zeros((64, 64, 3), dtype=np.uint8) for cam in PROFILE.camera_names
         },
     }
 
 
-def _action(profile: RobotProfile) -> dict:
-    sizes = {
-        "joint_velocity": 7,
-        "joint_position": 7,
-        "gripper_position": 1,
-        "gripper_velocity": 1,
-    }
-    return {
-        k: np.zeros(sizes.get(k, 1), dtype=np.float32) for k in profile.action_space
-    }
+def _action() -> dict:
+    sizes = {"joint_velocity": 7, "gripper_position": 1}
+    return {k: np.zeros(sizes.get(k, 1), dtype=np.float32) for k in PROFILE.action_space}
 
 
-def _save_data(recorder: EpisodeRecorder, cam_names: list[str]) -> dict:
+def _save_data(recorder: EpisodeRecorder) -> dict:
     return {
         "language_instruction": "pick up the cup",
-        "metadata": {
-            "episode_id": recorder.save_fname,
-            "operator_name": "tester",
-        },
-        "video_paths": {cam: f"/tmp/{cam}.mp4" for cam in cam_names},
+        "metadata": {"episode_id": recorder.save_fname, "operator_name": "tester"},
+        "video_paths": {cam: f"/tmp/{cam}.mp4" for cam in PROFILE.camera_names},
     }
 
 
-class TestEpisodeRecorderInit(unittest.TestCase):
-    def test_session_dir_created(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            recorder = EpisodeRecorder(robot_profile=_profile(), data_root_dir=tmp, operator_name="test_operator")
-            self.assertTrue(recorder.session_dir.is_dir())
-
-    def test_resume_session_name(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            recorder = EpisodeRecorder(
-                robot_profile=_profile(),
-                data_root_dir=tmp,
-                resume_session_name="my_session",
-                operator_name="test_operator",
-            )
-            self.assertEqual(recorder.session_name, "my_session")
-
-    def test_initial_num_steps_zero(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            recorder = EpisodeRecorder(robot_profile=_profile(), data_root_dir=tmp, operator_name="test_operator")
-            self.assertEqual(recorder.num_steps, 0)
+@pytest.fixture
+def recorder(tmp_path) -> EpisodeRecorder:
+    rec = EpisodeRecorder(
+        robot_profile=PROFILE, data_root_dir=str(tmp_path), operator_name="test_operator"
+    )
+    rec.reset_episode_recorder()
+    return rec
 
 
-class TestEpisodeRecorderRecordStep(unittest.TestCase):
-    def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
-        self.profile = _profile()
-        self.recorder = EpisodeRecorder(
-            robot_profile=self.profile, data_root_dir=self._tmp.name, operator_name="test_operator"
-        )
-        self.recorder.reset_episode_recorder()
-
-    def tearDown(self):
-        self._tmp.cleanup()
-
-    def test_record_step_increments_count(self):
-        self.recorder.record_step(_obs(self.profile), _action(self.profile))
-        self.assertEqual(self.recorder.num_steps, 1)
-
-    def test_multiple_steps_accumulate(self):
-        for _ in range(5):
-            self.recorder.record_step(_obs(self.profile), _action(self.profile))
-        self.assertEqual(self.recorder.num_steps, 5)
-
-    def test_reset_clears_steps(self):
-        self.recorder.record_step(_obs(self.profile), _action(self.profile))
-        self.recorder.reset_episode_recorder()
-        self.assertEqual(self.recorder.num_steps, 0)
-
-    def test_rejects_non_dict_observation(self):
-        with self.assertRaises(ValueError):
-            self.recorder.record_step("not a dict", _action(self.profile))
-
-    def test_rejects_missing_robot_state_key(self):
-        obs = _obs(self.profile)
-        del obs["robot_state"]
-        with self.assertRaises(ValueError):
-            self.recorder.record_step(obs, _action(self.profile))
-
-    def test_rejects_missing_image_observation_key(self):
-        obs = _obs(self.profile)
-        del obs["image_observation"]
-        with self.assertRaises(ValueError):
-            self.recorder.record_step(obs, _action(self.profile))
-
-    def test_rejects_missing_camera(self):
-        obs = _obs(self.profile)
-        del obs["image_observation"]["left"]
-        with self.assertRaises(ValueError):
-            self.recorder.record_step(obs, _action(self.profile))
-
-    def test_rejects_missing_robot_state_component(self):
-        obs = _obs(self.profile)
-        del obs["robot_state"]["joint_position"]
-        with self.assertRaises(ValueError):
-            self.recorder.record_step(obs, _action(self.profile))
-
-    def test_rejects_empty_action(self):
-        with self.assertRaises(ValueError):
-            self.recorder.record_step(_obs(self.profile), {})
-
-    def test_rejects_unrecognized_action_key(self):
-        action = {**_action(self.profile), "bad_key": np.zeros(1)}
-        with self.assertRaises(ValueError):
-            self.recorder.record_step(_obs(self.profile), action)
-
-    def test_rejects_mismatched_action_keys(self):
-        with self.assertRaises(ValueError):
-            self.recorder.record_step(
-                _obs(self.profile), {"joint_velocity": np.zeros(7)}
-            )
-
-    def test_rejects_none_action_values(self):
-        action = {k: None for k in self.profile.action_space}
-        with self.assertRaises(ValueError):
-            self.recorder.record_step(_obs(self.profile), action)
-
-    def test_rejects_non_dict_action(self):
-        with self.assertRaises(ValueError):
-            self.recorder.record_step(_obs(self.profile), np.zeros(8))
+def test_construction_prepares_an_empty_session(recorder):
+    assert recorder.session_dir.is_dir()
+    assert recorder.num_steps == 0
 
 
-class TestEpisodeRecorderSave(unittest.TestCase):
-    def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
-        self.profile = _profile()
-        self.recorder = EpisodeRecorder(
-            robot_profile=self.profile, data_root_dir=self._tmp.name, operator_name="test_operator"
-        )
-        self.recorder.reset_episode_recorder()
-
-    def tearDown(self):
-        self._tmp.cleanup()
-
-    def _record_n(self, n: int = 3) -> None:
-        for _ in range(n):
-            self.recorder.record_step(_obs(self.profile), _action(self.profile))
-
-    def test_save_returns_h5_path(self):
-        self._record_n()
-        h5_path = self.recorder.save(
-            _save_data(self.recorder, self.profile.camera_names)
-        )
-        self.assertIsInstance(h5_path, Path)
-        self.assertEqual(h5_path.suffix, ".h5")
-
-    def test_save_file_exists(self):
-        self._record_n()
-        h5_path = self.recorder.save(
-            _save_data(self.recorder, self.profile.camera_names)
-        )
-        self.assertTrue(h5_path.exists())
-
-    def test_save_h5_attrs(self):
-        self._record_n()
-        h5_path = self.recorder.save(
-            _save_data(self.recorder, self.profile.camera_names)
-        )
-        with h5py.File(h5_path, "r") as f:
-            self.assertEqual(f.attrs["language_instruction"], "pick up the cup")
-            self.assertEqual(f.attrs["schema"], "oopsiedata_format_v1")
-
-    def test_save_h5_observations_and_robot_states(self):
-        self._record_n()
-        h5_path = self.recorder.save(
-            _save_data(self.recorder, self.profile.camera_names)
-        )
-        with h5py.File(h5_path, "r") as f:
-            self.assertIn("observations", f)
-            self.assertIn("robot_states", f["observations"])
-            self.assertIn("joint_position", f["observations/robot_states"])
-
-    def test_save_h5_robot_state_timestep_count(self):
-        self._record_n(4)
-        h5_path = self.recorder.save(
-            _save_data(self.recorder, self.profile.camera_names)
-        )
-        with h5py.File(h5_path, "r") as f:
-            self.assertEqual(f["observations/robot_states/joint_position"].shape[0], 4)
-
-    def test_save_h5_actions_group(self):
-        self._record_n()
-        h5_path = self.recorder.save(
-            _save_data(self.recorder, self.profile.camera_names)
-        )
-        with h5py.File(h5_path, "r") as f:
-            self.assertIn("actions", f)
-
-    def test_save_raises_without_steps(self):
-        with self.assertRaises(ValueError):
-            self.recorder.save(_save_data(self.recorder, self.profile.camera_names))
-
-    def test_save_in_session_dir(self):
-        self._record_n()
-        h5_path = self.recorder.save(
-            _save_data(self.recorder, self.profile.camera_names)
-        )
-        self.assertEqual(h5_path.parent, self.recorder.session_dir)
+def test_steps_accumulate_and_reset_clears_them(recorder):
+    for _ in range(5):
+        recorder.record_step(_obs(), _action())
+    assert recorder.num_steps == 5
+    recorder.reset_episode_recorder()
+    assert recorder.num_steps == 0
 
 
-class TestWriteMp4Validation(unittest.TestCase):
-    def test_wrong_ndim_raises(self):
-        frames = np.zeros((64, 64, 3), dtype=np.uint8)  # missing time dimension
-        with tempfile.TemporaryDirectory() as tmp:
-            with self.assertRaises(ValueError, msg="3-D array should raise"):
-                write_mp4(Path(tmp) / "out.mp4", frames, fps=10.0)
-
-    def test_wrong_channel_count_raises(self):
-        frames = np.zeros((4, 64, 64, 4), dtype=np.uint8)  # RGBA instead of RGB
-        with tempfile.TemporaryDirectory() as tmp:
-            with self.assertRaises(ValueError, msg="RGBA frames should raise"):
-                write_mp4(Path(tmp) / "out.mp4", frames, fps=10.0)
-
-    def test_zero_frames_raises(self):
-        frames = np.zeros((0, 64, 64, 3), dtype=np.uint8)
-        with tempfile.TemporaryDirectory() as tmp:
-            with self.assertRaises(ValueError, msg="zero-frame array should raise"):
-                write_mp4(Path(tmp) / "out.mp4", frames, fps=10.0)
-
-    def test_2d_array_raises(self):
-        frames = np.zeros((64, 64), dtype=np.uint8)
-        with tempfile.TemporaryDirectory() as tmp:
-            with self.assertRaises(ValueError):
-                write_mp4(Path(tmp) / "out.mp4", frames, fps=10.0)
+# Each case mutates one thing about an otherwise valid step. The recorder is the only
+# gate between a robot script and a recorded episode, so every one of these has to be
+# refused at record time rather than surfacing as a validation failure at upload.
+def _no_robot_state(obs, action):
+    del obs["robot_state"]
 
 
-class TestRecordStepActionBreaking(unittest.TestCase):
-    def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
-        self.profile = _profile()
-        self.recorder = EpisodeRecorder(
-            robot_profile=self.profile, data_root_dir=self._tmp.name, operator_name="test_operator"
-        )
-        self.recorder.reset_episode_recorder()
-
-    def tearDown(self):
-        self._tmp.cleanup()
-
-    def test_rejects_partial_none_action_value(self):
-        """One None among otherwise valid keys should still raise."""
-        action = _action(self.profile)
-        first_key = next(iter(action))
-        action[first_key] = None
-        with self.assertRaises(ValueError):
-            self.recorder.record_step(_obs(self.profile), action)
-
-    def test_rejects_action_superset_of_profile(self):
-        """Extra valid action key beyond profile's action_space should raise."""
-        action = _action(self.profile)
-        action["cartesian_position"] = np.zeros(7, dtype=np.float32)
-        with self.assertRaises(ValueError):
-            self.recorder.record_step(_obs(self.profile), action)
-
-    def test_rejects_action_subset_of_profile(self):
-        """Providing only one of the required profile action keys should raise."""
-        action = {"joint_velocity": np.zeros(7, dtype=np.float32)}
-        with self.assertRaises(ValueError):
-            self.recorder.record_step(_obs(self.profile), action)
-
-    def test_rejects_action_with_wrong_but_valid_global_keys(self):
-        """Globally-valid keys that don't match the profile's action_space should raise."""
-        action = {
-            "cartesian_position": np.zeros(7, dtype=np.float32),
-            "gripper_position": np.zeros(1, dtype=np.float32),
-        }
-        with self.assertRaises(ValueError):
-            self.recorder.record_step(_obs(self.profile), action)
-
-    def test_rejects_extra_camera_not_in_profile(self):
-        """image_observation with extra camera beyond profile is fine, but missing one raises."""
-        obs = _obs(self.profile)
-        del obs["image_observation"]["wrist"]
-        with self.assertRaises(ValueError):
-            self.recorder.record_step(obs, _action(self.profile))
-
-    def test_rejects_extra_robot_state_key_missing_required(self):
-        """robot_state with a different key than required should raise."""
-        obs = _obs(self.profile)
-        obs["robot_state"] = {"unexpected_key": np.zeros(7)}
-        with self.assertRaises(ValueError):
-            self.recorder.record_step(obs, _action(self.profile))
+def _no_image_observation(obs, action):
+    del obs["image_observation"]
 
 
-if __name__ == "__main__":
-    unittest.main()
+def _missing_camera(obs, action):
+    del obs["image_observation"]["left"]
+
+
+def _missing_robot_state_key(obs, action):
+    del obs["robot_state"]["joint_position"]
+
+
+def _undeclared_robot_state_key(obs, action):
+    obs["robot_state"] = {"unexpected_key": np.zeros(7)}
+
+
+def _empty_action(obs, action):
+    action.clear()
+
+
+def _unrecognized_action_key(obs, action):
+    action["bad_key"] = np.zeros(1)
+
+
+def _action_missing_a_profile_key(obs, action):
+    action.pop("gripper_position")
+
+
+def _action_beyond_the_profile(obs, action):
+    action["cartesian_position"] = np.zeros(7, dtype=np.float32)
+
+
+def _valid_keys_but_not_the_profile_s(obs, action):
+    action.clear()
+    action["cartesian_position"] = np.zeros(7, dtype=np.float32)
+    action["gripper_position"] = np.zeros(1, dtype=np.float32)
+
+
+def _all_action_values_none(obs, action):
+    for k in action:
+        action[k] = None
+
+
+def _one_action_value_none(obs, action):
+    action[next(iter(action))] = None
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        _no_robot_state,
+        _no_image_observation,
+        _missing_camera,
+        _missing_robot_state_key,
+        _undeclared_robot_state_key,
+        _empty_action,
+        _unrecognized_action_key,
+        _action_missing_a_profile_key,
+        _action_beyond_the_profile,
+        _valid_keys_but_not_the_profile_s,
+        _all_action_values_none,
+        _one_action_value_none,
+    ],
+    ids=lambda f: f.__name__.strip("_"),
+)
+def test_record_step_rejects_a_malformed_step(recorder, mutate):
+    obs, action = _obs(), _action()
+    mutate(obs, action)
+    with pytest.raises(ValueError):
+        recorder.record_step(obs, action)
+
+
+@pytest.mark.parametrize("bad", ["not a dict", np.zeros(8)], ids=["observation", "action"])
+def test_record_step_rejects_a_non_dict(recorder, bad):
+    if isinstance(bad, str):
+        with pytest.raises(ValueError):
+            recorder.record_step(bad, _action())
+    else:
+        with pytest.raises(ValueError):
+            recorder.record_step(_obs(), bad)
+
+
+def test_save_writes_the_episode_it_buffered(recorder):
+    for _ in range(4):
+        recorder.record_step(_obs(), _action())
+    h5_path = recorder.save(_save_data(recorder))
+
+    assert isinstance(h5_path, Path)
+    assert h5_path.suffix == ".h5"
+    assert h5_path.exists()
+    assert h5_path.parent == recorder.session_dir
+    with h5py.File(h5_path, "r") as f:
+        assert f.attrs["language_instruction"] == "pick up the cup"
+        assert f.attrs["schema"] == "oopsiedata_format_v1"
+        assert "actions" in f
+        assert "joint_position" in f["observations/robot_states"]
+        assert f["observations/robot_states/joint_position"].shape[0] == 4
+
+
+def test_save_raises_without_steps(recorder):
+    with pytest.raises(ValueError):
+        recorder.save(_save_data(recorder))
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [(64, 64, 3), (4, 64, 64, 4), (0, 64, 64, 3)],
+    ids=["no time dimension", "RGBA not RGB", "zero frames"],
+)
+def test_write_mp4_rejects_a_bad_frame_array(tmp_path, shape):
+    with pytest.raises(ValueError):
+        write_mp4(tmp_path / "out.mp4", np.zeros(shape, dtype=np.uint8), fps=10.0)

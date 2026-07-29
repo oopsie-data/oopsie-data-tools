@@ -74,7 +74,7 @@ echo 'export OOPSIE_ROBOT_PROFILES_DIR=/path/to/profiles' >> ~/.bashrc
 
 `--config-dir <dir>` overrides the credential location for one run. It is a flag on
 `oopsie-data` itself, so it goes **before** the subcommand — `oopsie-data --config-dir <dir>
-upload --path ...`. Placing it after the subcommand is an argparse error.
+upload --path ...`. Placing it after the subcommand exits 2 with a usage error.
 
 When unsure what is in effect, run `oopsie-data show-config`: it prints both chains, the
 location that wins, and the lab id and token in use (`--show-token` prints the token unmasked).
@@ -153,9 +153,7 @@ oopsie-data annotate --samples-dir ./samples --annotator-name <YOUR_NAME> --port
 
 `--samples-dir` defaults to `./samples` and `--port` to 5001. Omitting `--annotator-name`
 prompts for it, and errors out when stdin is not a terminal. `--no-browser` suppresses opening
-a browser. The equivalent long form is `python -m
-oopsie_data_tools.annotation_tool.annotator_server --samples-dir ./samples --annotator-name
-<YOUR_NAME> --port 5001`.
+a browser.
 
 ## 8. Wire `EpisodeRecorder` into the robot script
 

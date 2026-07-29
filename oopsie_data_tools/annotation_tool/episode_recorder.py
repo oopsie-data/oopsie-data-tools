@@ -17,7 +17,7 @@ from oopsie_data_tools.annotation_tool.annotation_schema import (
     success_to_outcome,
     write_annotation_attrs,
 )
-from oopsie_data_tools.utils.contributor_config import read_contributor_config
+from oopsie_data_tools.utils import contributor_config
 from oopsie_data_tools.utils.robot_profile.robot_profile import RobotProfile, robot_profile_to_json
 from oopsie_data_tools.utils.robot_profile.rotation_utils import ActionQuatConversion
 from oopsie_data_tools.utils.validation.episode_data import EpisodeData, VideoInfo
@@ -88,7 +88,7 @@ class EpisodeRecorder:
             robot_profile (RobotProfile): Robot profile.
             data_root_dir (str): Base output directory for saved artifacts.
             operator_name (str): Name of the operator recording the episode.
-            session_name (str | None): Optional unique session name
+            resume_session_name (str | None): Optional unique session name
 
         Raises:
             ValueError: If ``data_root_dir`` is not a valid directory.
@@ -134,7 +134,7 @@ class EpisodeRecorder:
         # AttributeError on save_fname — an undocumented ordering requirement.
         self.reset_episode_recorder()
 
-        self.lab_id, _ = read_contributor_config()
+        self.lab_id, _ = contributor_config.read_contributor_config()
 
     def reset_episode_recorder(self) -> None:
         """Reset the buffers and start a new episode."""
@@ -180,24 +180,13 @@ class EpisodeRecorder:
         # Buffer frames for each configured camera (if available)
         for cam in self.camera_names:
             frame = self._get_camera_frame(observation["image_observation"], cam)
-            if frame is not None:
-                self.frames[cam].append(np.asarray(frame, dtype=np.uint8))
+            self.frames[cam].append(np.asarray(frame, dtype=np.uint8))
 
         # Buffer timestep data
         step_data = {"robot_state": {}, "action_dict": {}}
         for key in self.robot_profile.robot_state_keys:
             step_data["robot_state"][key] = np.asarray(robot_state[key], dtype=np.float32)
-        step_data["action_dict"] = {
-            "cartesian_position": action.get("cartesian_position", None),
-            "cartesian_velocity": action.get("cartesian_velocity", None),
-            "joint_position": action.get("joint_position", None),
-            "joint_velocity": action.get("joint_velocity", None),
-            "base_position": action.get("base_position", None),
-            "base_velocity": action.get("base_velocity", None),
-            "gripper_velocity": action.get("gripper_velocity", None),
-            "gripper_position": action.get("gripper_position", None),
-            "gripper_binary": action.get("gripper_binary", None),
-        }
+        step_data["action_dict"] = {k: action.get(k) for k in sorted(VALID_ACTION_KEYS)}
         self.timesteps.append(step_data)
 
     def _save_videos(self) -> dict[str, str]:
@@ -252,7 +241,7 @@ class EpisodeRecorder:
         """Persist the currently buffered episode to disk.
 
         Args:
-            metadata (dict[str, Any]): Save metadata containing language and
+            data (dict[str, Any]): Save metadata containing language and
                 annotation fields.
 
         Returns:
@@ -349,14 +338,6 @@ class EpisodeRecorder:
                 f"action must not be empty. Valid keys: {VALID_ACTION_KEYS}. Please pass it in your record_step() call. Double check that the passed keys match the robot profile you initialized the recorder with."
             )
 
-        # Make sure the action keys are valid
-        invalid_action = set(action.keys()) - set(VALID_ACTION_KEYS)
-        if invalid_action:
-            raise ValueError(
-                f"action contains unrecognized keys: {sorted(invalid_action)}. "
-                f"Valid keys: {VALID_ACTION_KEYS}"
-            )
-
         # Make sure the action keys agree between robot_profile and the action dict
         profile_action_keys = set(self.robot_profile.action_space)
         action_keys = set(action.keys())
@@ -429,7 +410,7 @@ class EpisodeRecorder:
 
         Args:
             path (Path): Target HDF5 file path.
-            metadata (dict[str, Any]): Normalized metadata payload.
+            data (dict[str, Any]): Normalized metadata payload.
 
         Returns:
             None: This method only performs file I/O side effects.
@@ -562,22 +543,8 @@ class EpisodeRecorder:
     def _get_camera_frame(
         self, observation: dict[str, Any], cam_name: str
     ) -> np.ndarray | None:
-        """Extract a camera frame from supported observation key patterns.
-
-        Args:
-            observation (dict[str, Any]): Observation dictionary for one
-                timestep.
-            cam_name (str): Canonical camera name to resolve.
-
-        Returns:
-            np.ndarray | None: Camera frame array when available, otherwise
-                ``None``.
-        """
-        candidates = (cam_name, f"image_{cam_name}", f"{cam_name}_image")
-        for key in candidates:
-            if key in observation:
-                return np.asarray(observation[key])
-        return None
+        """The frame for *cam_name*; the key is guaranteed present by the step check."""
+        return np.asarray(observation[cam_name])
 
     def _validate_pre_save(self, data: dict[str, Any]) -> None:
         """Perform final validation checks before saving the episode.

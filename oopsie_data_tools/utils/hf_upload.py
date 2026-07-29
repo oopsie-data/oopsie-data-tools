@@ -10,8 +10,9 @@ from __future__ import annotations
 import logging
 import os
 from collections import Counter
+from pathlib import Path
 
-from oopsie_data_tools.utils.contributor_config import read_contributor_config
+from oopsie_data_tools.utils import contributor_config
 from oopsie_data_tools.utils.hf_limits import FILE_LIMIT
 from oopsie_data_tools.utils.log import setup_logger
 from oopsie_data_tools.utils.validation.errors import EpisodeValidationError
@@ -33,7 +34,7 @@ def resolve_hf_target() -> tuple[str, str]:
     checkout without a filled-in contributor config. ``HF_TOKEN`` in the environment
     overrides the config token.
     """
-    lab_id, config_token = read_contributor_config()
+    lab_id, config_token = contributor_config.read_contributor_config()
     token = os.environ.get("HF_TOKEN", "").strip() or config_token
     return token, f"OopsieData-Submissions/{lab_id}"
 
@@ -131,11 +132,9 @@ def check_folder_size(samples_dir: str, suggest_fix: bool = True) -> list[tuple[
     Returns:
         A list of ``(directory, file_count)`` pairs; empty if the layout is fine.
     """
-    oversized = [
-        (dirpath, len(filenames))
-        for dirpath, _, filenames in os.walk(samples_dir)
-        if len(filenames) > FILE_LIMIT
-    ]
+    from oopsie_data_tools.utils.restructure import oversized_dirs
+
+    oversized = [(str(d), n) for d, n in oversized_dirs(Path(samples_dir), FILE_LIMIT)]
     if not oversized:
         return []
 
@@ -144,10 +143,8 @@ def check_folder_size(samples_dir: str, suggest_fix: bool = True) -> list[tuple[
         logger.error("             %s  (%d files)", d, n)
     if suggest_fix:
         logger.error(
-            "[precheck] HuggingFace Hub enforces a per-directory file limit.\n"
-            "           Restructure the folder first, then re-run the upload,\n"
-            "           or pass --with-restructure to do both in one step:\n\n"
-            "             oopsie-data restructure --source %s\n",
+            "[precheck] HuggingFace Hub enforces a per-directory file limit. Split it with "
+            "'oopsie-data restructure --source %s', or pass --with-restructure to upload.",
             samples_dir,
         )
     return oversized
@@ -219,11 +216,11 @@ def query_submissions(lab_id: str | None = None) -> int:
         # An explicit --lab-id must not require a filled-in contributor config, but the
         # token still comes from it unless $HF_TOKEN overrides.
         try:
-            _, config_token = read_contributor_config()
+            _, config_token = contributor_config.read_contributor_config()
         except RuntimeError:
             config_token = ""
     else:
-        lab_id, config_token = read_contributor_config()
+        lab_id, config_token = contributor_config.read_contributor_config()
 
     hf_token = os.environ.get("HF_TOKEN", "").strip() or config_token
     repo = f"OopsieData-Submissions/{lab_id}"

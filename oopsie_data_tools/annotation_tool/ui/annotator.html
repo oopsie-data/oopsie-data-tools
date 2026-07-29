@@ -22,127 +22,39 @@
         --tree-indent: 14px;
         --video-h: min(60vh, 420px);
         --tooltip-w: min(280px, 90vw);
-        /* focus ring */
-        --focus-ring: 0 0 0 2px var(--bg-app), 0 0 0 4px var(--accent);
-        /* Dark theme (default). Overridden below by prefers-color-scheme + [data-theme]. */
-        --bg-app: #1a1a2e;
-        --bg-panel: #16213e;
-        --bg-inset: #0f172a;
-        --bg-hover: #1e3a5f;
+        /* One palette, light value first. light-dark() resolves against the used
+           color-scheme, so the OS preference applies by default and the two
+           [data-theme] rules below re-point every token by flipping that one property. */
+        --bg-app:              light-dark(#f1f5f9, #1a1a2e);
+        --bg-panel:            light-dark(#ffffff, #16213e);
+        --bg-inset:            light-dark(#f8fafc, #0f172a);
+        --bg-hover:            light-dark(#dbeafe, #1e3a5f);
+        --tooltip-text:        light-dark(#f1f5f9, #cbd5e1);
+        --text:                light-dark(#0f172a, #eeeeee);
+        --text-strong:         light-dark(#0f172a, #f1f5f9);
+        --text-input:          light-dark(#0f172a, #ffffff);
+        --text-value:          light-dark(#1e293b, #e2e8f0);
+        --text-muted:          light-dark(#475569, #cbd5e1);
+        --text-muted-2:        light-dark(#64748b, #94a3b8);
+        --text-muted-3:        light-dark(#94a3b8, #64748b);
+        --border-input:        light-dark(#cbd5e1, #333333);
+        --border-panel:        light-dark(#e2e8f0, #2a3f5f);
+        --border-divider:      light-dark(#e2e8f0, #334155);
+        --accent:              light-dark(#2563eb, #60a5fa);
+        --primary-bg:          light-dark(#22c55e, #4ade80);
+        --primary-hover:       light-dark(#16a34a, #22c55e);
+        --primary-text:        light-dark(#ffffff, #000000);
+        --scrollbar-thumb:     light-dark(#cbd5e1, #334155);
+        --scrollbar-thumb-hover: light-dark(#94a3b8, #475569);
+        --other-mark:          light-dark(#7c3aed, #a78bfa);
+        --warn:                light-dark(#b45309, #fbbf24);
+        --danger:              light-dark(#dc2626, #f87171);
+        /* Constant across themes. */
         --bg-tooltip: #1e293b;
-        --tooltip-text: #cbd5e1;
-        --text: #eee;
-        --text-strong: #f1f5f9;
-        --text-input: #fff;
-        --text-value: #e2e8f0;
-        --text-muted: #cbd5e1;
-        --text-muted-2: #94a3b8;
-        --text-muted-3: #64748b;
-        --border-input: #333;
-        --border-panel: #2a3f5f;
-        --border-divider: #334155;
-        --border-inner: #1e293b;
-        --accent: #60a5fa;
-        --primary-bg: #4ade80;
-        --primary-hover: #22c55e;
-        --primary-text: #000;
-        --scrollbar-thumb: #334155;
-        --scrollbar-thumb-hover: #475569;
-        --other-mark: #a78bfa;
-        --warn: #fbbf24;
-        --danger: #f87171;
         --video-bg: #000;
       }
-      /* Standard OS-preference resolution: follow prefers-color-scheme first,
-         then let [data-theme] on <html> override for the toggle button. */
-      @media (prefers-color-scheme: light) {
-        :root {
-          --bg-app: #f1f5f9;
-          --bg-panel: #ffffff;
-          --bg-inset: #f8fafc;
-          --bg-hover: #dbeafe;
-          --bg-tooltip: #1e293b;
-          --tooltip-text: #f1f5f9;
-          --text: #0f172a;
-          --text-strong: #0f172a;
-          --text-input: #0f172a;
-          --text-value: #1e293b;
-          --text-muted: #475569;
-          --text-muted-2: #64748b;
-          --text-muted-3: #94a3b8;
-          --border-input: #cbd5e1;
-          --border-panel: #e2e8f0;
-          --border-divider: #e2e8f0;
-          --border-inner: #e2e8f0;
-          --accent: #2563eb;
-          --primary-bg: #22c55e;
-          --primary-hover: #16a34a;
-          --primary-text: #ffffff;
-          --scrollbar-thumb: #cbd5e1;
-          --scrollbar-thumb-hover: #94a3b8;
-          --other-mark: #7c3aed;
-          --warn: #b45309;
-          --danger: #dc2626;
-        }
-      }
-      :root[data-theme="dark"] {
-        color-scheme: dark;
-        --bg-app: #1a1a2e;
-        --bg-panel: #16213e;
-        --bg-inset: #0f172a;
-        --bg-hover: #1e3a5f;
-        --bg-tooltip: #1e293b;
-        --tooltip-text: #cbd5e1;
-        --text: #eee;
-        --text-strong: #f1f5f9;
-        --text-input: #fff;
-        --text-value: #e2e8f0;
-        --text-muted: #cbd5e1;
-        --text-muted-2: #94a3b8;
-        --text-muted-3: #64748b;
-        --border-input: #333;
-        --border-panel: #2a3f5f;
-        --border-divider: #334155;
-        --border-inner: #1e293b;
-        --accent: #60a5fa;
-        --primary-bg: #4ade80;
-        --primary-hover: #22c55e;
-        --primary-text: #000;
-        --scrollbar-thumb: #334155;
-        --scrollbar-thumb-hover: #475569;
-        --other-mark: #a78bfa;
-        --warn: #fbbf24;
-        --danger: #f87171;
-      }
-      :root[data-theme="light"] {
-        color-scheme: light;
-        --bg-app: #f1f5f9;
-        --bg-panel: #ffffff;
-        --bg-inset: #f8fafc;
-        --bg-hover: #dbeafe;
-        --bg-tooltip: #1e293b;
-        --tooltip-text: #f1f5f9;
-        --text: #0f172a;
-        --text-strong: #0f172a;
-        --text-input: #0f172a;
-        --text-value: #1e293b;
-        --text-muted: #475569;
-        --text-muted-2: #64748b;
-        --text-muted-3: #94a3b8;
-        --border-input: #cbd5e1;
-        --border-panel: #e2e8f0;
-        --border-divider: #e2e8f0;
-        --border-inner: #e2e8f0;
-        --accent: #2563eb;
-        --primary-bg: #22c55e;
-        --primary-hover: #16a34a;
-        --primary-text: #ffffff;
-        --scrollbar-thumb: #cbd5e1;
-        --scrollbar-thumb-hover: #94a3b8;
-        --other-mark: #7c3aed;
-        --warn: #b45309;
-        --danger: #dc2626;
-      }
+      :root[data-theme="light"] { color-scheme: light; }
+      :root[data-theme="dark"] { color-scheme: dark; }
 
       html, body { height: 100%; }
       body {
@@ -174,8 +86,6 @@
         border: 2px solid transparent;
       }
       .container {
-        max-width: none;
-        margin: 0 auto;
         padding: 16px 20px 0;
         height: 100%;
         display: flex;
@@ -195,7 +105,6 @@
       }
       header h1 {
         font-size: var(--fs-title);
-        margin: 0;
         min-width: 0;
         flex-shrink: 0;
       }
@@ -260,7 +169,6 @@
         color: var(--text-muted-2);
       }
       .sidebar-stats .stats-row span:last-child { color: var(--text-value); font-weight: 600; }
-      .sidebar-stats .stats-row.muted span:last-child { color: var(--text-muted-3); font-weight: 500; }
       .sidebar-filter {
         padding: 0 5px 10px;
         border-bottom: 1px solid var(--border-panel);
@@ -542,42 +450,6 @@
         word-break: break-word;
       }
 
-      .meta-panel {
-        background: var(--bg-inset);
-        border: 1px solid var(--border-divider);
-        border-radius: 6px;
-        padding: 12px 14px;
-        margin-bottom: 16px;
-        font-size: var(--fs-ui);
-      }
-      .meta-instruction {
-        font-size: var(--fs-ui);
-        font-weight: 600;
-        color: var(--text-strong);
-        margin-bottom: 8px;
-        line-height: 1.4;
-      }
-      .meta-instruction-label {
-        font-size: var(--fs-label);
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.6px;
-        color: var(--accent);
-        margin-bottom: 3px;
-      }
-      .meta-row {
-        display: flex;
-        gap: 16px;
-        flex-wrap: wrap;
-        margin-top: 8px;
-        padding-top: 8px;
-        border-top: 1px solid var(--border-inner);
-      }
-      .meta-row.meta-row-flat { margin-top: 0; padding-top: 0; border-top: none; }
-      .meta-item { display: flex; flex-direction: column; gap: 1px; }
-      .meta-key { font-size: var(--fs-label); text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted-3); }
-      .meta-val { font-size: var(--fs-ui); color: var(--text-muted); font-family: var(--font-mono); word-break: break-all; }
-
       #episodeFields { margin-bottom: 16px; }
       .episode-data { background: var(--bg-inset); border: 1px solid var(--border-divider); border-radius: 6px; padding: 8px 12px; font-size: var(--fs-ui); }
       .episode-data summary { cursor: pointer; color: var(--text-muted-2); font-weight: 600; }
@@ -625,7 +497,6 @@
         max-width: 360px;
         box-shadow: 0 4px 12px rgba(0,0,0,0.25);
       }
-      .toast.info { border-color: var(--accent); }
 
       @media (max-width: 1200px) {
         html, body { height: auto; }
@@ -787,7 +658,6 @@
                 </div>
               </div>
             </div>
-            <div id="metadataPanel" hidden></div>
             <div id="episodeFields" hidden></div>
             <div id="autofillRow" hidden>
               <label class="autofill-label" for="autofillSelect">Copy from a previous annotation</label>
@@ -807,22 +677,22 @@
                   <label class="required">How did the episode end?</label>
                   <div>
                     <label class="opt-row">
-                      <input type="radio" name="outcome" value="success" data-qname="outcome" />
+                      <input type="radio" name="outcome" value="success" />
                       <span>Success</span>
                       <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="Task completed correctly, efficiently, and with no unwanted side-effects.">ⓘ</span>
                     </label>
                     <label class="opt-row">
-                      <input type="radio" name="outcome" value="success_suboptimal" data-qname="outcome" />
+                      <input type="radio" name="outcome" value="success_suboptimal" />
                       <span>Success, suboptimal execution</span>
                       <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="Task completed, but inefficiently or awkwardly (e.g. many retries, a very indirect path, near-misses). Nothing in the scene was disturbed and nothing was at risk.">ⓘ</span>
                     </label>
                     <label class="opt-row">
-                      <input type="radio" name="outcome" value="success_side_effect" data-qname="outcome" />
+                      <input type="radio" name="outcome" value="success_side_effect" />
                       <span>Success, unwanted side-effect</span>
                       <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="Task completed, but something unintended happened along the way (e.g. knocked over a nearby object, minor collision) that did not prevent completion.">ⓘ</span>
                     </label>
                     <label class="opt-row">
-                      <input type="radio" name="outcome" value="failure" data-qname="outcome" />
+                      <input type="radio" name="outcome" value="failure" />
                       <span>Failure</span>
                       <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="The task was not completed.">ⓘ</span>
                     </label>
@@ -832,49 +702,49 @@
                 <div class="form-group" data-question-id="episode_description" data-qtype="textarea" hidden>
                   <div class="form-divider"></div>
                   <label>Describe what happened</label>
-                  <textarea name="episode_description" data-qname="episode_description"></textarea>
+                  <textarea name="episode_description"></textarea>
                 </div>
 
                 <div class="form-group" data-question-id="failure_category" data-qtype="checkbox" hidden>
                   <label id="failureCategoryLabel">Side-effect categories (select all that apply)</label>
                   <div>
                     <label class="opt-row">
-                      <input type="checkbox" name="failure_category" value="reaching" data-qname="failure_category" />
+                      <input type="checkbox" name="failure_category" value="reaching" />
                       <span>Reaching (pre contact)</span>
                       <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="The robot did not reach the target object or location, so no contact was made. If a grasp just barely misses the object, count this as grasp rather than reaching.">ⓘ</span>
                     </label>
                     <label class="opt-row">
-                      <input type="checkbox" name="failure_category" value="grasp" data-qname="failure_category" />
+                      <input type="checkbox" name="failure_category" value="grasp" />
                       <span>Grasp (at contact)</span>
                       <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="The target object was not grasped properly. Includes slipping, dropping, or an incorrect grasp.">ⓘ</span>
                     </label>
                     <label class="opt-row">
-                      <input type="checkbox" name="failure_category" value="manipulation" data-qname="failure_category" />
+                      <input type="checkbox" name="failure_category" value="manipulation" />
                       <span>Manipulation (post contact)</span>
                       <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="The object was grasped but not manipulated as intended. For example, successfully grasping a door handle but failing to open the door.">ⓘ</span>
                     </label>
                     <label class="opt-row">
-                      <input type="checkbox" name="failure_category" value="sequencing_semantic" data-qname="failure_category" />
+                      <input type="checkbox" name="failure_category" value="sequencing_semantic" />
                       <span>Sequencing or semantic</span>
                       <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="Error in planning or sequencing of actions. This includes executing a related but wrong action, such as pick-and-place of the wrong object, or executing a pick motion when a push motion was specified.">ⓘ</span>
                     </label>
                     <label class="opt-row">
-                      <input type="checkbox" name="failure_category" value="collision" data-qname="failure_category" />
+                      <input type="checkbox" name="failure_category" value="collision" />
                       <span>Collision</span>
                       <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="Collision with an obstacle or the environment. This can co-occur with other categories; please select all that apply.">ⓘ</span>
                     </label>
                     <label class="opt-row">
-                      <input type="checkbox" name="failure_category" value="hardware" data-qname="failure_category" />
+                      <input type="checkbox" name="failure_category" value="hardware" />
                       <span>Hardware/mechanical issue</span>
                       <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="Hardware or mechanical problem with the robot.">ⓘ</span>
                     </label>
                     <label class="opt-row">
-                      <input type="checkbox" name="failure_category" value="not_attempted" data-qname="failure_category" />
+                      <input type="checkbox" name="failure_category" value="not_attempted" />
                       <span>Task not attempted</span>
                       <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="The robot made no discernible attempt at the task, e.g. by stalling.">ⓘ</span>
                     </label>
                     <label class="opt-row">
-                      <input type="checkbox" name="failure_category" value="other" data-qname="failure_category" />
+                      <input type="checkbox" name="failure_category" value="other" />
                       <span>Other</span>
                       <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="A side-effect or failure mode not covered by the categories above.">ⓘ</span>
                     </label>
@@ -885,17 +755,17 @@
                   <label>Severity</label>
                   <div>
                     <label class="opt-row">
-                      <input type="radio" name="severity" value="low" data-qname="severity" />
+                      <input type="radio" name="severity" value="low" />
                       <span>Low</span>
                       <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="No damage; the scene can be reset and the task reattempted.">ⓘ</span>
                     </label>
                     <label class="opt-row">
-                      <input type="radio" name="severity" value="medium" data-qname="severity" />
+                      <input type="radio" name="severity" value="medium" />
                       <span>Medium</span>
                       <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="Some damage or risk of damage, or a significant reset is required, but the task can be reattempted.">ⓘ</span>
                     </label>
                     <label class="opt-row">
-                      <input type="radio" name="severity" value="catastrophic" data-qname="severity" />
+                      <input type="radio" name="severity" value="catastrophic" />
                       <span>Catastrophic</span>
                       <span class="info-icon" tabindex="0" role="note" aria-label="Definition" data-tooltip="Significant damage or risk of damage; the task cannot be reattempted without repair.">ⓘ</span>
                     </label>
@@ -905,7 +775,7 @@
                 <div class="form-group" data-question-id="additional_notes" data-qtype="text">
                   <div class="form-divider"></div>
                   <label>Additional notes (optional)</label>
-                  <input type="text" name="additional_notes" data-qname="additional_notes" />
+                  <input type="text" name="additional_notes" />
                 </div>
               </div>
             </div>
@@ -1049,7 +919,6 @@
           setHidden("saveBar", false);
           setHidden("autofillRow", !(state.recentAnnotations && state.recentAnnotations.length));
         } else {
-          setHidden("metadataPanel", true);
           setHidden("episodeFields", true);
           setHidden("autofillRow", true);
           setHidden("questionnaire", true);
@@ -1179,34 +1048,6 @@
           v.addEventListener("loadedmetadata", () => { v.playbackRate = getPlaybackRate(); });
           attachSyncHandlers(v);
         });
-      }
-
-      function renderMetadata(meta) {
-        const panel = el("metadataPanel");
-        const episodeId = String(meta?.episode_id || "").trim();
-        const operator = String(meta?.operator_name || "").trim();
-        const relPath = String(meta?.rel_path || "").trim();
-        const sampleId = String(meta?.sample_id || "").trim();
-
-        const extraRows = [];
-        if (episodeId) extraRows.push({ k: "Episode", v: episodeId });
-        if (operator)  extraRows.push({ k: "Operator", v: operator });
-        if (relPath && relPath !== episodeId) extraRows.push({ k: "File", v: relPath });
-        else if (sampleId && !relPath) extraRows.push({ k: "Sample", v: sampleId });
-
-        if (!extraRows.length) {
-          panel.hidden = true;
-          panel.innerHTML = "";
-          return;
-        }
-
-        panel.innerHTML = `
-          <div class="meta-panel">
-            <div class="meta-row meta-row-flat">
-              ${extraRows.map(r => `<div class="meta-item"><span class="meta-key">${escHtml(r.k)}</span><span class="meta-val">${escHtml(r.v)}</span></div>`).join("")}
-            </div>
-          </div>`;
-        panel.hidden = false;
       }
 
       // ── Episode data visualizer (#30) ──────────────────────────────────────
@@ -1441,23 +1282,6 @@
           }
         }
         return out;
-      }
-
-      function validateRequired() {
-        const groups = document.querySelectorAll("[data-question-id][data-required='1']");
-        for (const g of groups) {
-          if (g.hidden) continue;
-          const qtype = (g.getAttribute("data-qtype") || "").toLowerCase();
-          if (qtype === "radio") {
-            if (!g.querySelector('input[type="radio"]:checked')) return false;
-          } else if (qtype === "checkbox") {
-            if (!g.querySelector('input[type="checkbox"]:checked')) return false;
-          } else {
-            const field = g.querySelector('input, textarea, select');
-            if (!field || !String(field.value ?? "").trim()) return false;
-          }
-        }
-        return true;
       }
 
       // Only the outcome is required; every taxonomy field is optional in every branch,
@@ -1699,15 +1523,7 @@
 
         // If searching, auto-expand all matching parent directories so results are visible.
         if (q) {
-          for (const it of items) {
-            const rp = String(it.rel_path || "");
-            const parts = rp.split("/").filter(Boolean);
-            let prefix = "";
-            for (const p of parts.slice(0, -1)) {
-              prefix = prefix ? `${prefix}/${p}` : p;
-              expandedDirs.add(prefix);
-            }
-          }
+          for (const it of items) expandParents(it.rel_path);
         }
 
         const esc = escHtml;
@@ -1854,46 +1670,7 @@
         );
         el("statusLine").textContent = taskStatusLabel(st?.status, browseOnly);
 
-        // Server started with --browse-only: skip instruction / rollout cards entirely.
-        if (typeof ANNOTATOR_BROWSE_ONLY !== "undefined" && ANNOTATOR_BROWSE_ONLY) {
-          if (browseRelPath) {
-            showOnly("annotateCard");
-
-            if (!currentBrowseSample || currentBrowseSample.rel_path !== browseRelPath) {
-              const sample = await fetchSampleCached(browseRelPath);
-              currentBrowseSample = sample;
-              formPopulatedFor = null;
-              videosRenderedFor = null;
-            }
-
-            if (videosRenderedFor !== browseRelPath) {
-              renderVideos(currentBrowseSample?.video_urls || {});
-              renderEpisodeFields(currentBrowseSample?.episode_fields || null);
-              videosRenderedFor = browseRelPath;
-            }
-            if (formPopulatedFor !== browseRelPath) {
-              populateForm(currentBrowseSample?.existing_annotation || {});
-              formPopulatedFor = browseRelPath;
-            }
-            syncHeaderPanel(st);
-            return;
-          }
-
-          showOnly("annotateCard");
-          if (videosRenderedFor !== "__browse_landing__") {
-            renderVideos({});
-            renderEpisodeFields(null);
-            videosRenderedFor = "__browse_landing__";
-          }
-          if (formPopulatedFor !== "__browse_landing__") {
-            populateForm({});
-            formPopulatedFor = "__browse_landing__";
-          }
-          syncHeaderPanel(st);
-          return;
-        }
-
-        // Browse mode overrides the main pane regardless of rollout status.
+        // A selected episode owns the main pane in both modes, regardless of rollout status.
         if (browseRelPath) {
           showOnly("annotateCard");
 
@@ -1912,6 +1689,22 @@
           if (formPopulatedFor !== browseRelPath) {
             populateForm(currentBrowseSample?.existing_annotation || {});
             formPopulatedFor = browseRelPath;
+          }
+          syncHeaderPanel(st);
+          return;
+        }
+
+        // Server started without --with-rollouts: no instruction / rollout cards exist.
+        if (typeof ANNOTATOR_BROWSE_ONLY !== "undefined" && ANNOTATOR_BROWSE_ONLY) {
+          showOnly("annotateCard");
+          if (videosRenderedFor !== "__browse_landing__") {
+            renderVideos({});
+            renderEpisodeFields(null);
+            videosRenderedFor = "__browse_landing__";
+          }
+          if (formPopulatedFor !== "__browse_landing__") {
+            populateForm({});
+            formPopulatedFor = "__browse_landing__";
           }
           syncHeaderPanel(st);
           return;
@@ -1961,7 +1754,6 @@
           updateSaveButtonState();
           formPopulatedFor = null;
           videosRenderedFor = null;
-          renderMetadata({});
         }
         syncHeaderPanel(st);
       }
@@ -1992,10 +1784,6 @@
       el("saveBtn").addEventListener("click", async () => {
         if (!currentSampleId && !browseRelPath) return;
         const answers = gatherAnswers();
-        if (!validateRequired()) {
-          el("saveMsg").textContent = "Please fill required fields.";
-          return;
-        }
         const saveValidationError = validateSaveAnswers(answers);
         if (saveValidationError) {
           el("saveMsg").textContent = saveValidationError;
