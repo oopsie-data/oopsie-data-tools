@@ -2,11 +2,15 @@
 
 Tools for collecting, annotating, inspecting, and converting robotic manipulation rollout data.
 
-This repository currently provides around:
+This repository currently provides tools for:
 
 - HDF5 episode recording (`EpisodeRecorder`)
 - Web annotation workflows
 - In-the-loop annotation during policy rollout
+
+as well as all the necessary utilities to validate, inspect, and upload Oopsie-Data to the official repositories.
+
+[Sign up today](https://forms.gle/9arwZHAvRjvbozoT7) and start contributing!
 
 ---
 
