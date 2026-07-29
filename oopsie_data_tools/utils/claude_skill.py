@@ -31,11 +31,11 @@ VERSION_STAMP = ".skill-version"
 
 # Where each agent scans, keyed by the --agent value. Kept as data rather than prose so
 # adding an agent is one line and cannot drift from what is printed.
-AGENT_SKILL_DIRS: dict[str, str] = {
-    "claude": ".claude/skills",
-    "codex": ".agents/skills",
-    "cursor": ".agents/skills",
-    "none": "skills",
+AGENT_SKILL_DIRS: dict[str, tuple[str, str]] = {
+    "claude": ("Claude Code", ".claude/skills"),
+    "codex": ("Codex", ".agents/skills"),
+    "cursor": ("Cursor", ".agents/skills"),
+    "none": ("a plain directory, scanned by nothing", "skills"),
 }
 
 DEFAULT_AGENT = "claude"
@@ -67,7 +67,7 @@ def skill_destination(
     if root is not None:
         return root / SKILL_NAME
     base = Path.home() if user else Path.cwd()
-    return base / AGENT_SKILL_DIRS[agent] / SKILL_NAME
+    return base / AGENT_SKILL_DIRS[agent][1] / SKILL_NAME
 
 
 def installed_version(dest: Path) -> str | None:
@@ -81,7 +81,7 @@ def installed_version(dest: Path) -> str | None:
 def find_installations() -> list[Path]:
     """Every installed copy of the skill under the working directory or the home directory."""
     found = []
-    subdirs = dict.fromkeys(AGENT_SKILL_DIRS.values())
+    subdirs = dict.fromkeys(subdir for _, subdir in AGENT_SKILL_DIRS.values())
     for base in (Path.cwd(), Path.home()):
         for subdir in subdirs:
             candidate = base / subdir / SKILL_NAME
