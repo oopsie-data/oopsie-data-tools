@@ -103,14 +103,24 @@ class Runtime:
             self.task_state["status"] = "annotating"
 
     def mark_done(self) -> None:
+        """Finish the rollout being annotated. A no-op in every other state.
+
+        The guard is load-bearing, not defensive: ``wait_for_task`` claims an instruction
+        only while the status reads ``pending``, so resetting a pending task to idle here
+        strands it — the browser shows an instruction it already submitted and the rollout
+        loop waits for one forever. The UI can post this at any time (the operator clicks
+        "Start next rollout"), and it races the driver's own post, so a stale or repeated
+        call must leave a queued or running rollout alone.
+        """
         with self._lock:
-            if self.task_state.get("status") == "annotating":
-                cs = self.task_state.get("current_sample")
-                if isinstance(cs, dict):
-                    sid = str(cs.get("sample_id", "")).strip()
-                    if sid and sid not in self.annotations:
-                        # Lets rollout poll observe "skip" (Back) vs still waiting.
-                        self.annotations[sid] = {"__annotation_skipped__": True}
+            if self.task_state.get("status") != "annotating":
+                return
+            cs = self.task_state.get("current_sample")
+            if isinstance(cs, dict):
+                sid = str(cs.get("sample_id", "")).strip()
+                if sid and sid not in self.annotations:
+                    # Lets rollout poll observe "skip" (Back) vs still waiting.
+                    self.annotations[sid] = {"__annotation_skipped__": True}
             self.task_state["status"] = "idle"
             self.task_state["current_sample"] = None
 
@@ -533,9 +543,17 @@ def _h5_meta(path: Path, annotator_name: str) -> dict[str, Any]:
         if hit is not None and hit[0] == stamp:
             return hit[1]
 
-    meta: dict[str, Any] = {"tick_level": 0, "annotated_by_others": False, "annotation": None}
+    meta: dict[str, Any] = {
+        "tick_level": 0,
+        "annotated_by_others": False,
+        "annotation": None,
+        "language_instruction": "",
+    }
     try:
         with h5py.File(path, "r") as h5f:
+            meta["language_instruction"] = str(
+                _read_h5_attr(h5f, "language_instruction", "") or ""
+            ).strip()
             meta["tick_level"] = _h5_annotation_tick_level(h5f, annotator_name)
             meta["annotated_by_others"] = _has_other_human_annotation(h5f, annotator_name)
             ea = h5f.get("episode_annotations")
@@ -545,7 +563,12 @@ def _h5_meta(path: Path, annotator_name: str) -> dict[str, Any]:
             if isinstance(ea, h5py.Group) and isinstance(ea.get(annotator_name), h5py.Group):
                 meta["annotation"] = _read_existing_annotation_dict(ea, annotator_name)
     except Exception:
-        meta = {"tick_level": 0, "annotated_by_others": False, "annotation": None}
+        meta = {
+            "tick_level": 0,
+            "annotated_by_others": False,
+            "annotation": None,
+            "language_instruction": "",
+        }
 
     with _H5_META_LOCK:
         if len(_H5_META_CACHE) >= _H5_META_CACHE_MAX:
@@ -580,6 +603,41 @@ def api_h5_list():
         )
     entries.sort(key=lambda e: e.get("rel_path") or "")
     return jsonify(entries)
+
+
+@app.get("/api/instructions/recent")
+def api_recent_instructions():
+    """Distinct language instructions from the most recent episodes, newest first.
+
+    Feeds the instruction card's history picker. Read from the episodes rather than from
+    ``task_state`` so it survives a restart of the server and shows what the robot was
+    actually asked to do, including instructions typed in an earlier session.
+    """
+    rt = _get_runtime()
+    root = rt.cfg.samples_dir.resolve()
+    try:
+        limit = int(request.args.get("limit", 10))
+    except (TypeError, ValueError):
+        limit = 10
+    limit = max(1, min(limit, 50))
+
+    files = [p for p in root.rglob("*.h5") if p.is_file()]
+    files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+
+    seen: set[str] = set()
+    instructions: list[str] = []
+    for p in files:
+        if len(instructions) >= limit:
+            break
+        text = str(_h5_meta(p, rt.cfg.annotator_name)["language_instruction"]).strip()
+        # Case-insensitive dedupe: "Pick up the block" and "pick up the block" are the same
+        # task to the operator, and two rows that differ only in case are noise in a picker.
+        key = text.lower()
+        if not text or key in seen:
+            continue
+        seen.add(key)
+        instructions.append(text)
+    return jsonify(instructions)
 
 
 @app.get("/api/annotations/recent")

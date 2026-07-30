@@ -4,8 +4,8 @@ Writes ``contributor_config.yaml`` — the lab id and HuggingFace token every co
 needs before uploading — into the config directory chosen in :func:`choose_target_dir`,
 which follows the lookup order documented in :mod:`oopsie_data_tools.utils.paths`.
 
-Robot profiles are not created here: they are hand-written YAML, documented in
-``configs/robot_profiles/template.yaml`` and on the docs site.
+Robot profiles are not created here: ``oopsie-data new-profile`` writes a commented
+skeleton next to your robot code, which you then fill in by hand.
 
 Every question can be answered ahead of time with a flag, so a fully-flagged invocation
 runs unattended (see ``oopsie-data init --help``).
@@ -295,9 +295,16 @@ def run_init(
         logger.info("\nSetup complete. Your credentials are saved in %s", target_dir)
         logger.info("Run 'oopsie-data show-config' at any time to see what is in use.")
         logger.info(
-            "Next: write a robot profile and keep it next to your robot code, e.g. %s.\n"
-            "Copy one of the examples or the commented template from the repo's "
-            "configs/robot_profiles/, then load it with load_robot_profile(<path>).",
+            "\nNext: create a robot profile — one per robot, describing its cameras, state "
+            "keys and action space.\n"
+            "  1. Run 'oopsie-data new-profile --name <robot>'. It writes a commented "
+            "skeleton to %s;\n"
+            "     profiles live next to your robot code, not with these credentials.\n"
+            "  2. Fill in the required fields. The skeleton deliberately fails to load until "
+            "you do,\n"
+            "     so a half-edited profile cannot stamp placeholder metadata into your "
+            "episodes.\n"
+            "  3. Load it in your recording script with load_robot_profile(<path>).",
             paths.write_profiles_dir(),
         )
         return 0

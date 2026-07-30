@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import logging
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import h5py
 import pytest
@@ -366,25 +368,50 @@ def test_upload_with_restructure_aborts_if_the_layout_is_still_oversized(
 
 
 class _FakeApi:
-    def __init__(self, files=None):
+    """Stands in for HfApi, mirroring the shapes query_submissions reads off it.
+
+    ``files=None`` is the repo-does-not-exist case. ``commits=None`` is a history the Hub
+    would not serve, which the report must survive.
+    """
+
+    def __init__(self, files=None, commits=(), last_modified=None, sizes=None):
         self.files = files
+        self.commits = commits
+        self.last_modified = last_modified
+        self.sizes = sizes or {}
         self.token = None
 
-    def repo_info(self, repo_id, repo_type):
+    def repo_info(self, repo_id, repo_type, files_metadata=False):
         if self.files is None:
             raise RuntimeError("404")
-        return {"id": repo_id}
+        return SimpleNamespace(
+            id=repo_id,
+            last_modified=self.last_modified,
+            siblings=[
+                SimpleNamespace(rfilename=f, size=self.sizes.get(f, 0), lfs=None)
+                for f in self.files
+            ],
+        )
 
     def list_repo_files(self, repo_id, repo_type):
         return self.files
+
+    def list_repo_commits(self, repo_id, repo_type):
+        if self.commits is None:
+            raise RuntimeError("history unavailable")
+        return list(self.commits)
+
+
+def _fake_commit(created_at, title="Upload", authors=("alex",)):
+    return SimpleNamespace(created_at=created_at, title=title, authors=list(authors))
 
 
 @pytest.fixture
 def fake_hf(monkeypatch):
     """Patch HfApi at its import site inside query_submissions."""
 
-    def install(files):
-        api = _FakeApi(files)
+    def install(files, **kwargs):
+        api = _FakeApi(files, **kwargs)
         monkeypatch.setattr("huggingface_hub.HfApi", lambda token=None: api)
         return api
 
@@ -400,6 +427,41 @@ def test_submissions_counts_episodes_videos_and_folders(fake_hf, info_log):
     assert "Videos (.mp4):  1" in info_log.text
     assert "Total files:    4" in info_log.text
     assert "000" in info_log.text and "500" in info_log.text
+
+
+def test_submissions_reports_the_last_upload_and_total_size(fake_hf, info_log):
+    """The commit history and file sizes both come from metadata — nothing is downloaded."""
+    when = datetime.now(timezone.utc) - timedelta(hours=3)
+    fake_hf(
+        ["000/a.h5", "000/a_front.mp4"],
+        commits=[_fake_commit(when, title="Upload session 7", authors=("alex",))],
+        sizes={"000/a.h5": 2_000_000_000, "000/a_front.mp4": 500_000_000},
+    )
+
+    assert main(["submissions"]) == 0
+
+    assert "Total size:     2.50 GB" in info_log.text
+    assert "Last upload:" in info_log.text
+    assert "3 hour(s) ago" in info_log.text
+    assert "Upload session 7" in info_log.text
+    assert "alex" in info_log.text
+
+
+def test_submissions_falls_back_to_last_modified_without_a_history(fake_hf, info_log):
+    """A repo whose commit log cannot be read still reports when it last changed."""
+    when = datetime.now(timezone.utc) - timedelta(days=2)
+    fake_hf(["000/a.h5"], commits=None, last_modified=when)
+
+    assert main(["submissions"]) == 0
+    assert "Last upload:" in info_log.text
+    assert "2 day(s) ago" in info_log.text
+
+
+def test_submissions_survives_a_repo_with_no_upload_information(fake_hf, info_log):
+    fake_hf(["000/a.h5"], commits=None, last_modified=None)
+
+    assert main(["submissions"]) == 0
+    assert "Last upload:    unknown" in info_log.text
 
 
 def test_submissions_treats_a_missing_repo_as_success(fake_hf, info_log):

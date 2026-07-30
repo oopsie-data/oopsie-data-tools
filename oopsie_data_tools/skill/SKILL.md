@@ -27,7 +27,8 @@ Recording is code the user adds to their own control loop, not a CLI command —
 `reference/setup.md`. Converting pre-recorded data instead writes the HDF5 directly and so
 bypasses every recording-time check — see `reference/conversion.md`.
 
-Also: `show-config`, `submissions`, `inspect <file.h5>` (structure dump; works even on files
+Also: `show-config`, `submissions` (counts, total size and when the last upload landed, all
+from Hub metadata — nothing is downloaded), `inspect <file.h5>` (structure dump; works even on files
 `validate` rejects, and the path is positional), `restructure` (split a directory HuggingFace
 would reject), `install-skill`. `validate`, `show-config` and `inspect` take `--json`; prefer it.
 Two things the payloads do not tell you: a failed episode's `error_type` is either `validation`

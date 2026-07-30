@@ -127,7 +127,6 @@
       }
       .session-meta .ctx-sep { color: var(--text-muted-3); }
       .header-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-      .header-back { flex-shrink: 0; }
       .theme-toggle { padding: 8px 12px; font-size: var(--fs-ui); color: var(--text); }
       .statusline { font-family: var(--font-mono); font-size: var(--fs-ui); color: var(--text-muted); }
 
@@ -211,8 +210,28 @@
         border-radius: 8px;
         padding: 8px 12px;
       }
+      .episode-toolbar > .toolbar-left { grid-column: 1; display: flex; align-items: center; gap: 10px; min-width: 0; }
       .episode-toolbar > .episode-nav { grid-column: 2; justify-self: stretch; width: 100%; justify-content: center; }
       .episode-toolbar > .h5-search { grid-column: 3; }
+      /*
+        Both "Start next rollout" buttons — toolbar and save bar — are the same action, so
+        they get one look here rather than a class each. Deliberately not .primary: that is
+        green, which the save bar already spends on "Save annotation", and two filled
+        buttons side by side would compete. An accent outline reads as the same control in
+        either place while leaving Save the only primary in its row.
+      */
+      .rollout-btn {
+        flex: 0 0 auto;
+        padding: 6px 12px;
+        font-size: var(--fs-ui);
+        font-weight: 600;
+        white-space: nowrap;
+        color: var(--accent);
+        background: transparent;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+      }
+      .rollout-btn:hover:not(:disabled) { background: var(--bg-hover); }
       .episode-position {
         flex: 0 0 auto;
         font-size: var(--fs-label);
@@ -327,11 +346,13 @@
         padding-top: 12px;
         border-top: 1px solid var(--border-divider);
         display: flex;
-        align-items: center;
-        gap: 12px;
-        flex-wrap: wrap;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
       }
-      .save-bar .spacer { flex: 1 1 auto; }
+      /* Options above, buttons below: the row that grows is the one without the toggles. */
+      .save-options { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+      .save-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
       .dirty-indicator { font-size: var(--fs-ui); font-weight: 600; color: var(--warn); }
       .dirty-indicator.saved { color: var(--primary-bg); }
       .autoadvance-label { font-size: var(--fs-label); color: var(--text-muted-2); display: flex; align-items: center; gap: 5px; cursor: pointer; user-select: none; }
@@ -457,6 +478,8 @@
         color: var(--text-strong);
         line-height: 1.4;
         word-break: break-word;
+        /* Instructions are stored verbatim, so line breaks in one are shown, not folded. */
+        white-space: pre-wrap;
       }
 
       #episodeFields { margin-bottom: 16px; }
@@ -471,6 +494,10 @@
       #autofillRow { margin-bottom: 16px; }
       .autofill-label { display: block; font-size: var(--fs-ui); color: var(--text-muted-2); font-weight: 500; margin-bottom: 4px; }
       #autofillRow select { margin-top: 4px; }
+      /* Clears the instruction field's focus ring, which is drawn 2px outside its border
+         and would otherwise sit on top of this label. */
+      #instructionHistoryRow { margin-top: 14px; }
+      #instructionHistoryRow select { margin-top: 4px; }
 
       .link-btn { background: none; border: none; color: var(--accent); font-size: var(--fs-label); padding: 0 0 0 6px; font-weight: 600; cursor: pointer; }
       .link-btn:hover { background: none; text-decoration: underline; }
@@ -582,13 +609,15 @@
           <span id="sessionAnnotatorName">—</span>
         </div>
         <div class="header-actions">
-          <!-- Hidden by default. Only the in-the-loop mode reveals it (browse-only launches, i.e. standalone annotation of pre-collected data, never show this control). -->
-          <button class="header-back" id="backToTaskBtn" type="button" hidden title="Return to instruction / next rollout">Start next rollout</button>
           <button class="theme-toggle" id="themeToggleBtn" type="button" aria-label="Toggle light/dark theme" title="Toggle theme">Light mode</button>
         </div>
       </header>
 
       <nav class="episode-toolbar" aria-label="Episode navigation">
+        <div class="toolbar-left">
+          <!-- Hidden by default. Only the in-the-loop mode reveals it (browse-only launches, i.e. standalone annotation of pre-collected data, never show this control). -->
+          <button class="rollout-btn" id="backToTaskBtn" type="button" hidden title="Return to instruction / next rollout">▶ Start next rollout</button>
+        </div>
         <div class="episode-nav">
           <button id="prevBtn" type="button" title="Previous episode (←)" aria-label="Previous episode">◀ Prev</button>
           <div class="episode-name placeholder" id="sessionH5Name" aria-live="polite">No episode selected</div>
@@ -654,10 +683,22 @@
             <div id="instructionCard" hidden>
               <h2 class="card-title">Provide language instruction</h2>
               <label for="instruction">Instruction</label>
-              <input id="instruction" type="text" placeholder="e.g., pick up the red block and place it in the bin" />
+              <!-- A textarea, not an input, so a long instruction wraps and scrolls instead
+                   of running off the side. Same treatment as the annotation form's
+                   "Describe what happened": the shared textarea rule sizes it. -->
+              <textarea id="instruction" placeholder="e.g., pick up the red block and place it in the bin"></textarea>
+              <!--
+                The field is already prefilled with the last instruction, so a "repeat last"
+                button was a second Submit. The picker earns its place instead: it reaches
+                every recent task, not just the previous one, and is read from the recorded
+                episodes so it survives a restart.
+              -->
+              <div id="instructionHistoryRow" hidden>
+                <label class="autofill-label" for="instructionHistorySel">Reuse a recent instruction</label>
+                <select id="instructionHistorySel"><option value="">— select —</option></select>
+              </div>
               <div class="button-row">
                 <button class="primary" id="submitInstructionBtn">Submit instruction</button>
-                <button id="repeatInstructionBtn" hidden type="button">Repeat last</button>
               </div>
             </div>
 
@@ -808,13 +849,31 @@
             </div>
           </div>
           <div class="save-bar" id="saveBar">
-            <button class="primary" id="saveBtn">Save annotation</button>
-            <span class="dirty-indicator" id="dirtyIndicator" role="status" aria-live="polite"></span>
-            <span class="muted" id="saveMsg" role="status" aria-live="polite"></span>
-            <span class="spacer"></span>
-            <label class="autoadvance-label" title="After saving, jump to the next episode">
-              <input type="checkbox" id="autoAdvanceChk" /> Auto-advance
-            </label>
+            <!--
+              The options sit on their own row above the buttons. Sharing one row meant the
+              dirty indicator appearing ("● Unsaved changes") widened the row enough to wrap
+              the toggle onto a second line, so it jumped as you typed.
+
+              Two after-save options, both off by default and never both visible: nothing
+              moves on save unless one is ticked. autoAdvance applies to a stored episode
+              picked from the file tree, autoStartRollout to the rollout just recorded.
+              updateSaveButtonState picks which one the current target gets.
+            -->
+            <div class="save-options">
+              <label class="autoadvance-label" id="autoStartRolloutLabel" hidden title="After saving, return to the instruction page instead of staying on this rollout">
+                <input type="checkbox" id="autoStartRolloutChk" /> On save: start next rollout
+              </label>
+              <label class="autoadvance-label" id="autoAdvanceLabel" title="After saving, open the next episode that is not yet fully annotated">
+                <input type="checkbox" id="autoAdvanceChk" /> On save: next unannotated
+              </label>
+            </div>
+            <div class="save-actions">
+              <button class="primary" id="saveBtn">Save annotation</button>
+              <!-- In-the-loop only; revealed alongside the toolbar button. -->
+              <button class="rollout-btn" id="saveBarRolloutBtn" type="button" hidden title="Return to instruction / next rollout">▶ Start next rollout</button>
+              <span class="dirty-indicator" id="dirtyIndicator" role="status" aria-live="polite"></span>
+              <span class="muted" id="saveMsg" role="status" aria-live="polite"></span>
+            </div>
           </div>
         </section>
       </main>
@@ -1150,6 +1209,34 @@
         }
         renderAutofillOptions();
       }
+      // ── Recent instructions, for the instruction card's picker ──────────────
+      const INSTRUCTION_HISTORY_LIMIT = 10;
+      async function loadRecentInstructions() {
+        let items = [];
+        try {
+          items = await jget(`/api/instructions/recent?limit=${INSTRUCTION_HISTORY_LIMIT}`);
+        } catch (e) {
+          items = [];
+        }
+        const sel = el("instructionHistorySel");
+        const row = el("instructionHistoryRow");
+        if (!sel || !row) return;
+        const list = Array.isArray(items) ? items.filter((t) => String(t || "").trim()) : [];
+        // Built through the DOM, not an HTML string: the option's value carries the
+        // instruction verbatim, and putting a multi-line one through an attribute risks
+        // the parser touching its line breaks. Only the visible label is shortened.
+        sel.replaceChildren(new Option("— select —", ""));
+        for (const text of list) {
+          sel.append(new Option(instructionOptionLabel(text), String(text)));
+        }
+        row.hidden = list.length === 0; // a first session has no history to offer
+      }
+      /** Display only — a dropdown row is one line, however the instruction was typed. */
+      function instructionOptionLabel(text) {
+        const t = String(text).replace(/\s+/g, " ").trim();
+        return t.length > 90 ? t.slice(0, 90) + "…" : t;
+      }
+
       function annotationSummaryLabel(a) {
         const desc = String(a?.episode_description || "").trim() || "(no description)";
         const trimmed = desc.length > 80 ? desc.slice(0, 80) + "…" : desc;
@@ -1394,13 +1481,28 @@
         const btn = el("saveBtn");
         if (!btn) return;
         const hasTarget = Boolean(browseRelPath || currentSampleId);
-        btn.disabled = !hasTarget;
-        btn.title = hasTarget
-          ? ""
-          : "Select an episode from the file tree before saving.";
+        // A held rollout has already been written into its HDF5 by the rollout loop, which
+        // collected the annotation and moved on. Saving again would park a second copy in
+        // server memory that nothing ever reads, so the episode has to be reopened from the
+        // file list to be changed — and the button says so rather than pretending.
+        const savedRolloutHeld = holdAnnotateCard && !browseRelPath;
+        btn.disabled = !hasTarget || savedRolloutHeld;
+        btn.title = savedRolloutHeld
+          ? "Saved into the episode. Reopen it from the file list to change the annotation."
+          : hasTarget
+            ? ""
+            : "Select an episode from the file tree before saving.";
+
+        // The two after-save options apply to different targets and can never both fire:
+        // a stored episode advances the file cursor, a just-recorded rollout hands the
+        // robot back. Showing only the one that applies is what keeps them distinguishable.
+        const browsing = Boolean(browseRelPath);
+        setHidden("autoAdvanceLabel", !browsing);
+        setHidden("autoStartRolloutLabel", browsing || !currentSampleId || !inTheLoopMode());
       }
       let currentBrowseSample = null;
       let lastStatus = null;
+      let holdAnnotateCard = false; // keep a saved rollout on screen until the operator moves on
       let formPopulatedFor = null; // guards populateForm against clobbering live edits
       let videosRenderedFor = null;
       let lastH5ListSig = "";
@@ -1465,10 +1567,12 @@
         target = Math.max(0, Math.min(order.length - 1, target));
         await navigateToRel(order[target]);
       }
+      /** Returns false when there is nothing further to annotate, so callers can say so. */
       async function navigateToNextUnannotated() {
         const rel = findNextUnannotatedRel(currentFlatIndex());
-        if (!rel) return;
+        if (!rel) return false;
         await navigateToRel(rel);
+        return true;
       }
 
       // ── Dirty / saved indicator (#34) ──────────────────────────────────────
@@ -1508,8 +1612,16 @@
         if (changed) { setDirty(true); el("saveMsg").textContent = ""; }
       }
 
+      // Browse-only launches annotate pre-collected data: there is no rollout to start.
+      function inTheLoopMode() {
+        return !(typeof ANNOTATOR_BROWSE_ONLY !== "undefined" && ANNOTATOR_BROWSE_ONLY);
+      }
       function autoAdvanceEnabled() {
         const chk = el("autoAdvanceChk");
+        return chk ? chk.checked : false;
+      }
+      function autoStartRolloutEnabled() {
+        const chk = el("autoStartRolloutChk");
         return chk ? chk.checked : false;
       }
 
@@ -1790,6 +1902,18 @@
           return;
         }
 
+        // A saved rollout stays on screen until "Start next rollout" is clicked. The driver
+        // posts /api/task/done itself the moment it collects the annotation, so without
+        // this hold the instruction card would take over on the next poll — an advance the
+        // operator never asked for. A genuinely new rollout still wins.
+        if (holdAnnotateCard) {
+          if (st.status !== "annotating") {
+            syncHeaderPanel(st);
+            return;
+          }
+          holdAnnotateCard = false;
+        }
+
         const cs = st.current_sample || {};
         const nextSampleId = cs.sample_id || null;
 
@@ -1798,12 +1922,10 @@
           if (st.status === "idle" || st.status === "pending") {
             showOnly("instructionCard");
             const last = String(st.last_instruction || "").trim();
-            if (last) {
-              el("instruction").value = last;
-              el("repeatInstructionBtn").hidden = false;
-            } else {
-              el("repeatInstructionBtn").hidden = true;
-            }
+            if (last) el("instruction").value = last;
+            // Refreshed on arrival at the card: the rollout just finished is the newest
+            // entry, and an instruction edited in the browser changes what the data says.
+            loadRecentInstructions().catch(() => {});
           } else if (st.status === "running") {
             showOnly("runningCard");
           } else if (st.status === "annotating") {
@@ -1841,7 +1963,6 @@
       async function submitInstruction(v) {
         if (!v) return;
         el("submitInstructionBtn").disabled = true;
-        el("repeatInstructionBtn").disabled = true;
         try {
           await jpost("/api/task/submit", { instruction: v });
           el("instruction").value = "";
@@ -1849,17 +1970,26 @@
           showToast(`Could not submit instruction: ${e}`);
         } finally {
           el("submitInstructionBtn").disabled = false;
-          el("repeatInstructionBtn").disabled = false;
           await refresh();
         }
       }
 
+      // Submitted verbatim apart from surrounding whitespace: line breaks the operator
+      // typed are part of the instruction and reach language_instruction unchanged.
       el("submitInstructionBtn").addEventListener("click", () =>
         submitInstruction(el("instruction").value.trim())
       );
-      el("repeatInstructionBtn").addEventListener("click", () =>
-        submitInstruction(el("instruction").value.trim())
-      );
+
+      // Picking a past instruction fills the field rather than submitting it: this starts
+      // a robot moving, so the operator confirms with Submit exactly as when typing one.
+      el("instructionHistorySel").addEventListener("change", () => {
+        const chosen = el("instructionHistorySel").value;
+        if (chosen) {
+          el("instruction").value = chosen;
+          el("instruction").focus();
+        }
+        el("instructionHistorySel").value = "";
+      });
 
       el("saveBtn").addEventListener("click", async () => {
         if (!currentSampleId && !browseRelPath) return;
@@ -1882,14 +2012,26 @@
           markSaved();
           await pollH5List();
           loadRecentAnnotations().catch(() => {}); // the just-saved annotation becomes copyable
-          if (browseRelPath && autoAdvanceEnabled()) {
-            await navigateBy(1);
+          // Nothing moves on save unless the annotator opted in. Both branches are
+          // opt-in and independent: one walks the file tree, the other the rollout loop.
+          if (browseRelPath) {
+            if (autoAdvanceEnabled() && !(await navigateToNextUnannotated())) {
+              showToast("Saved. No unannotated episodes left after this one.", "info");
+            }
+          } else if (currentSampleId && IS_IN_THE_LOOP) {
+            if (autoStartRolloutEnabled()) {
+              await startNextRollout();
+            } else {
+              holdAnnotateCard = true;
+            }
           }
         } catch (e) {
           el("saveMsg").textContent = "Error saving.";
           showToast(`Could not save annotation: ${e}`);
         } finally {
-          el("saveBtn").disabled = false;
+          // Not a blanket re-enable: a held rollout must stay disabled, and a failed save
+          // must not, so the one function that knows the rule decides.
+          updateSaveButtonState();
         }
       });
 
@@ -1993,13 +2135,23 @@
         });
       })();
 
-      // Persisted auto-advance-on-save preference (#33), default on.
+      // Persisted jump-to-next-unannotated-on-save preference (#33), default off: saving
+      // must never move you off the episode you are looking at unless you asked it to.
       (function initAutoAdvance() {
         const KEY = "oopsie_auto_advance";
         const chk = el("autoAdvanceChk");
         if (!chk) return;
-        const saved = localStorage.getItem(KEY);
-        chk.checked = saved === null ? true : saved === "1";
+        chk.checked = localStorage.getItem(KEY) === "1";
+        chk.addEventListener("change", () => localStorage.setItem(KEY, chk.checked ? "1" : "0"));
+      })();
+
+      // Persisted auto-start-next-rollout preference, default off: it hands the robot
+      // straight back to the operator, so it is opted into rather than out of.
+      (function initAutoStartRollout() {
+        const KEY = "oopsie_auto_start_rollout";
+        const chk = el("autoStartRolloutChk");
+        if (!chk) return;
+        chk.checked = localStorage.getItem(KEY) === "1";
         chk.addEventListener("change", () => localStorage.setItem(KEY, chk.checked ? "1" : "0"));
       })();
 
@@ -2078,24 +2230,50 @@
         }
       });
 
-      el("backToTaskBtn").addEventListener("click", async () => {
+      let rolloutTransitionInFlight = false;
+      // Returns to the instruction page and releases the hold a saved rollout put on the
+      // annotate card. This is the only thing that advances past a saved rollout unless
+      // "On save: start next rollout" is ticked.
+      async function startNextRollout() {
+        // Both buttons call this, and a second click while the first is in flight would
+        // post /api/task/done again against a state it has already left.
+        if (rolloutTransitionInFlight) return;
+        rolloutTransitionInFlight = true;
+        holdAnnotateCard = false;
+        el("backToTaskBtn").disabled = true;
+        el("saveBarRolloutBtn").disabled = true;
         try {
           await jpost("/api/task/done", {});
         } catch (e) {
           /* already idle or network glitch; still return to instruction UI */
         }
-        clearBrowse();
-        showOnly("instructionCard");
-        await refresh();
-      });
+        try {
+          clearBrowse();
+          showOnly("instructionCard");
+          // The card above is optimistic: the server ignores "done" unless a rollout is
+          // being annotated, so it may still be running or pending one. Clearing lastStatus
+          // makes the next refresh re-sync the card from the real status instead of
+          // short-circuiting on "status unchanged" and leaving this card up for good.
+          lastStatus = null;
+          await refresh();
+        } finally {
+          rolloutTransitionInFlight = false;
+          el("backToTaskBtn").disabled = false;
+          el("saveBarRolloutBtn").disabled = false;
+        }
+      }
 
-      // Standalone (browse-only) launches only annotate pre-collected data — no
-      // rollout to start, so hide the "Start next rollout" affordance entirely.
-      // In-the-loop launches show it as the primary way to advance to the next
-      // policy execution.
-      const IS_IN_THE_LOOP = !(typeof ANNOTATOR_BROWSE_ONLY !== "undefined" && ANNOTATOR_BROWSE_ONLY);
+      el("backToTaskBtn").addEventListener("click", () => startNextRollout());
+      el("saveBarRolloutBtn").addEventListener("click", () => startNextRollout());
+
+      // Browse-only launches have no rollout to start, so both "Start next rollout"
+      // buttons stay hidden. In-the-loop launches show them as the way to advance to the
+      // next policy execution. The paired checkbox is left to updateSaveButtonState,
+      // which reveals it only while a just-recorded rollout is the save target.
+      const IS_IN_THE_LOOP = inTheLoopMode();
       if (IS_IN_THE_LOOP) {
         el("backToTaskBtn").hidden = false;
+        el("saveBarRolloutBtn").hidden = false;
       }
 
       updateSaveButtonState(); // start disabled with the "select an episode" tooltip
