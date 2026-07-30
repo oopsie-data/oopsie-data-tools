@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from oopsie_data_tools import cli
-from oopsie_data_tools.utils import claude_skill
+from oopsie_data_tools.utils import agent_skill_installation
 
 
 @pytest.fixture
@@ -23,20 +23,26 @@ def home(tmp_path, monkeypatch):
     project = tmp_path / "project"
     project.mkdir()
     monkeypatch.setenv("HOME", str(fake_home))
-    monkeypatch.setattr(claude_skill.Path, "home", classmethod(lambda cls: fake_home))
+    monkeypatch.setattr(
+        agent_skill_installation.Path,
+        "home",
+        classmethod(lambda cls: fake_home),
+    )
     monkeypatch.chdir(project)
     return fake_home
 
 
 def test_payload_ships_inside_the_package():
     """The skill must resolve through the installed package, not the repo layout."""
-    assert (claude_skill.bundled_skill_dir() / "SKILL.md").is_file()
+    assert (agent_skill_installation.bundled_skill_dir() / "SKILL.md").is_file()
 
 
 def test_skill_md_points_at_every_reference_page_it_ships():
     """SKILL.md is a router; a page it ships but never links is unreachable."""
-    reference = claude_skill.bundled_skill_dir() / "reference"
-    skill_md = (claude_skill.bundled_skill_dir() / "SKILL.md").read_text(encoding="utf-8")
+    reference = agent_skill_installation.bundled_skill_dir() / "reference"
+    skill_md = (agent_skill_installation.bundled_skill_dir() / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
 
     pages = sorted(p.name for p in reference.glob("*.md"))
     assert pages, "the router defers to reference pages; there must be some"
@@ -46,10 +52,12 @@ def test_skill_md_points_at_every_reference_page_it_ships():
 
 def test_skill_declares_frontmatter_an_agent_can_discover():
     """Without name/description in frontmatter the installed skill is never loaded."""
-    text = (claude_skill.bundled_skill_dir() / "SKILL.md").read_text(encoding="utf-8")
+    text = (agent_skill_installation.bundled_skill_dir() / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
     frontmatter = text.split("---\n")[1]
 
-    assert f"name: {claude_skill.SKILL_NAME}\n" in frontmatter
+    assert f"name: {agent_skill_installation.SKILL_NAME}\n" in frontmatter
     assert "description:" in frontmatter
 
 
@@ -79,7 +87,7 @@ def test_agent_selects_the_destination(home, tmp_path, agent, subdir):
 
 
 def test_only_supported_agent_choices_are_available():
-    assert set(claude_skill.AGENT_SKILL_DIRS) == {
+    assert set(agent_skill_installation.AGENT_SKILL_DIRS) == {
         "claude",
         "codex",
         "cursor",
@@ -89,7 +97,7 @@ def test_only_supported_agent_choices_are_available():
 
 
 def test_agent_mapping_keeps_labels_and_destinations_together():
-    assert claude_skill.AGENT_SKILL_DIRS == {
+    assert agent_skill_installation.AGENT_SKILL_DIRS == {
         "claude": ("Claude Code", ".claude/skills"),
         "codex": ("Codex", ".agents/skills"),
         "cursor": ("Cursor", ".agents/skills"),
@@ -119,13 +127,13 @@ def test_install_copies_the_whole_payload_tree(home, tmp_path):
     """Subdirectories install too, so a page added to the payload cannot go missing."""
     assert cli.main(["install-skill"]) == 0
 
-    source = claude_skill.bundled_skill_dir()
+    source = agent_skill_installation.bundled_skill_dir()
     dest = tmp_path / "project" / ".claude" / "skills" / "oopsie-data"
     expected = {p.relative_to(source) for p in source.rglob("*") if p.is_file()}
     # The version stamp is written at install time, so it is in the copy and not the source.
     installed = {p.relative_to(dest) for p in dest.rglob("*") if p.is_file()}
 
-    assert expected == installed - {Path(claude_skill.VERSION_STAMP)}
+    assert expected == installed - {Path(agent_skill_installation.VERSION_STAMP)}
 
 
 def test_user_scope_installs_into_the_home_directory(home, tmp_path):
@@ -181,7 +189,9 @@ def test_check_flags_a_copy_installed_from_another_version(home, tmp_path, caplo
     """The whole point: an upgraded package must not leave a stale skill looking fine."""
     assert cli.main(["install-skill"]) == 0
     installed = tmp_path / "project" / ".claude" / "skills" / "oopsie-data"
-    (installed / claude_skill.VERSION_STAMP).write_text("0.0.1\n", encoding="utf-8")
+    (installed / agent_skill_installation.VERSION_STAMP).write_text(
+        "0.0.1\n", encoding="utf-8"
+    )
 
     with caplog.at_level("INFO"):
         assert cli.main(["install-skill", "--check"]) == 1
@@ -193,7 +203,7 @@ def test_check_flags_a_copy_installed_from_another_version(home, tmp_path, caplo
 def test_check_reports_an_unstamped_copy(home, tmp_path):
     assert cli.main(["install-skill"]) == 0
     installed = tmp_path / "project" / ".claude" / "skills" / "oopsie-data"
-    (installed / claude_skill.VERSION_STAMP).unlink()
+    (installed / agent_skill_installation.VERSION_STAMP).unlink()
 
     assert cli.main(["install-skill", "--check"]) == 1
 
