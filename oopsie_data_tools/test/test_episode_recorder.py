@@ -169,6 +169,65 @@ def test_record_step_rejects_a_non_dict(recorder, bad):
             recorder.record_step(_obs(), bad)
 
 
+def test_record_step_rejects_non_finite_robot_data(recorder):
+    action = _action()
+    action["joint_velocity"][3] = np.inf
+
+    with pytest.raises(ValueError, match=r"action\['joint_velocity'\].*non-finite"):
+        recorder.record_step(_obs(), action)
+
+
+@pytest.mark.parametrize(
+    "bad_value,match",
+    [
+        (np.array([2.5], dtype=np.float32), "only binary 0 or 1"),
+        (np.zeros(3, dtype=np.float32), "3 command channels"),
+    ],
+    ids=["non-binary", "too-many-channels"],
+)
+def test_record_step_rejects_invalid_gripper_binary(tmp_path, bad_value, match):
+    profile = _profile(action_space=["joint_velocity", "gripper_binary"])
+    rec = EpisodeRecorder(profile, tmp_path, "test_operator")
+    action = {
+        "joint_velocity": np.zeros(7, dtype=np.float32),
+        "gripper_binary": bad_value,
+    }
+
+    with pytest.raises(ValueError, match=match):
+        rec.record_step(_obs(), action)
+
+
+def test_record_step_checks_the_second_biarm_quaternion(tmp_path):
+    profile = _profile(
+        is_biarm=True,
+        robot_state_keys=["cartesian_position", "gripper_position"],
+        robot_state_joint_names=[],
+        action_space=["cartesian_position", "gripper_position"],
+        action_joint_names=None,
+    )
+    rec = EpisodeRecorder(profile, tmp_path, "test_operator")
+    pose = np.zeros(14, dtype=np.float32)
+    pose[6] = 1.0
+    pose[13] = 1.0
+    observation = {
+        "robot_state": {
+            "cartesian_position": pose.copy(),
+            "gripper_position": np.zeros(1, dtype=np.float32),
+        },
+        "image_observation": {
+            cam: np.zeros((64, 64, 3), dtype=np.uint8) for cam in profile.camera_names
+        },
+    }
+    action = {
+        "cartesian_position": pose.copy(),
+        "gripper_position": np.zeros(1, dtype=np.float32),
+    }
+    action["cartesian_position"][10:14] = [0.0, 0.0, 0.0, 2.0]
+
+    with pytest.raises(ValueError, match=r"\[10:14\] \(arm 2\).*norm 2.000000"):
+        rec.record_step(observation, action)
+
+
 def test_save_writes_the_episode_it_buffered(recorder):
     for _ in range(4):
         recorder.record_step(_obs(), _action())

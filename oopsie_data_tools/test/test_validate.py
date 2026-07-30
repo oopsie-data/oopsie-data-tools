@@ -27,6 +27,7 @@ import json
 from pathlib import Path
 
 import h5py
+import numpy as np
 import pytest
 
 from oopsie_data_tools.test.fixtures.make_valid import write_valid_episode
@@ -36,6 +37,48 @@ from oopsie_data_tools.utils.validation.validation_utils import (
     validate_h5_file,
     validate_session_dir,
 )
+
+
+def _install_cartesian_trajectories(h5_path: Path, *, is_biarm: bool = False) -> None:
+    """Convert a valid joint-action fixture into a valid Cartesian one."""
+    width = 14 if is_biarm else 7
+    poses = np.zeros((20, width), dtype=np.float64)
+    poses[:, 6] = 1.0
+    if is_biarm:
+        poses[:, 13] = 1.0
+
+    with h5py.File(h5_path, "r+") as f:
+        profile = json.loads(f.attrs["robot_profile"])
+        profile["is_biarm"] = is_biarm
+        profile["robot_state_keys"] = [
+            "cartesian_position",
+            "joint_position",
+            "gripper_position",
+        ]
+        profile["action_space"] = ["cartesian_position", "gripper_position"]
+        profile["action_joint_names"] = None
+        f.attrs["robot_profile"] = json.dumps(profile)
+
+        f["observations/robot_states"].create_dataset(
+            "cartesian_position", data=poses
+        )
+        del f["actions/joint_velocity"]
+        del f["actions/cartesian_position"]
+        f["actions"].create_dataset("cartesian_position", data=poses)
+
+
+def _install_gripper_binary_trajectory(
+    h5_path: Path, values: np.ndarray, *, is_biarm: bool = False
+) -> None:
+    with h5py.File(h5_path, "r+") as f:
+        profile = json.loads(f.attrs["robot_profile"])
+        profile["is_biarm"] = is_biarm
+        profile["action_space"] = ["joint_velocity", "gripper_binary"]
+        f.attrs["robot_profile"] = json.dumps(profile)
+
+        del f["actions/gripper_position"]
+        del f["actions/gripper_binary"]
+        f["actions"].create_dataset("gripper_binary", data=values)
 
 # ---------------------------------------------------------------------------
 # Happy path
@@ -166,6 +209,119 @@ class TestTrajectoryLengths:
     def test_zero_steps_raises(self, invalid_fixtures):
         with pytest.raises(AssertionError, match="episode duration 0.00s out of range"):
             validate_h5_file(str(invalid_fixtures["invalid_zero_steps"]))
+
+
+class TestTrajectoryValues:
+    @pytest.mark.parametrize(
+        "dataset,index,value",
+        [
+            ("actions/joint_velocity", (4, 2), np.nan),
+            ("observations/robot_states/joint_position", (7, 3), np.inf),
+            ("actions/gripper_position", (9, 0), -np.inf),
+        ],
+        ids=["nan-action", "inf-observation", "negative-inf-action"],
+    )
+    def test_non_finite_trajectory_values_are_rejected(
+        self, tmp_path, dataset, index, value
+    ):
+        h5_path = write_valid_episode(tmp_path, "non_finite")
+        with h5py.File(h5_path, "r+") as f:
+            f[dataset][index] = value
+
+        with pytest.raises(EpisodeValidationError, match=rf"{dataset}.*non-finite") as exc:
+            validate_h5_file(str(h5_path), strict_annotation_check=True)
+        assert str(index) in str(exc.value)
+
+    def test_non_numeric_trajectory_array_is_a_validation_error(self, tmp_path):
+        h5_path = write_valid_episode(tmp_path, "strings")
+        with h5py.File(h5_path, "r+") as f:
+            del f["actions/joint_velocity"]
+            f["actions"].create_dataset(
+                "joint_velocity",
+                data=np.full((20, 7), "not-a-number", dtype="S12"),
+            )
+
+        with pytest.raises(
+            EpisodeValidationError,
+            match="actions/joint_velocity must be a real numeric array",
+        ):
+            validate_h5_file(str(h5_path), strict_annotation_check=True)
+
+    @pytest.mark.parametrize(
+        "group,arm_slice",
+        [
+            ("actions", slice(3, 7)),
+            ("observations/robot_states", slice(3, 7)),
+        ],
+        ids=["action", "observation"],
+    )
+    def test_non_unit_cartesian_quaternion_is_rejected(
+        self, tmp_path, group, arm_slice
+    ):
+        h5_path = write_valid_episode(tmp_path, "bad_quaternion")
+        _install_cartesian_trajectories(h5_path)
+        with h5py.File(h5_path, "r+") as f:
+            f[f"{group}/cartesian_position"][5, arm_slice] = [0.0, 0.0, 0.0, 2.0]
+
+        with pytest.raises(
+            EpisodeValidationError,
+            match=rf"{group}/cartesian_position.*sample index \(5,\).*norm 2.000000",
+        ):
+            validate_h5_file(str(h5_path), strict_annotation_check=True)
+
+    def test_second_biarm_quaternion_is_validated(self, tmp_path):
+        h5_path = write_valid_episode(tmp_path, "bad_second_arm")
+        _install_cartesian_trajectories(h5_path, is_biarm=True)
+        with h5py.File(h5_path, "r+") as f:
+            f["actions/cartesian_position"][8, 10:14] = [0.0, 0.0, 0.0, 0.0]
+
+        with pytest.raises(
+            EpisodeValidationError,
+            match=r"actions/cartesian_position\[10:14\] \(arm 2\).*index \(8,\)",
+        ):
+            validate_h5_file(str(h5_path), strict_annotation_check=True)
+
+    def test_valid_unit_quaternions_pass(self, tmp_path):
+        h5_path = write_valid_episode(tmp_path, "unit_quaternions")
+        _install_cartesian_trajectories(h5_path, is_biarm=True)
+
+        assert validate_h5_file(str(h5_path), strict_annotation_check=True) is True
+
+    @pytest.mark.parametrize(
+        "shape,is_biarm",
+        [((20,), False), ((20, 1), False), ((20,), True), ((20, 2), True)],
+    )
+    def test_documented_gripper_binary_shapes_pass(self, tmp_path, shape, is_biarm):
+        h5_path = write_valid_episode(tmp_path, "binary_shape")
+        _install_gripper_binary_trajectory(
+            h5_path, np.zeros(shape, dtype=np.float32), is_biarm=is_biarm
+        )
+
+        assert validate_h5_file(str(h5_path), strict_annotation_check=True) is True
+
+    def test_non_binary_gripper_value_is_rejected(self, tmp_path):
+        h5_path = write_valid_episode(tmp_path, "bad_binary_value")
+        values = np.zeros((20,), dtype=np.float32)
+        values[6] = 2.5
+        _install_gripper_binary_trajectory(h5_path, values)
+
+        with pytest.raises(
+            EpisodeValidationError,
+            match=r"actions/gripper_binary must contain only binary 0 or 1.*2.5",
+        ):
+            validate_h5_file(str(h5_path), strict_annotation_check=True)
+
+    def test_gripper_width_larger_than_arm_count_is_rejected(self, tmp_path):
+        h5_path = write_valid_episode(tmp_path, "bad_binary_width")
+        _install_gripper_binary_trajectory(
+            h5_path, np.zeros((20, 3), dtype=np.float32)
+        )
+
+        with pytest.raises(
+            EpisodeValidationError,
+            match=r"actions/gripper_binary has 3 command channels.*permits at most 1",
+        ):
+            validate_h5_file(str(h5_path), strict_annotation_check=True)
 
 
 # ---------------------------------------------------------------------------
