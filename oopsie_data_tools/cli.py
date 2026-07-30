@@ -25,8 +25,12 @@ import click
 
 # Imported eagerly, unlike the heavier command modules below: the parser needs the agent
 # names to build --agent's choices, and this module costs nothing but the standard library.
-from oopsie_data_tools.utils.claude_skill import AGENT_SKILL_DIRS as _AGENT_CHOICES
-from oopsie_data_tools.utils.claude_skill import DEFAULT_AGENT as _DEFAULT_AGENT
+from oopsie_data_tools.utils.agent_skill_installation import (
+    AGENT_SKILL_DIRS as _AGENT_CHOICES,
+)
+from oopsie_data_tools.utils.agent_skill_installation import (
+    DEFAULT_AGENT as _DEFAULT_AGENT,
+)
 from oopsie_data_tools.utils.hf_limits import BATCH_SIZE, FILE_LIMIT
 from oopsie_data_tools.utils.paths import ENV_CONFIG_DIR
 
@@ -817,7 +821,10 @@ def install_skill_cmd(agent, user, force, check):
       oopsie-data install-skill --agent none       # plain ./skills/
       oopsie-data install-skill --check            # is an installed copy out of date?
     """
-    from oopsie_data_tools.utils.claude_skill import check_installations, install_skill
+    from oopsie_data_tools.utils.agent_skill_installation import (
+        check_installations,
+        install_skill,
+    )
 
     if check:
         return check_installations()
