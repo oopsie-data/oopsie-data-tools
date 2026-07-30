@@ -1,4 +1,4 @@
-"""Install the bundled agent skill into a user's project or home directory.
+"""Install and inspect the bundled agent skill for supported coding agents.
 
 Agents discover skills by scanning the filesystem for ``<dir>/SKILL.md``, so "installing"
 one is a directory copy — no agent CLI, and no network access, is involved.
