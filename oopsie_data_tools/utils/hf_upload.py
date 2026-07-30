@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import os
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 
 from oopsie_data_tools.utils import contributor_config
@@ -200,6 +201,59 @@ def upload_dataset(api, repo: str, samples_dir: str) -> None:
 # ── Submissions query ─────────────────────────────────────────────────────────
 
 
+def _sibling_size(sibling) -> int:
+    """Bytes for one repo file. LFS-backed files carry their size under ``lfs`` instead."""
+    if sibling.size:
+        return int(sibling.size)
+    lfs = getattr(sibling, "lfs", None)
+    return int(getattr(lfs, "size", 0) or 0) if lfs else 0
+
+
+def _format_age(when: datetime) -> str:
+    delta = datetime.now(timezone.utc) - when
+    seconds = max(0, int(delta.total_seconds()))
+    if seconds < 3600:
+        return f"{seconds // 60} minute(s) ago"
+    if seconds < 86400:
+        return f"{seconds // 3600} hour(s) ago"
+    return f"{seconds // 86400} day(s) ago"
+
+
+def _log_last_upload(api, repo: str, last_modified: datetime | None) -> None:
+    """Report when the repo last changed and what landed, from the commit history.
+
+    The Hub exposes the git log over the API, so this needs no download — one request,
+    no files fetched. Best-effort: a repo whose history cannot be read still reports its
+    ``last_modified`` timestamp, and a missing timestamp is simply not printed.
+    """
+    commits = []
+    try:
+        commits = api.list_repo_commits(repo_id=repo, repo_type="dataset")
+    except Exception as e:
+        logger.debug("Could not read commit history for %s: %s", repo, e)
+
+    if commits:
+        latest = commits[0]
+        logger.info(
+            "Last upload:    %s  (%s)",
+            latest.created_at.astimezone().strftime("%Y-%m-%d %H:%M %Z"),
+            _format_age(latest.created_at),
+        )
+        if latest.authors:
+            logger.info("  by:           %s", ", ".join(latest.authors))
+        # One upload is several commits (upload_large_folder batches files), so the commit
+        # count is not an upload count and is deliberately not reported as one.
+        logger.info("  change:       %s", latest.title.strip() or "(no message)")
+    elif last_modified is not None:
+        logger.info(
+            "Last upload:    %s  (%s)",
+            last_modified.astimezone().strftime("%Y-%m-%d %H:%M %Z"),
+            _format_age(last_modified),
+        )
+    else:
+        logger.info("Last upload:    unknown (could not read the repo history)")
+
+
 def query_submissions(lab_id: str | None = None) -> int:
     """Report what has landed in ``OopsieData-Submissions/<lab_id>``, downloading nothing.
 
@@ -227,21 +281,28 @@ def query_submissions(lab_id: str | None = None) -> int:
     api = HfApi(token=hf_token or None)
 
     try:
-        api.repo_info(repo_id=repo, repo_type="dataset")
+        # files_metadata gives every file's size alongside its name, so the whole report —
+        # counts and total size — comes from this one call and nothing is downloaded.
+        info = api.repo_info(repo_id=repo, repo_type="dataset", files_metadata=True)
     except Exception:
         logger.info("No submissions repo found yet at https://huggingface.co/datasets/%s", repo)
         logger.info("(It is created automatically on your first successful upload.)")
         return 0
 
-    files = api.list_repo_files(repo_id=repo, repo_type="dataset")
+    siblings = list(info.siblings or [])
+    files = [s.rfilename for s in siblings]
     h5 = [f for f in files if f.endswith(".h5") or f.endswith(".hdf5")]
     mp4 = [f for f in files if f.endswith(".mp4")]
     by_dir = Counter(f.split("/")[0] if "/" in f else "(root)" for f in h5)
+    total_bytes = sum(_sibling_size(s) for s in siblings)
 
     logger.info("Repo:           https://huggingface.co/datasets/%s", repo)
     logger.info("Episodes (.h5): %d", len(h5))
     logger.info("Videos (.mp4):  %d", len(mp4))
     logger.info("Total files:    %d", len(files))
+    if total_bytes:
+        logger.info("Total size:     %.2f GB", total_bytes / 1e9)
+    _log_last_upload(api, repo, getattr(info, "last_modified", None))
     if by_dir:
         logger.info("Episodes by top-level folder:")
         for name, count in sorted(by_dir.items()):

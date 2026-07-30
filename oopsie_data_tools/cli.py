@@ -691,9 +691,10 @@ def upload(
 def submissions(lab_id):
     """Show what your lab has already uploaded to HuggingFace.
 
-    Report episode, video and file counts in OopsieData-Submissions/<lab_id> without
-    downloading anything. A repo that does not exist yet is not an error — it is created on
-    your first successful upload.
+    Report episode, video and file counts, the total size on the Hub, and when the last
+    upload landed for OopsieData-Submissions/<lab_id>. Everything is read from the Hub's
+    metadata and commit history, so nothing is downloaded. A repo that does not exist yet is
+    not an error — it is created on your first successful upload.
     """
     from oopsie_data_tools.utils.hf_upload import query_submissions
 
