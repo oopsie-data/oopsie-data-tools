@@ -463,6 +463,14 @@ class TestBetterErrors:
 
 
 class TestAnnotationSemantics:
+    def test_known_legacy_v1_vocabulary_passes(self, legacy_v1_episode) -> None:
+        assert (
+            validate_h5_file(
+                str(legacy_v1_episode), strict_annotation_check=True
+            )
+            is True
+        )
+
     def test_success_side_effect_with_severity_passes(self, tmp_path: Path) -> None:
         """A qualified success may set severity without a full taxonomy (#29)."""
         h5_path = write_valid_episode(tmp_path, stem="ep")
@@ -521,6 +529,45 @@ class TestAnnotationSemantics:
             g = f["episode_annotations"]["test_annotator"]
             g.attrs["taxonomy"] = json.dumps({"outcome": "sort_of_worked"})
         with pytest.raises(AssertionError, match="unrecognized outcome"):
+            validate_h5_file(str(h5_path), strict_annotation_check=True)
+
+    @pytest.mark.parametrize(
+        "field,value,match",
+        [
+            ("failure_category", ["grasp_failure"], "unrecognized failure_category"),
+            ("severity", "major", "severity must be one of"),
+        ],
+    )
+    def test_unrecognized_taxonomy_values_are_rejected(
+        self, tmp_path: Path, field, value, match
+    ) -> None:
+        h5_path = write_valid_episode(tmp_path, stem=f"unknown_{field}")
+        with h5py.File(h5_path, "r+") as f:
+            group = f["episode_annotations"]["test_annotator"]
+            taxonomy = json.loads(group.attrs["taxonomy"])
+            taxonomy[field] = value
+            group.attrs["taxonomy"] = json.dumps(taxonomy)
+
+        with pytest.raises(EpisodeValidationError, match=match):
+            validate_h5_file(str(h5_path), strict_annotation_check=True)
+
+    def test_unrecognized_legacy_v1_taxonomy_is_rejected_but_not_relabelled(
+        self, tmp_path: Path
+    ) -> None:
+        h5_path = write_valid_episode(tmp_path, stem="unknown_v1")
+        with h5py.File(h5_path, "r+") as f:
+            group = f["episode_annotations"]["test_annotator"]
+            group.attrs["success"] = 0.0
+            group.attrs["taxonomy"] = json.dumps(
+                {
+                    "failure_category": ["mystery failure"],
+                    "severity": "major",
+                }
+            )
+
+        with pytest.raises(
+            EpisodeValidationError, match="unrecognized failure_category.*mystery failure"
+        ):
             validate_h5_file(str(h5_path), strict_annotation_check=True)
 
     def test_incomplete_extra_subgroup_fails(self, tmp_path: Path) -> None:

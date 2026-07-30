@@ -23,6 +23,7 @@ from oopsie_data_tools.annotation_tool.annotation_schema import (
     outcome_to_success,
     read_annotation_attrs,
     success_to_outcome,
+    validate_annotation_vocabulary,
     write_annotation_attrs,
 )
 
@@ -42,6 +43,26 @@ def test_all_three_success_outcomes_score_as_success():
     for outcome in ("success", "success_suboptimal", "success_side_effect"):
         assert outcome_to_success(outcome) >= SUCCESS_THRESHOLD
     assert outcome_to_success("failure") < SUCCESS_THRESHOLD
+
+
+@pytest.mark.parametrize(
+    "annotation,expected",
+    [
+        ({"outcome": "sort_of"}, "outcome must be one of"),
+        (
+            {"outcome": "failure", "failure_category": ["grasp_failure"]},
+            "unrecognized failure_category",
+        ),
+        ({"outcome": "failure", "severity": "major"}, "severity must be one of"),
+    ],
+)
+def test_shared_vocabulary_validator_rejects_unknown_slugs(annotation, expected):
+    assert expected in validate_annotation_vocabulary(annotation)
+
+
+def test_shared_vocabulary_validator_keeps_optional_fields_optional():
+    assert validate_annotation_vocabulary({"outcome": "failure"}) == ""
+    assert validate_annotation_vocabulary({}, require_outcome=False) == ""
 
 
 def test_an_unrecognized_outcome_has_no_success_value():

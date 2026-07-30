@@ -236,7 +236,9 @@ def test_a_migrated_file_still_validates(tmp_path):
         for key in list(g.attrs):
             del g.attrs[key]
         for key, value in _v1_attrs(
-            success=0.0, failure_description="dropped it", severity="major"
+            success=0.0,
+            failure_description="dropped it",
+            severity="Low severity - no damage, can be reset and reattempted",
         ).items():
             g.attrs[key] = value
 

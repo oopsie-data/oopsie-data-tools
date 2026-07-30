@@ -17,6 +17,8 @@ from oopsie_data_tools.annotation_tool.annotation_schema import (
     OUTCOME_SUCCESS,
     OUTCOMES,
     SUCCESS_THRESHOLD,
+    read_annotation_attrs,
+    validate_annotation_vocabulary,
 )
 from oopsie_data_tools.utils.validation.array_validation import (
     require_finite_real_array,
@@ -357,3 +359,13 @@ def _validate_annotations(data: EpisodeData) -> None:
                         f"episode_annotations/{annotator}: outcome {outcome!r} disagrees "
                         f"with success {success} (threshold {SUCCESS_THRESHOLD})"
                     )
+
+            # Normalize known v1 prose to v2 slugs before applying the shared vocabulary checks.
+            normalized = read_annotation_attrs(attrs)
+            vocabulary_error = validate_annotation_vocabulary(
+                normalized, require_outcome=False
+            )
+            if vocabulary_error:
+                raise EpisodeValidationError(
+                    f"episode_annotations/{annotator}/taxonomy {vocabulary_error}"
+                )

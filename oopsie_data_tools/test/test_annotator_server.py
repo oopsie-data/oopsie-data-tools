@@ -149,6 +149,13 @@ def test_save_rejects_unknown_vocabulary(client, tmp_path: Path) -> None:
     resp = client.post("/api/h5/annotations?path=ep.h5", json={"outcome": "sort_of"})
     assert resp.status_code == 400
 
+    resp = client.post(
+        "/api/h5/annotations?path=ep.h5",
+        json={"outcome": "failure", "severity": "major"},
+    )
+    assert resp.status_code == 400
+    assert "severity" in resp.get_json()["error"]
+
 
 def test_save_accepts_a_partial_taxonomy(client, tmp_path: Path) -> None:
     """Only the outcome is required — a failure with just a severity saves cleanly."""
