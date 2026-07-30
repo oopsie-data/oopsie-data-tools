@@ -237,3 +237,7 @@ vendor/
 
 # OS/editor noise
 .DS_Store
+
+# Local mock/scratch driver for the annotation UI
+mock_rollout.py
+mock_rollout_data/
