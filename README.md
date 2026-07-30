@@ -1,5 +1,9 @@
 # Oopsie Tools
 
+<p align="center">
+  <img src="assets/release-figures.001.jpeg" alt="Oopsie Data: labs contribute real robot rollouts — failures, suboptimal, and successes — into a shared dataset." width="100%">
+</p>
+
 Tools for collecting, annotating, inspecting, and converting robotic manipulation rollout data.
 
 This repository currently provides tools for:
