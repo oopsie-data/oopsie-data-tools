@@ -58,6 +58,33 @@ FAILURE_CATEGORIES: tuple[str, ...] = (
 SEVERITIES: tuple[str, ...] = ("low", "medium", "catastrophic")
 
 
+def validate_annotation_vocabulary(
+    annotation: Mapping[str, Any], *, require_outcome: bool = True
+) -> str:
+    """Return an error when provided annotation slugs are outside the vocabulary.
+
+    Callers reading legacy files should normalize them with :func:`read_annotation_attrs`
+    first. Unknown legacy values deliberately survive that normalization and are rejected
+    here rather than being silently relabelled.
+    """
+    outcome = decode_attr(annotation.get("outcome")).lower()
+    if require_outcome and outcome not in OUTCOME_SUCCESS:
+        return f"outcome must be one of {list(OUTCOMES)}, got {annotation.get('outcome')!r}"
+    if outcome and outcome not in OUTCOME_SUCCESS:
+        return f"unrecognized outcome {outcome!r}; expected one of {list(OUTCOMES)}"
+
+    categories = [decode_attr(c) for c in as_value_list(annotation.get("failure_category"))]
+    unknown = [category for category in categories if category not in FAILURE_CATEGORIES]
+    if unknown:
+        return f"unrecognized failure_category: {unknown}"
+
+    severity = decode_attr(annotation.get("severity"))
+    if severity and severity not in SEVERITIES:
+        return f"severity must be one of {list(SEVERITIES)}, got {severity!r}"
+
+    return ""
+
+
 def outcome_to_success(outcome: Any) -> "float | None":
     """Numeric ``success`` for an outcome slug, or ``None`` if unrecognized.
 
