@@ -5,9 +5,9 @@ one is a directory copy — no agent CLI, and no network access, is involved.
 
 ``--agent`` picks that directory and defaults to Claude Code's, because a skill that lands
 somewhere nothing scans is not installed in any useful sense. Claude Code uses
-``.claude/skills/``; Codex and Cursor share ``.agents/skills/``; ``--agent none`` writes
-to plain ``skills/``. ``--user`` swaps the working directory for the home directory,
-making the skill available in every project.
+``.claude/skills/``; Codex, Cursor, and the generic ``agents`` choice share
+``.agents/skills/``; ``--agent none`` writes to plain ``skills/``. ``--user`` swaps the
+working directory for the home directory, making the skill available in every project.
 
 Installing is an explicit opt-in subcommand rather than anything that runs at install time:
 contributors who do not use an agent never have files written for them at all.
@@ -35,6 +35,7 @@ AGENT_SKILL_DIRS: dict[str, tuple[str, str]] = {
     "claude": ("Claude Code", ".claude/skills"),
     "codex": ("Codex", ".agents/skills"),
     "cursor": ("Cursor", ".agents/skills"),
+    "agents": ("any agent following the shared convention", ".agents/skills"),
     "none": ("a plain directory, scanned by nothing", "skills"),
 }
 
