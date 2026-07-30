@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # publish.yml calls this so a release runs the same gate as a PR, not a copy of it.
+  workflow_call:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

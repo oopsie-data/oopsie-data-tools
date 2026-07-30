@@ -1,55 +1,67 @@
 name: Publish to PyPI
 
-# Release flow: bump `version` in pyproject.toml, merge to main, then
-#   git tag v0.2.1 && git push origin v0.2.1
-# The tag must sit on a commit that is on main, and its version must match
-# pyproject.toml — both are enforced below before anything is uploaded.
+# Release flow: bump `version` in pyproject.toml, open a PR, merge to main.
+# Nothing else. A push to main whose version is not yet on PyPI is a release: this
+# workflow builds it, uploads it, and then pushes the matching `v<version>` tag.
+# PyPI itself is the record of what has shipped, so re-running on an unchanged
+# version is a no-op rather than a failed upload.
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
 
 jobs:
-  build:
+  decide:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      publish: ${{ steps.check.outputs.publish }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          # The ancestry check below needs main, which a tag checkout does not fetch.
-          fetch-depth: 0
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-
-      - name: Tag must be on main
+      - id: check
+        name: Is this version already on PyPI?
         run: |
-          git fetch --no-tags origin main
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "::error::${GITHUB_REF_NAME} points at a commit that is not on main."
-            exit 1
+          version="$(uv version --short)"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          if curl -sf "https://pypi.org/pypi/oopsie-data-tools/${version}/json" > /dev/null; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::${version} is already published; nothing to do."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::${version} is new; releasing."
           fi
 
-      # A tag whose version disagrees with pyproject.toml publishes a release under a
-      # name nobody expects, and PyPI uploads cannot be replaced. Fail before building.
-      - name: Tag must match the project version
-        run: |
-          project_version="$(uv version --short)"
-          tag_version="${GITHUB_REF_NAME#v}"
-          if [ "$project_version" != "$tag_version" ]; then
-            echo "::error::tag ${GITHUB_REF_NAME} != pyproject.toml version ${project_version}."
-            exit 1
-          fi
+  # ci.yml runs on this push anyway, but as a separate workflow it cannot gate an upload
+  # PyPI will not let us replace. Calling it makes the full matrix a hard prerequisite.
+  ci:
+    needs: decide
+    if: needs.decide.outputs.publish == 'true'
+    uses: ./.github/workflows/ci.yml
 
+  build:
+    needs: [decide, ci]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
       - run: uv build
       - name: Check metadata renders on PyPI
         run: uvx twine check --strict dist/*
-
       - uses: actions/upload-artifact@v4
         with:
           name: dist
           path: dist/
 
   publish:
-    needs: build
+    needs: [decide, build]
     runs-on: ubuntu-latest
     # Trusted Publishing: PyPI verifies this workflow's OIDC token instead of an API
     # token, so there is no long-lived credential in the repo. The environment name
@@ -65,3 +77,17 @@ jobs:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+  tag:
+    needs: [decide, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag the released commit
+        env:
+          VERSION: ${{ needs.decide.outputs.version }}
+        run: |
+          git tag "v${VERSION}"
+          git push origin "v${VERSION}"
