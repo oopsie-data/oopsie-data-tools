@@ -24,6 +24,7 @@ def validate_h5_file(
     h5_path: str,
     strict_annotation_check: bool = False,
     log_path: str | Path | None = None,
+    allowed_root: str | Path | None = None,
 ) -> bool:
     """Validate a single HDF5 episode file.
 
@@ -31,6 +32,8 @@ def validate_h5_file(
         h5_path: Path to the .h5 file.
         strict_annotation_check: If True, require that annotations are present and non-empty.
         log_path: Optional file to also write log output to (mirrors ``validate_session_dir``).
+        allowed_root: Directory that referenced videos must remain inside. Defaults to the
+            HDF5 file's parent directory.
 
     Returns:
         True if all checks pass.
@@ -41,7 +44,7 @@ def validate_h5_file(
     """
     if log_path is not None:
         setup_logger(__name__, log_path)
-    data = load_episode_from_h5(h5_path)
+    data = load_episode_from_h5(h5_path, allowed_root=allowed_root)
     validate_episode(data, strict_annotation_check=strict_annotation_check)
     return True
 
@@ -63,16 +66,23 @@ def collect_validation_results(
     target = os.path.abspath(os.path.normpath(target))
     if os.path.isfile(target):
         paths = [Path(target)]
+        allowed_root = str(Path(target).parent)
     elif os.path.isdir(target):
         paths = find_episode_files(target)
+        allowed_root = target
     else:
         paths = []
+        allowed_root = target
 
     results = []
     for path in paths:
         record = {"episode": path.name, "path": str(path), "passed": True}
         try:
-            validate_h5_file(str(path), strict_annotation_check=strict_annotation_check)
+            validate_h5_file(
+                str(path),
+                strict_annotation_check=strict_annotation_check,
+                allowed_root=allowed_root,
+            )
         except EpisodeValidationError as e:
             record.update(passed=False, error=str(e), error_type="validation")
         except Exception as e:
@@ -107,7 +117,11 @@ def validate_session_dir(session_dir: str, strict_annotation_check: bool = False
         name = os.path.basename(path)
         logger.info("[%d/%d] %s", i, len(h5_files), name)
         try:
-            validate_h5_file(path, strict_annotation_check=strict_annotation_check)
+            validate_h5_file(
+                path,
+                strict_annotation_check=strict_annotation_check,
+                allowed_root=session_path,
+            )
             logger.info("%s passed", name)
         except EpisodeValidationError as e:
             failures += 1

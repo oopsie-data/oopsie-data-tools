@@ -10,6 +10,7 @@ so nothing failed — until the directory moved.
 
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -19,7 +20,12 @@ import pytest
 
 from oopsie_data_tools.annotation_tool.episode_recorder import EpisodeRecorder
 from oopsie_data_tools.utils.robot_profile.robot_profile import RobotProfile
-from oopsie_data_tools.utils.validation.validation_utils import validate_h5_file
+from oopsie_data_tools.utils.validation.errors import EpisodeValidationError
+from oopsie_data_tools.utils.validation.validation_utils import (
+    collect_validation_results,
+    validate_h5_file,
+    validate_session_dir,
+)
 
 CAMERAS = ["left", "wrist"]
 
@@ -102,6 +108,11 @@ def _stored_paths(h5_path: Path) -> dict[str, str]:
         return {cam: group[cam][()].decode("utf-8") for cam in group}
 
 
+def _replace_stored_path(h5_path: Path, camera: str, path: str) -> None:
+    with h5py.File(h5_path, "r+") as f:
+        f[f"observations/video_paths/{camera}"][()] = path
+
+
 def test_stored_paths_are_relative_and_point_at_the_videos(episode):
     """Deliberately loose: any relative layout is fine as long as it resolves.
 
@@ -171,3 +182,55 @@ def test_a_symlinked_session_can_also_be_moved(symlinked_episode, tmp_path):
     moved = next(destination.glob("*.h5"))
 
     assert validate_h5_file(str(moved), strict_annotation_check=True)
+
+
+def test_validator_rejects_a_relative_video_path_outside_the_submitted_directory(
+    episode, tmp_path
+):
+    submitted = episode.parent
+    original = submitted / _stored_paths(episode)["left"]
+    outside = tmp_path / "outside.mp4"
+    shutil.copy2(original, outside)
+    rel = os.path.relpath(outside, submitted)
+    _replace_stored_path(episode, "left", rel)
+
+    with pytest.raises(EpisodeValidationError, match="escapes the submitted directory"):
+        validate_h5_file(str(episode), strict_annotation_check=True)
+
+    results = collect_validation_results(str(submitted))
+    failed = next(result for result in results if result["path"] == str(episode))
+    assert failed["passed"] is False
+    assert failed["error_type"] == "validation"
+    assert "escapes the submitted directory" in failed["error"]
+
+
+def test_validator_rejects_a_symlink_to_a_video_outside_the_submitted_directory(
+    episode, tmp_path
+):
+    submitted = episode.parent
+    original = submitted / _stored_paths(episode)["left"]
+    outside = tmp_path / "outside.mp4"
+    shutil.copy2(original, outside)
+    link = submitted / "linked-outside.mp4"
+    try:
+        link.symlink_to(outside)
+    except (OSError, NotImplementedError) as e:
+        pytest.skip(f"cannot create symlinks on this platform: {e}")
+    _replace_stored_path(episode, "left", link.name)
+
+    with pytest.raises(EpisodeValidationError, match="escapes the submitted directory"):
+        validate_h5_file(str(episode), strict_annotation_check=True)
+
+
+def test_directory_validation_allows_a_parent_relative_video_inside_the_submission(tmp_path):
+    submitted = tmp_path / "submission"
+    nested = submitted / "episodes"
+    nested.mkdir(parents=True)
+    episode = _record_episode(nested)
+    original = episode.parent / _stored_paths(episode)["left"]
+    shared = submitted / "shared-left.mp4"
+    shutil.move(str(original), shared)
+    rel = os.path.relpath(shared, episode.parent)
+    _replace_stored_path(episode, "left", rel)
+
+    assert validate_session_dir(str(submitted), strict_annotation_check=True) == 0

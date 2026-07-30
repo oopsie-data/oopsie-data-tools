@@ -11,6 +11,7 @@ It does NOT perform semantic validation — that is episode_validator's job.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any
 
 import cv2
@@ -70,7 +71,7 @@ def load_video_info(mp4_path: str) -> VideoInfo:
         cap.release()
 
 
-def _resolve_video_path(rel: str, h5_dir: str, label: str) -> str:
+def _resolve_video_path(rel: str, h5_dir: str, allowed_root: str, label: str) -> str:
     if not rel:
         raise EpisodeValidationError(f"Empty video path for {label}")
     if os.path.isabs(rel):
@@ -81,13 +82,22 @@ def _resolve_video_path(rel: str, h5_dir: str, label: str) -> str:
             f"Video path for {label} is absolute ({rel}); it must be relative to the "
             "episode file so the session directory can be moved or uploaded."
         )
-    return os.path.normpath(os.path.join(h5_dir, rel))
+    candidate = (Path(h5_dir) / rel).resolve()
+    root = Path(allowed_root).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError as e:
+        raise EpisodeValidationError(
+            f"Video path for {label} escapes the submitted directory: {rel!r} resolves "
+            f"to {candidate}, outside {root}."
+        ) from e
+    return str(candidate)
 
 
 # ── Schema-specific loaders ────────────────────────────────────────────────────
 
 
-def _load_oopsie_v1(f: h5py.File, h5_dir: str) -> EpisodeData:
+def _load_oopsie_v1(f: h5py.File, h5_dir: str, allowed_root: str) -> EpisodeData:
     for attr in _OOPSIE_V1_REQUIRED_ROOT_ATTRS:
         if attr not in f.attrs:
             raise EpisodeValidationError(f"Missing root attr: {attr}")
@@ -133,7 +143,7 @@ def _load_oopsie_v1(f: h5py.File, h5_dir: str) -> EpisodeData:
     videos: dict[str, VideoInfo] = {}
     for cam in vp_group.keys():
         rel = _read_string_dataset(vp_group[cam])
-        abs_path = _resolve_video_path(rel, h5_dir, f"camera {cam}")
+        abs_path = _resolve_video_path(rel, h5_dir, allowed_root, f"camera {cam}")
         videos[cam] = load_video_info(abs_path)
 
     annotations = _load_annotations_oopsie_v1(f)
@@ -179,7 +189,9 @@ def _load_annotations_oopsie_v1(f: h5py.File) -> dict[str, dict[str, Any]] | Non
     return annotations
 
 
-def load_episode_from_h5(h5_path: str) -> EpisodeData:
+def load_episode_from_h5(
+    h5_path: str, allowed_root: str | os.PathLike[str] | None = None
+) -> EpisodeData:
     """Load an episode HDF5 file into a schema-agnostic EpisodeData.
 
     Raises EpisodeValidationError with a descriptive message if the file is unreadable,
@@ -197,10 +209,11 @@ def load_episode_from_h5(h5_path: str) -> EpisodeData:
         raise EpisodeValidationError(f"H5 file is not readable: {resolved}. Error: {e}") from e
 
     h5_dir = os.path.dirname(resolved)
+    resolved_root = str(Path(allowed_root).resolve()) if allowed_root is not None else h5_dir
     try:
         schema = decode_h5_scalar(f.attrs.get("schema", ""))
         if schema == OOPSIE_DATA_SCHEMA_V1:
-            return _load_oopsie_v1(f, h5_dir)
+            return _load_oopsie_v1(f, h5_dir, resolved_root)
         else:
             raise EpisodeValidationError(
                 f"Unsupported or missing schema: '{schema}' in file: {resolved}"
