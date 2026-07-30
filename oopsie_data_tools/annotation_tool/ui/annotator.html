@@ -1244,8 +1244,8 @@
       // enclosing <label class="opt-row"> from toggling its radio/checkbox.
       //
       // The icon itself is aria-hidden and not focusable: its definition reaches
-      // assistive tech as the option's aria-describedby text instead, and it is the
-      // option's own focus that shows the tooltip visually.
+      // assistive tech as the option's aria-describedby text. Visually the tooltip
+      // follows the pointer only — hovering the icon shows it, anything else hides it.
       (function initFloatingTooltip() {
         const tip = document.getElementById("floatingTooltip");
         if (!tip) return;
@@ -1264,6 +1264,7 @@
           input.setAttribute("aria-describedby", desc.id);
         });
         const MARGIN = 8;
+        let current = null;
         function place(icon) {
           const text = icon.getAttribute("data-tooltip") || "";
           if (!text) return hide();
@@ -1287,34 +1288,27 @@
           tip.style.top = `${Math.round(top)}px`;
         }
         function hide() {
+          current = null;
           tip.classList.remove("visible");
         }
         function targetIcon(e) {
           const t = e.target;
           return (t && t.closest) ? t.closest(".info-icon[data-tooltip]") : null;
         }
-        document.addEventListener("mouseover", (e) => {
-          const icon = targetIcon(e);
-          if (icon) place(icon);
-        });
-        document.addEventListener("mouseout", (e) => {
-          const icon = targetIcon(e);
-          const to = e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest(".info-icon[data-tooltip]");
-          if (icon && icon !== to) hide();
-        });
-        // Keyboard equivalent of hover: focusing an option shows its definition.
-        function focusedIcon(e) {
-          const t = e.target;
-          const label = t && t.closest ? t.closest("label") : null;
-          return label ? label.querySelector(".info-icon[data-tooltip]") : null;
+        // Every pointer move re-decides visibility, so the tooltip cannot outlive
+        // the hover that opened it (mouseout alone is missed when the pointer
+        // leaves via an element that never received mouseover, or when the layout
+        // shifts out from under it).
+        function sync(icon) {
+          if (icon === current) return;
+          current = icon;
+          if (icon) place(icon); else hide();
         }
-        document.addEventListener("focusin", (e) => {
-          const icon = focusedIcon(e);
-          if (icon) place(icon);
-          else hide();
-        });
-        document.addEventListener("focusout", (e) => {
-          if (focusedIcon(e)) hide();
+        document.addEventListener("mouseover", (e) => sync(targetIcon(e)));
+        document.addEventListener("mousemove", (e) => sync(targetIcon(e)));
+        document.addEventListener("mouseleave", () => sync(null));
+        document.addEventListener("mouseout", (e) => {
+          if (!e.relatedTarget) sync(null);
         });
         // Reposition on scroll/resize while visible so the anchor stays glued.
         window.addEventListener("scroll", () => hide(), true);

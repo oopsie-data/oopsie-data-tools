@@ -7,6 +7,12 @@ it). `oopsie-data inspect <file.h5>` dumps one file's structure, even if `valida
 
 ## Errors you will actually see
 
+**`ImportError: numpy.core.multiarray failed to import`** on any `oopsie-data` command. An
+`opencv-python` older than `4.10.0.84` alongside numpy 2 — the wheel is built against numpy 1 and
+states no upper bound, so nothing rejects the pairing at install time. Raise opencv
+(`uv add "opencv-python>=4.10.0.84"`) or drop numpy below 2; our floor of `4.6.0.66` is
+deliberately permissive so the toolkit fits into older robot environments.
+
 **`lab_id` unset, blank, or still `your_lab_id`.** A `RuntimeError` pointing at the registration
 form, from `EpisodeRecorder.__init__` and from `oopsie-data upload`. Capitalization must match
 the value you were given exactly.

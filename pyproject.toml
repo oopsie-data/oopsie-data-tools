@@ -16,7 +16,9 @@ dependencies = [
     "imageio>=2.35.1",
     "imageio-ffmpeg>=0.5.1",
     "numpy>=1.20.0",
-    "opencv-python>=4.11.0.86",
+    # Floor is what our cv2 calls need, not what is ABI-safe: opencv-python < 4.10 is built
+    # against numpy 1 and fails to import under numpy 2 without declaring the conflict.
+    "opencv-python>=4.6.0.66",
     "pyyaml>=6.0.0",
     "scipy>=1.10.1",
 ]

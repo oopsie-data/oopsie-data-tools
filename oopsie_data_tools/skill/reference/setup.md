@@ -24,6 +24,12 @@ uv sync --extra droid           # only for examples/inference_examples/
 In a `uv sync` checkout, every command below needs a `uv run` prefix. Confirm
 `oopsie-data --version` works before continuing.
 
+Warning: the `opencv-python` floor is `4.6.0.66`, low enough to fit into an existing robot
+environment. Versions below `4.10.0.84` are built against numpy 1 and raise `ImportError:
+numpy.core.multiarray failed to import` under numpy 2, and opencv declares no upper bound that
+would let a resolver avoid that pairing. If the environment has numpy 2, it needs
+`opencv-python>=4.10.0.84`.
+
 ## 2. Where configs live
 
 The two kinds are looked up through **separate chains**. In each, the first location that exists
