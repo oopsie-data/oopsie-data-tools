@@ -30,12 +30,10 @@ from flask import Flask, abort, jsonify, request, send_file
 
 from oopsie_data_tools.annotation_tool.annotation_schema import (
     ANNOTATION_SCHEMA_CURRENT,
-    FAILURE_CATEGORIES,
     OUTCOME_SUCCESS,
-    OUTCOMES,
-    SEVERITIES,
     parse_taxonomy,
     read_annotation_attrs,
+    validate_annotation_vocabulary,
     write_annotation_attrs,
 )
 from oopsie_data_tools.utils.validation.annotation_completeness import is_complete
@@ -59,22 +57,7 @@ def validate_annotation_payload(payload: dict[str, Any]) -> str:
     v1's prose values at least looked obviously wrong. Only ``outcome`` is required; every
     other field is optional and is checked only if present.
     """
-    outcome = str(payload.get("outcome", "") or "").strip().lower()
-    if outcome not in OUTCOME_SUCCESS:
-        return f"outcome must be one of {list(OUTCOMES)}, got {payload.get('outcome')!r}"
-
-    categories = payload.get("failure_category") or []
-    if not isinstance(categories, (list, tuple)):
-        categories = [categories]
-    unknown = [c for c in categories if str(c).strip() not in FAILURE_CATEGORIES]
-    if unknown:
-        return f"unrecognized failure_category: {unknown}"
-
-    severity = str(payload.get("severity", "") or "").strip()
-    if severity and severity not in SEVERITIES:
-        return f"severity must be one of {list(SEVERITIES)}, got {severity!r}"
-
-    return ""
+    return validate_annotation_vocabulary(payload)
 
 
 @dataclass
