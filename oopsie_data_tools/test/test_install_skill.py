@@ -68,6 +68,7 @@ def test_default_install_lands_where_an_agent_actually_scans(home, tmp_path):
         ("claude", ".claude/skills"),
         ("codex", ".agents/skills"),
         ("cursor", ".agents/skills"),
+        ("agents", ".agents/skills"),
         ("none", "skills"),
     ],
 )
@@ -78,7 +79,13 @@ def test_agent_selects_the_destination(home, tmp_path, agent, subdir):
 
 
 def test_only_supported_agent_choices_are_available():
-    assert set(claude_skill.AGENT_SKILL_DIRS) == {"claude", "codex", "cursor", "none"}
+    assert set(claude_skill.AGENT_SKILL_DIRS) == {
+        "claude",
+        "codex",
+        "cursor",
+        "agents",
+        "none",
+    }
 
 
 def test_agent_mapping_keeps_labels_and_destinations_together():
@@ -86,6 +93,7 @@ def test_agent_mapping_keeps_labels_and_destinations_together():
         "claude": ("Claude Code", ".claude/skills"),
         "codex": ("Codex", ".agents/skills"),
         "cursor": ("Cursor", ".agents/skills"),
+        "agents": ("any agent following the shared convention", ".agents/skills"),
         "none": ("a plain directory, scanned by nothing", "skills"),
     }
 
@@ -96,6 +104,7 @@ def test_agent_mapping_keeps_labels_and_destinations_together():
         ("claude", "Claude Code picks it up from there"),
         ("codex", "Codex picks it up from there"),
         ("cursor", "Cursor picks it up from there"),
+        ("agents", "any agent following the shared convention picks it up from there"),
         ("none", "No agent scans this directory"),
     ],
 )
