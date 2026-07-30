@@ -6,6 +6,12 @@
 
 Oopsie Data is an initative to build a large-scale dataset of real robot manipulation failures (along with other mixed-quality behaviors and successes). Oopsie Data Tools helps labs record, annotate, and contribute those rollouts instead of throwing them away.
 
+Ready to contribute? Start with the [Quickstart Guide](https://oopsie-data.com/quickstart).
+
+For documentation, contribution instructions, and tooling guides, visit our [website](https://oopsie-data.com/).
+
+---
+
 This repository currently provides tools for:
 
 - HDF5 episode recording (`EpisodeRecorder`)
@@ -13,14 +19,6 @@ This repository currently provides tools for:
 - In-the-loop annotation during policy rollout
 
 as well as all the necessary utilities to validate, inspect, and upload Oopsie-Data to the official repositories.
-
-[Sign up today](https://forms.gle/9arwZHAvRjvbozoT7) and start contributing!
-
----
-
-For documentation, contribution instructions, and tooling guides, visit [our website](https://oopsie-data.com/).
-
-Ready to contribute? Start with the [Quickstart Guide](https://oopsie-data.com/quickstart).
 
 
 ## Need help integrating?
