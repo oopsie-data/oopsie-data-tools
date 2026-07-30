@@ -18,6 +18,11 @@ from oopsie_data_tools.annotation_tool.annotation_schema import (
     OUTCOMES,
     SUCCESS_THRESHOLD,
 )
+from oopsie_data_tools.utils.validation.array_validation import (
+    require_finite_real_array,
+    validate_cartesian_quaternions,
+    validate_gripper_binary_trajectory,
+)
 from oopsie_data_tools.utils.validation.episode_data import EpisodeData
 from oopsie_data_tools.utils.validation.errors import EpisodeValidationError
 
@@ -36,6 +41,7 @@ def validate_episode(data: EpisodeData, strict_annotation_check: bool = False) -
     _validate_metadata(data)
     _validate_profile_consistency(data)
     _validate_trajectory_lengths(data)
+    _validate_trajectory_values(data)
     _validate_video_specs(data)
     if strict_annotation_check:
         if not data.annotations:
@@ -57,6 +63,10 @@ def _validate_metadata(data: EpisodeData) -> None:
         raise EpisodeValidationError("lab_id has not been changed from the placeholder value")
     if not data.operator_name:
         raise EpisodeValidationError("operator_name is empty")
+    if not np.isfinite(data.control_freq):
+        raise EpisodeValidationError(
+            f"control_freq must be finite, got {data.control_freq!r}"
+        )
     if not (data.control_freq > 0):
         raise EpisodeValidationError("control_freq must be > 0")
     duration_s = data.trajectory_length / data.control_freq
@@ -200,6 +210,29 @@ def _validate_trajectory_lengths(data: EpisodeData) -> None:
         )
 
 
+def _validate_trajectory_values(data: EpisodeData) -> None:
+    """Reject unreadable numeric values before applying field-specific semantics."""
+    groups = (
+        ("observations/robot_states", data.observations),
+        ("actions", data.actions),
+    )
+    for group, arrays in groups:
+        for key, value in arrays.items():
+            label = f"{group}/{key}"
+            try:
+                require_finite_real_array(value, label)
+                if key == "cartesian_position":
+                    validate_cartesian_quaternions(value, label)
+                if key == "gripper_binary":
+                    validate_gripper_binary_trajectory(
+                        value,
+                        is_biarm=data.robot_profile.is_biarm,
+                        label=label,
+                    )
+            except ValueError as e:
+                raise EpisodeValidationError(str(e)) from e
+
+
 def _validate_video_specs(data: EpisodeData) -> None:
     """Check per-camera resolution, frame count alignment, and duration alignment."""
     if not data.videos:
@@ -287,6 +320,10 @@ def _validate_annotations(data: EpisodeData) -> None:
             raise EpisodeValidationError(
                 f"episode_annotations/{annotator}/success is NaN — "
                 "episode has not been fully annotated yet"
+            )
+        if not np.isfinite(success):
+            raise EpisodeValidationError(
+                f"episode_annotations/{annotator}/success must be finite: {success}"
             )
         if not (0.0 <= success <= 1.0):
             raise EpisodeValidationError(

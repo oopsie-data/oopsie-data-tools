@@ -20,6 +20,11 @@ from oopsie_data_tools.annotation_tool.annotation_schema import (
 from oopsie_data_tools.utils import contributor_config
 from oopsie_data_tools.utils.robot_profile.robot_profile import RobotProfile, robot_profile_to_json
 from oopsie_data_tools.utils.robot_profile.rotation_utils import ActionQuatConversion
+from oopsie_data_tools.utils.validation.array_validation import (
+    require_finite_real_array,
+    validate_cartesian_quaternions,
+    validate_gripper_binary_step,
+)
 from oopsie_data_tools.utils.validation.episode_data import EpisodeData, VideoInfo
 from oopsie_data_tools.utils.validation.episode_validator import validate_episode
 
@@ -372,6 +377,17 @@ class EpisodeRecorder:
                 "observation",
             )
 
+        for key, value in action.items():
+            require_finite_real_array(value, f"action[{key!r}]")
+        for key, value in robot_state.items():
+            require_finite_real_array(value, f"observation['robot_state'][{key!r}]")
+        if "gripper_binary" in action:
+            validate_gripper_binary_step(
+                action["gripper_binary"],
+                is_biarm=self.robot_profile.is_biarm,
+                label="action['gripper_binary']",
+            )
+
         return robot_state, action
 
     @staticmethod
@@ -387,13 +403,9 @@ class EpisodeRecorder:
                 f"{label}['cartesian_position'] must have shape (7,) or (14,) — "
                 f"[x, y, z, qx, qy, qz, qw], got shape {arr.shape}"
             )
-        quat_norm = np.linalg.norm(arr[3:7])
-        if not np.isclose(quat_norm, 1.0, atol=1e-2):
-            raise ValueError(
-                f"{label}['cartesian_position'][3:7] must be a unit scalar-last quaternion "
-                f"(norm ≈ 1.0), got norm {quat_norm:.6f}"
-            )
-        return arr
+        return validate_cartesian_quaternions(
+            arr, f"{label}['cartesian_position']"
+        )
 
     @staticmethod
     def _check_quaternion_convention(arr: np.ndarray) -> None:
