@@ -37,7 +37,7 @@ Metadata:
 
 - `language_instruction`, `episode_id`, `lab_id`, `operator_name` non-empty; `lab_id` not still
   `your_lab_id`.
-- `control_freq > 0`.
+- `control_freq` finite and greater than zero.
 - **Episode duration, not step count**: `trajectory_length / control_freq` between 1 and 600
   seconds. A 5-step episode at 10 Hz is rejected.
 
@@ -49,15 +49,20 @@ Profile consistency — the profile documents the episode, so both directions ar
   `len(action_joint_names)` the last axis of `actions/joint_position` / `joint_velocity`, when
   those are recorded.
 - `cartesian_position` (state or action) must be exactly 7 DOF, or 14 when `is_biarm` — it is
-  `[x, y, z, qx, qy, qz, qw]` per arm. Joint counts are deliberately **not** constrained by
-  `is_biarm`, and gripper DOF is not checked at all.
+  `[x, y, z, qx, qy, qz, qw]` per arm, with a unit quaternion for every arm. Joint counts are
+  deliberately **not** constrained by `is_biarm`.
+- `gripper_binary` contains only `0` or `1`. A single arm accepts `(T,)` or `(T, 1)`; a biarm
+  profile also accepts `(T, 2)` for independent per-arm commands.
 
-Trajectories: every observation and action array must share the same leading dimension `T`.
+Trajectories: every observation and action array must be real numeric and finite, and must share
+the same leading dimension `T`.
 
 Videos:
 
 - The stored path must be relative to the `.h5`; an absolute path resolves only on the machine
   that recorded the episode, and is rejected.
+- After resolving `..` and symlinks, the video must remain inside the submitted directory.
+  Parent-relative paths are allowed when they still resolve inside that directory.
 - Each side between 180 and 1280 px.
 - Frame count within `max(5, 0.1 * T)` of `T`, and duration within 0.5 s of `T / control_freq`.
 - Frame counts across cameras within 1 of each other.
@@ -90,14 +95,16 @@ The vocabularies are defined once in `annotation_tool/annotation_schema.py`:
   `collision`, `hardware`, `not_attempted`, `other`.
 - `severity` — `low`, `medium`, `catastrophic`.
 
-The validator requires a numeric, non-NaN `success` in `[0.0, 1.0]`, and — if a `taxonomy` attr
+The validator requires a numeric, finite `success` in `[0.0, 1.0]`, and — if a `taxonomy` attr
 is present — that it parses as a JSON object whose `outcome` is one of the four above and agrees
-in sign with `success` (`failure` iff `success < 0.5`). Everything else is optional in every
-branch, so a partial annotation, including a failure with no taxonomy at all, is valid.
+in sign with `success` (`failure` iff `success < 0.5`). Category and severity remain optional,
+but every provided non-empty value must come from the vocabulary above. A partial annotation,
+including a failure with no taxonomy at all, is valid.
 
 Files from an older release carry `oopsie_failure_taxonomy_v1`, no `outcome`, and
-`failure_description` instead of `episode_description`. They are upcast on read, never
-rewritten, and stay valid — a dataset can hold both versions.
+`failure_description` instead of `episode_description`. They are upcast on read and never
+rewritten. Known v1 prose vocabulary remains valid; unknown legacy category or severity values
+stay visible but are rejected by strict upload validation.
 
 ## Recording-time checks
 
@@ -108,7 +115,9 @@ to equal `action_space` exactly, with no `None` values.
 
 `cartesian_position` is converted to `(x, y, z, qx, qy, qz, qw)` via
 `orientation_representation`, then shape-checked to `(7,)` or `(14,)` with a unit quaternion in
-`[3:7]`. Everything else is recorded as given.
+every arm slice. Quaternion component order is taken from the declared representation; it
+cannot be inferred reliably from component values. Robot-state and action values must be real
+and finite, and `gripper_binary` is shape/domain checked before the step is buffered.
 
 `finish_rollout` validates *before* writing videos or HDF5, so a rejected episode leaves nothing
 on disk. It runs the same checks as `validate` **except** the annotation ones — which is why

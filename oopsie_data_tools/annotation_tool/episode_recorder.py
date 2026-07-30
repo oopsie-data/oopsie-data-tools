@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import datetime
-import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -27,8 +26,6 @@ from oopsie_data_tools.utils.validation.array_validation import (
 )
 from oopsie_data_tools.utils.validation.episode_data import EpisodeData, VideoInfo
 from oopsie_data_tools.utils.validation.episode_validator import validate_episode
-
-logger = logging.getLogger(__name__)
 
 REQUIRED_OBSERVATION_KEYS = ["robot_state", "image_observation"]
 
@@ -368,7 +365,6 @@ class EpisodeRecorder:
             action["cartesian_position"] = self._normalize_cartesian(
                 action["cartesian_position"], self.quat_conversion, "action"
             )
-            self._check_quaternion_convention(action["cartesian_position"])
 
         if "cartesian_position" in robot_state:
             robot_state["cartesian_position"] = self._normalize_cartesian(
@@ -406,15 +402,6 @@ class EpisodeRecorder:
         return validate_cartesian_quaternions(
             arr, f"{label}['cartesian_position']"
         )
-
-    @staticmethod
-    def _check_quaternion_convention(arr: np.ndarray) -> None:
-        """Warn on a pose that looks scalar-first. A heuristic, so it never raises."""
-        if abs(arr[6]) > 0.99 and np.linalg.norm(arr[3:6]) < 0.1:
-            logger.warning(
-                "action['cartesian_position'][3:7] looks like (w,x,y,z) order rather than "
-                "the expected (x,y,z,w)."
-            )
 
     # TODO: Polish this function!
     def _save_h5(self, path: Path, data: dict[str, Any]) -> None:

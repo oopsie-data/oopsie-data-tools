@@ -36,9 +36,9 @@ when `action_space` holds `joint_position`/`joint_velocity`, `cartesian_position
 `cartesian_position`/`cartesian_velocity` — the state must observe the space the action controls,
 as a union.
 
-For annotations, `outcome` is the only field that matters to validation. It is one of `success`,
-`success_suboptimal`, `success_side_effect`, `failure`, and must agree in sign with `success`
-(`failure` iff `success < 0.5`). `failure_category` and `severity` are optional lists/slugs —
+For annotations, `outcome` is one of `success`, `success_suboptimal`, `success_side_effect`,
+`failure`, and must agree in sign with `success` (`failure` iff `success < 0.5`).
+`failure_category` and `severity` are optional, but provided values must be recognized slugs —
 see `reference/format.md` for the vocabularies. A converter that emits no `episode_annotations`
 produces structurally valid files that still fail `validate` with `Annotations dict is empty,
 must be provided for upload`: either carry the source labels across, or plan to run
@@ -82,14 +82,17 @@ not necessarily what the source dataset held.
 `EpisodeRecorder.record_step`; writing HDF5 directly bypasses it entirely. `cartesian_position`
 must be written as `[x, y, z, qx, qy, qz, qw]` per arm — shape `(T, 7)`, or `(T, 14)` when
 `is_biarm`. Declaring `euler_xyz` and then writing euler angles is rejected on width (6 ≠ 7), or
-worse, silently mislabels data if the widths line up. Use
+worse, can mislabel data if the widths line up: component order cannot be inferred from values
+alone. Every written quaternion is norm-checked. Use
 `to_quaternion_poses(poses, "euler_xyz", is_biarm=...)` for a whole trajectory at once, and
 declare the *result* (`"quat"`) in the profile — the profile describes what is on disk.
 
 **Video and duration limits are checked downstream, so the fix is upstream.** Each side must be
 180–1280 px (`resize_frames` handles the ceiling), episode duration
 (`trajectory_length / control_freq`) must be 1–600 s, all arrays must share the same leading `T`,
-and frame counts must land within `max(5, 0.1 * T)` of `T`.
+all robot arrays must contain finite real numbers, and frame counts must land within
+`max(5, 0.1 * T)` of `T`. Video paths must remain inside the submitted directory after resolving
+`..` and symlinks.
 
 Check the result with `oopsie-data validate --path <dir>`, or `oopsie-data inspect <file.h5>`
 for a structure dump that works even on files `validate` rejects.

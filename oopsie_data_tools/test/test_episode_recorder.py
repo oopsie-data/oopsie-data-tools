@@ -228,6 +228,37 @@ def test_record_step_checks_the_second_biarm_quaternion(tmp_path):
         rec.record_step(observation, action)
 
 
+def test_scalar_last_identity_quaternion_does_not_emit_an_order_warning(
+    tmp_path, caplog
+):
+    profile = _profile(
+        robot_state_keys=["cartesian_position", "gripper_position"],
+        robot_state_joint_names=[],
+        action_space=["cartesian_position", "gripper_position"],
+        action_joint_names=None,
+    )
+    rec = EpisodeRecorder(profile, tmp_path, "test_operator")
+    identity_pose = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0])
+    observation = {
+        "robot_state": {
+            "cartesian_position": identity_pose.copy(),
+            "gripper_position": np.zeros(1),
+        },
+        "image_observation": {
+            cam: np.zeros((64, 64, 3), dtype=np.uint8) for cam in profile.camera_names
+        },
+    }
+    action = {
+        "cartesian_position": identity_pose.copy(),
+        "gripper_position": np.zeros(1),
+    }
+
+    rec.record_step(observation, action)
+
+    assert "quaternion" not in caplog.text.lower()
+    assert "order" not in caplog.text.lower()
+
+
 def test_save_writes_the_episode_it_buffered(recorder):
     for _ in range(4):
         recorder.record_step(_obs(), _action())
