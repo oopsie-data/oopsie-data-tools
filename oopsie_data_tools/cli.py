@@ -780,7 +780,7 @@ restructure.help = restructure.help.format(limit=FILE_LIMIT, batch=BATCH_SIZE)
     default=_DEFAULT_AGENT,
     help=(
         f"Which agent's skills directory to install into (default: {_DEFAULT_AGENT}); "
-        "'none' writes to plain ./skills/"
+        "'agents' writes to shared ./.agents/skills/; 'none' writes to plain ./skills/"
     ),
 )
 @click.option(
@@ -813,6 +813,7 @@ def install_skill_cmd(agent, user, force, check):
       oopsie-data install-skill --user             # available in every project
       oopsie-data install-skill --agent cursor
       oopsie-data install-skill --agent codex
+      oopsie-data install-skill --agent agents     # shared ./.agents/skills/
       oopsie-data install-skill --agent none       # plain ./skills/
       oopsie-data install-skill --check            # is an installed copy out of date?
     """
