@@ -8,7 +8,10 @@ import h5py
 import numpy as np
 import pytest
 
-from oopsie_data_tools.annotation_tool.episode_recorder import EpisodeRecorder, write_mp4
+from oopsie_data_tools.annotation_tool.episode_recorder import (
+    EpisodeRecorder,
+    write_mp4,
+)
 from oopsie_data_tools.utils.robot_profile.robot_profile import RobotProfile
 
 
@@ -289,3 +292,38 @@ def test_save_raises_without_steps(recorder):
 def test_write_mp4_rejects_a_bad_frame_array(tmp_path, shape):
     with pytest.raises(ValueError):
         write_mp4(tmp_path / "out.mp4", np.zeros(shape, dtype=np.uint8), fps=10.0)
+
+
+def test_write_mp4_uses_explicit_crf(monkeypatch, tmp_path):
+    writer_calls = []
+
+    class FakeWriter:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def append_data(self, frame):
+            pass
+
+    def fake_get_writer(*args, **kwargs):
+        writer_calls.append((args, kwargs))
+        return FakeWriter()
+
+    monkeypatch.setattr(
+        "oopsie_data_tools.annotation_tool.episode_recorder.imageio.get_writer",
+        fake_get_writer,
+    )
+
+    write_mp4(
+        tmp_path / "out.mp4",
+        np.zeros((1, 64, 64, 3), dtype=np.uint8),
+        fps=10.0,
+    )
+
+    assert len(writer_calls) == 1
+    _, kwargs = writer_calls[0]
+    assert kwargs["codec"] == "libx264"
+    assert kwargs["quality"] is None
+    assert kwargs["output_params"] == ["-crf", "19"]

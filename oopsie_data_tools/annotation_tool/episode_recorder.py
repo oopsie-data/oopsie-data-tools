@@ -41,6 +41,8 @@ VALID_ACTION_KEYS = {
     "gripper_binary",
 }
 
+VIDEO_CRF = 19
+
 
 def write_mp4(video_path: Path, frames: np.ndarray, fps: float) -> None:
     """Write RGB frames to an MP4 file.
@@ -65,6 +67,8 @@ def write_mp4(video_path: Path, frames: np.ndarray, fps: float) -> None:
         mode="I",
         fps=float(fps),
         codec="libx264",
+        quality=None,
+        output_params=["-crf", str(VIDEO_CRF)],
     ) as writer:
         for frame in frames:
             writer.append_data(np.asarray(frame, dtype=np.uint8))
