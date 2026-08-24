@@ -9,6 +9,8 @@ with no file I/O.  This makes the same validation callable from:
 from __future__ import annotations
 
 import json
+import logging
+import os
 from typing import Any
 
 import numpy as np
@@ -27,12 +29,14 @@ from oopsie_data_tools.utils.validation.array_validation import (
 )
 from oopsie_data_tools.utils.validation.episode_data import EpisodeData
 from oopsie_data_tools.utils.validation.errors import EpisodeValidationError
+from oopsie_data_tools.utils.video_encoding import VIDEO_CRF
 
 MAX_IMAGE_SIZE = 1280
 MIN_IMAGE_SIZE = 180
 # Bounds on episode *duration*, not step count: trajectory_length / control_freq.
 MIN_EPISODE_DURATION_S = 1
 MAX_EPISODE_DURATION_S = 600
+logger = logging.getLogger(__name__)
 
 
 def validate_episode(data: EpisodeData, strict_annotation_check: bool = False) -> None:
@@ -246,6 +250,20 @@ def _validate_video_specs(data: EpisodeData) -> None:
 
     frame_counts: dict[str, int] = {}
     for cam, info in data.videos.items():
+        video_label = os.path.basename(info.path) if info.path else f"camera {cam}"
+        if info.crf is None:
+            logger.warning(
+                "[video quality] %s: CRF could not be determined; validation will continue.",
+                video_label,
+            )
+        elif info.crf > VIDEO_CRF:
+            logger.warning(
+                "[video quality] %s: detected CRF %.1f, which is more lossy than the "
+                "recommended maximum CRF %d; validation will continue.",
+                video_label,
+                info.crf,
+                VIDEO_CRF,
+            )
         if not (info.width >= MIN_IMAGE_SIZE and info.height >= MIN_IMAGE_SIZE):
             raise EpisodeValidationError(
                 f"Video too small for camera {cam}: {info.width}x{info.height} "

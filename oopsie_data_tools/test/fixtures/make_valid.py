@@ -78,7 +78,7 @@ def _write_video(path: Path, color: tuple[int, int, int], n_frames: int = 25, si
         mode="I",
         fps=10,
         codec="libx264",
-        output_params=["-crf", "28"],
+        output_params=["-crf", "19"],
     ) as writer:
         for frame in frames:
             writer.append_data(frame)

@@ -103,7 +103,7 @@ def _write_video(
     frames = np.full((n_frames, size, size, 3), color, dtype=np.uint8)
     with imageio.get_writer(
         str(path), format="FFMPEG", mode="I", fps=10, codec="libx264",
-        output_params=["-crf", "28"],
+        output_params=["-crf", "19"],
     ) as writer:
         for frame in frames:
             writer.append_data(frame)

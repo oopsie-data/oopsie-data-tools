@@ -18,14 +18,18 @@ class VideoInfo:
     fps: float
     width: int
     height: int
+    path: Optional[str] = None
+    crf: Optional[float] = None
 
     @classmethod
-    def from_frames(cls, frames: list[np.ndarray], fps: float) -> VideoInfo:
+    def from_frames(
+        cls, frames: list[np.ndarray], fps: float, crf: Optional[float] = None
+    ) -> VideoInfo:
         """Build VideoInfo from in-memory frame buffers (recorder pre-save path)."""
         if not frames:
             raise ValueError("Cannot build VideoInfo from empty frame list")
         h, w = frames[0].shape[:2]
-        return cls(frame_count=len(frames), fps=fps, width=w, height=h)
+        return cls(frame_count=len(frames), fps=fps, width=w, height=h, crf=crf)
 
 
 @dataclass

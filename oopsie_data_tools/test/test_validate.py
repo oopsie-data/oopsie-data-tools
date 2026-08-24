@@ -24,14 +24,17 @@ TestValidateSessionDir    – directory-level validation
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import h5py
 import numpy as np
 import pytest
 
+from oopsie_data_tools.cli import _CliFormatter
 from oopsie_data_tools.test.fixtures.make_valid import write_valid_episode
 from oopsie_data_tools.utils.hf_upload import run_validation
+from oopsie_data_tools.utils.validation.episode_loader import detect_x264_crf
 from oopsie_data_tools.utils.validation.errors import EpisodeValidationError
 from oopsie_data_tools.utils.validation.validation_utils import (
     validate_h5_file,
@@ -353,6 +356,79 @@ class TestVideos:
 
         with pytest.raises(AssertionError, match="Video too small"):
             validate_h5_file(str(h5_path), strict_annotation_check=True)
+
+    @pytest.mark.parametrize(
+        "crf, expected_message",
+        [
+            (18.0, None),
+            (19.0, None),
+            (23.0, "detected CRF 23.0"),
+            (None, "CRF could not be determined"),
+        ],
+        ids=["better-than-target", "at-target", "too-lossy", "unknown"],
+    )
+    def test_crf_check_is_advisory(
+        self, valid_episode, monkeypatch, caplog, crf, expected_message
+    ):
+        monkeypatch.setattr(
+            "oopsie_data_tools.utils.validation.episode_loader.detect_x264_crf",
+            lambda _path: crf,
+        )
+        caplog.set_level(logging.WARNING)
+
+        assert validate_h5_file(str(valid_episode), strict_annotation_check=True) is True
+
+        if expected_message is None:
+            assert "[video quality]" not in caplog.text
+        else:
+            assert expected_message in caplog.text
+            assert "validation will continue" in caplog.text
+
+    def test_detect_x264_crf_reads_embedded_encoder_options(self, tmp_path):
+        video = tmp_path / "encoder-options.mp4"
+        video.write_bytes(
+            b"binary prefix x264 - core 164 - H.264 encoder - options: "
+            b"cabac=1 rc=crf mbtree=1 crf=23.0 qcomp=0.60 binary suffix"
+        )
+
+        assert detect_x264_crf(str(video)) == 23.0
+
+    def test_detect_x264_crf_reads_an_encoded_fixture(self, valid_episode):
+        with h5py.File(valid_episode, "r") as f:
+            rel = f["observations/video_paths/front"][()].decode("utf-8")
+
+        assert detect_x264_crf(str(valid_episode.parent / rel)) == 19.0
+
+    def test_detect_x264_crf_does_not_guess_from_unrelated_metadata(self, tmp_path):
+        video = tmp_path / "no-encoder-options.mp4"
+        video.write_bytes(b"description=export crf=28.0 bitrate=1234")
+
+        assert detect_x264_crf(str(video)) is None
+
+    @pytest.mark.parametrize(
+        "level, is_yellow",
+        [
+            (logging.INFO, False),
+            (logging.WARNING, True),
+            (logging.ERROR, False),
+        ],
+        ids=["info", "warning", "error"],
+    )
+    def test_cli_formatter_only_colors_warning_level(self, level, is_yellow):
+        record = logging.LogRecord(
+            name="validator",
+            level=level,
+            pathname=__file__,
+            lineno=1,
+            msg="log message",
+            args=(),
+            exc_info=None,
+        )
+
+        rendered = _CliFormatter("%(message)s").format(record)
+
+        assert ("\x1b[33m" in rendered) is is_yellow
+        assert "log message" in rendered
 
 
 # ---------------------------------------------------------------------------

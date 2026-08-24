@@ -11,8 +11,9 @@ It does NOT perform semantic validation — that is episode_validator's job.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import cv2
 import h5py
@@ -34,6 +35,14 @@ _OOPSIE_V1_REQUIRED_ROOT_ATTRS = (
     "robot_profile",
 )
 
+_X264_CRF_PATTERN = re.compile(
+    rb"x264 - core.{0,8192}?options:.{0,8192}?\brc=crf\b.{0,2048}?\bcrf=([0-9]+(?:\.[0-9]+)?)",
+    re.DOTALL,
+)
+_CRF_SCAN_CHUNK_SIZE = 64 * 1024
+_CRF_SCAN_OVERLAP = 16 * 1024
+_CRF_SCAN_LIMIT = 8 * 1024 * 1024
+
 
 # ── HDF5 scalar helpers ────────────────────────────────────────────────────────
 
@@ -43,6 +52,31 @@ def _read_string_dataset(ds: h5py.Dataset) -> str:
 
 
 # ── Video loading ──────────────────────────────────────────────────────────────
+
+
+def detect_x264_crf(mp4_path: str) -> Optional[float]:
+    """Return an x264 CRF embedded in the video bitstream, if one is recoverable.
+
+    libx264 normally writes its encoder options into an H.264 user-data SEI message. CRF
+    is not required MP4 metadata, though, so an absent or stripped message is reported as
+    ``None`` rather than guessed from bitrate or quantizer statistics.
+    """
+    overlap = b""
+    remaining = _CRF_SCAN_LIMIT
+    try:
+        with open(mp4_path, "rb") as stream:
+            while remaining and (
+                chunk := stream.read(min(_CRF_SCAN_CHUNK_SIZE, remaining))
+            ):
+                remaining -= len(chunk)
+                window = overlap + chunk
+                match = _X264_CRF_PATTERN.search(window)
+                if match:
+                    return float(match.group(1))
+                overlap = window[-_CRF_SCAN_OVERLAP:]
+    except OSError:
+        return None
+    return None
 
 
 def load_video_info(mp4_path: str) -> VideoInfo:
@@ -66,7 +100,14 @@ def load_video_info(mp4_path: str) -> VideoInfo:
             raise EpisodeValidationError(f"Invalid FPS ({fps}): {mp4_path}")
         if not (frame_count > 0):
             raise EpisodeValidationError(f"Invalid frame count ({frame_count}): {mp4_path}")
-        return VideoInfo(frame_count=frame_count, fps=fps, width=width, height=height)
+        return VideoInfo(
+            frame_count=frame_count,
+            fps=fps,
+            width=width,
+            height=height,
+            path=mp4_path,
+            crf=detect_x264_crf(mp4_path),
+        )
     finally:
         cap.release()
 
