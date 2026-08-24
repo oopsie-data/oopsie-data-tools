@@ -18,6 +18,7 @@ from oopsie_data_tools.utils.validation.episode_validator import validate_episod
 from oopsie_data_tools.utils.validation.errors import EpisodeValidationError
 
 logger = logging.getLogger(__name__)
+VALIDATION_LOGGER_NAME = "oopsie_data_tools.utils.validation"
 
 
 def validate_h5_file(
@@ -43,7 +44,10 @@ def validate_h5_file(
             ``AssertionError``, so ``except AssertionError`` still catches it.
     """
     if log_path is not None:
-        setup_logger(__name__, log_path)
+        # Attach at the shared validation namespace so sibling modules such as
+        # episode_loader and episode_validator are captured too. A handler on this module's
+        # logger only sees its own records; logging propagation never travels sideways.
+        setup_logger(VALIDATION_LOGGER_NAME, log_path)
     data = load_episode_from_h5(h5_path, allowed_root=allowed_root)
     validate_episode(data, strict_annotation_check=strict_annotation_check)
     return True
@@ -98,7 +102,7 @@ def validate_session_dir(session_dir: str, strict_annotation_check: bool = False
         0 if all files passed, 1 if any failed or the directory is invalid.
     """
     if log_path is not None:
-        setup_logger(__name__, log_path)
+        setup_logger(VALIDATION_LOGGER_NAME, log_path)
 
     session_path = os.path.abspath(os.path.normpath(session_dir))
     if not os.path.isdir(session_path):
