@@ -39,6 +39,24 @@ logger = logging.getLogger(__name__)
 DIR = click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path)
 
 
+def _emit_update_warning(message: str) -> None:
+    """Print the complete update notice in yellow without contaminating stdout."""
+    click.secho(message, fg="yellow", err=True)
+
+
+def _interactive_update_warning() -> str | None:
+    """Return an update notice only when a person is running the command in a terminal."""
+    if not sys.stderr.isatty():
+        return None
+    try:
+        from oopsie_data_tools.utils.update_check import update_warning_message
+    except Exception:
+        # A broken optional update checker must never prevent the requested command.
+        return None
+
+    return update_warning_message()
+
+
 # ── machine-readable output ───────────────────────────────────────────────────
 
 
@@ -837,7 +855,11 @@ def install_skill_cmd(agent, user, force, check):
 
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    # Run outside Click's group callback so eager options such as --help and --version,
+    # as well as every subcommand, all receive the same end-of-command update notice.
+    update_warning = None
     try:
+        update_warning = _interactive_update_warning()
         return cli.main(args=argv, prog_name="oopsie-data", standalone_mode=False) or 0
     except click.exceptions.Exit as e:
         return e.exit_code
@@ -854,6 +876,9 @@ def main(argv: list[str] | None = None) -> int:
         # Config/auth problems already carry an actionable message; don't dump a traceback.
         logger.error("%s", e)
         return 1
+    finally:
+        if update_warning:
+            _emit_update_warning(update_warning)
 
 
 if __name__ == "__main__":
