@@ -139,6 +139,13 @@ def cli(ctx: click.Context, config_dir: Path | None) -> None:
         os.environ[ENV_CONFIG_DIR] = str(config_dir.expanduser().resolve())
     ctx.obj = {"config_dir_from_flag": config_dir is not None}
 
+    # Keep automation deterministic and fast; a person at a terminal gets a cached,
+    # best-effort notice when a newer package is available.
+    if sys.stderr.isatty():
+        from oopsie_data_tools.utils.update_check import warn_if_outdated
+
+        warn_if_outdated()
+
     # A bare 'oopsie-data' is someone looking for the commands, so show them.
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
