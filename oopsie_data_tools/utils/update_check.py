@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import os
 import re
 import time
@@ -17,9 +16,6 @@ PYPI_JSON_URL = f"https://pypi.org/pypi/{PACKAGE_NAME}/json"
 CHECK_INTERVAL_SECONDS = 24 * 60 * 60
 REQUEST_TIMEOUT_SECONDS = 1.0
 DISABLE_ENV = "OOPSIE_DISABLE_UPDATE_CHECK"
-
-logger = logging.getLogger(__name__)
-
 
 def _cache_path() -> Path:
     xdg = os.environ.get("XDG_CACHE_HOME", "").strip()
@@ -108,18 +104,19 @@ def available_update(
     return installed, latest
 
 
-def warn_if_outdated() -> None:
-    """Log an actionable update notice, without ever disrupting the command."""
+def update_warning_message() -> str | None:
+    """Return an actionable update notice, without ever disrupting the command."""
     try:
         update = available_update()
     except Exception:  # pragma: no cover - the update check must remain strictly optional
-        return
+        return None
     if update is None:
-        return
+        return None
     installed, latest = update
-    logger.warning(
-        "A newer oopsie-data release is available: %s -> %s. "
-        "Upgrade with: pip install --upgrade oopsie-data-tools",
-        installed,
-        latest,
+    return (
+        f"A newer oopsie-data release is available: {installed} -> {latest}.\n"
+        "Newer oopsie-data-tools include important updates and fixes for logging, "
+        "converting, and contributing data, please update your version timely. All updates "
+        "are backwards compatible and won't require you to change any code.\n"
+        "Upgrade with: pip install --upgrade oopsie-data-tools"
     )

@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import json
 
+import click
+import pytest
+
+from oopsie_data_tools import cli
 from oopsie_data_tools.utils import update_check
 
 
@@ -69,14 +73,49 @@ def test_check_can_be_disabled(tmp_path, monkeypatch):
     assert update_check.available_update(cache_path=tmp_path / "cache", now=1000) is None
 
 
-def test_warning_includes_versions_and_upgrade_command(monkeypatch, caplog):
+def test_warning_includes_requested_guidance(monkeypatch):
     monkeypatch.setattr(
         update_check,
         "available_update",
         lambda: ("0.9.3", "0.9.4"),
     )
 
-    update_check.warn_if_outdated()
+    warning = update_check.update_warning_message()
 
-    assert "0.9.3 -> 0.9.4" in caplog.text
-    assert "pip install --upgrade oopsie-data-tools" in caplog.text
+    assert warning is not None
+    assert "0.9.3 -> 0.9.4" in warning
+    assert "important updates and fixes for logging, converting, and contributing data" in warning
+    assert "All updates are backwards compatible and won't require you to change any code" in warning
+    assert "pip install --upgrade oopsie-data-tools" in warning
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["show-config"],
+        ["--help"],
+        ["--version"],
+    ],
+    ids=["subcommand", "help", "version"],
+)
+def test_every_cli_invocation_prints_warning_at_the_end(argv, monkeypatch):
+    emitted = []
+    monkeypatch.setattr(cli, "_interactive_update_warning", lambda: "update notice")
+    monkeypatch.setattr(cli, "_emit_update_warning", emitted.append)
+
+    assert cli.main(argv) == 0
+
+    assert emitted == ["update notice"]
+
+
+def test_cli_prints_update_warning_in_yellow_on_stderr(monkeypatch):
+    calls = []
+
+    def fake_secho(message, **kwargs):
+        calls.append((message, kwargs))
+
+    monkeypatch.setattr(click, "secho", fake_secho)
+
+    cli._emit_update_warning("update notice")
+
+    assert calls == [("update notice", {"fg": "yellow", "err": True})]
