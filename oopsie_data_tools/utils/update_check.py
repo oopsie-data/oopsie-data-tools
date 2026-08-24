@@ -114,7 +114,7 @@ def update_warning_message() -> str | None:
         return None
     installed, latest = update
     return (
-        f"A newer oopsie-data release is available: {installed} -> {latest}.\n"
+        f"A newer oopsie-data-tools release is available: {installed} -> {latest}.\n"
         "Newer oopsie-data-tools include important updates and fixes for logging, "
         "converting, and contributing data, please update your version timely. All updates "
         "are backwards compatible and won't require you to change any code.\n"
