@@ -37,6 +37,7 @@ from oopsie_data_tools.utils.hf_upload import run_validation
 from oopsie_data_tools.utils.validation.episode_loader import detect_x264_crf
 from oopsie_data_tools.utils.validation.errors import EpisodeValidationError
 from oopsie_data_tools.utils.validation.validation_utils import (
+    VALIDATION_LOGGER_NAME,
     validate_h5_file,
     validate_session_dir,
 )
@@ -531,6 +532,36 @@ class TestBetterErrors:
         log_path = tmp_path / "validate.log"
         assert validate_h5_file(str(valid_episode), log_path=str(log_path)) is True
         assert log_path.exists(), "a log path that is accepted but never written is not a log"
+
+    def test_crf_advisory_is_written_to_log_path(
+        self, valid_episode, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(
+            "oopsie_data_tools.utils.validation.episode_loader.detect_x264_crf",
+            lambda _path: 23.0,
+        )
+        log_path = tmp_path / "validate.log"
+        validation_logger = logging.getLogger(VALIDATION_LOGGER_NAME)
+        previous_handlers = set(validation_logger.handlers)
+
+        try:
+            assert (
+                validate_h5_file(
+                    str(valid_episode),
+                    strict_annotation_check=True,
+                    log_path=log_path,
+                )
+                is True
+            )
+            log_text = log_path.read_text(encoding="utf-8")
+        finally:
+            for handler in set(validation_logger.handlers) - previous_handlers:
+                handler.close()
+                validation_logger.removeHandler(handler)
+
+        assert "WARNING" in log_text
+        assert "detected CRF 23.0" in log_text
+        assert "validation will continue" in log_text
 
 
 # ---------------------------------------------------------------------------
