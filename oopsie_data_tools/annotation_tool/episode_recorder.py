@@ -26,6 +26,7 @@ from oopsie_data_tools.utils.validation.array_validation import (
 )
 from oopsie_data_tools.utils.validation.episode_data import EpisodeData, VideoInfo
 from oopsie_data_tools.utils.validation.episode_validator import validate_episode
+from oopsie_data_tools.utils.video_encoding import VIDEO_CRF
 
 REQUIRED_OBSERVATION_KEYS = ["robot_state", "image_observation"]
 
@@ -40,9 +41,6 @@ VALID_ACTION_KEYS = {
     "gripper_position",
     "gripper_binary",
 }
-
-VIDEO_CRF = 19
-
 
 def write_mp4(video_path: Path, frames: np.ndarray, fps: float) -> None:
     """Write RGB frames to an MP4 file.
@@ -581,7 +579,12 @@ class EpisodeRecorder:
                 for key in self.robot_profile.action_space
             },
             videos={
-                cam: VideoInfo.from_frames(self.frames[cam], fps=self.robot_profile.control_freq) for cam in self.camera_names
+                cam: VideoInfo.from_frames(
+                    self.frames[cam],
+                    fps=self.robot_profile.control_freq,
+                    crf=float(VIDEO_CRF),
+                )
+                for cam in self.camera_names
             },
             annotations=data.get("episode_annotations", None),
         )

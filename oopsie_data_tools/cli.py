@@ -39,9 +39,25 @@ logger = logging.getLogger(__name__)
 DIR = click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path)
 
 
+class _CliFormatter(logging.Formatter):
+    """Give every warning-level CLI log record the same yellow styling."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        message = super().format(record)
+        if record.levelno == logging.WARNING:
+            return click.style(message, fg="yellow")
+        return message
+
+
+def _configure_cli_logging() -> None:
+    handler = logging.StreamHandler()
+    handler.setFormatter(_CliFormatter("%(message)s"))
+    logging.basicConfig(level=logging.INFO, handlers=[handler])
+
+
 def _emit_update_warning(message: str) -> None:
-    """Print the complete update notice in yellow without contaminating stdout."""
-    click.secho(message, fg="yellow", err=True)
+    """Emit the update notice through the shared warning-level formatting path."""
+    logger.warning(message)
 
 
 def _interactive_update_warning() -> str | None:
@@ -854,7 +870,7 @@ def install_skill_cmd(agent, user, force, check):
 
 
 def main(argv: list[str] | None = None) -> int:
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    _configure_cli_logging()
     # Run outside Click's group callback so eager options such as --help and --version,
     # as well as every subcommand, all receive the same end-of-command update notice.
     update_warning = None

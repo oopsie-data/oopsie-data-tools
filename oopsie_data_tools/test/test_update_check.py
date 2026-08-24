@@ -5,7 +5,6 @@ from __future__ import annotations
 import builtins
 import json
 
-import click
 import pytest
 
 from oopsie_data_tools import cli
@@ -109,17 +108,17 @@ def test_every_cli_invocation_prints_warning_at_the_end(argv, monkeypatch):
     assert emitted == ["update notice"]
 
 
-def test_cli_prints_update_warning_in_yellow_on_stderr(monkeypatch):
+def test_update_notice_uses_the_shared_warning_logger(monkeypatch):
     calls = []
 
-    def fake_secho(message, **kwargs):
-        calls.append((message, kwargs))
+    def fake_warning(message):
+        calls.append(message)
 
-    monkeypatch.setattr(click, "secho", fake_secho)
+    monkeypatch.setattr(cli.logger, "warning", fake_warning)
 
     cli._emit_update_warning("update notice")
 
-    assert calls == [("update notice", {"fg": "yellow", "err": True})]
+    assert calls == ["update notice"]
 
 
 def test_update_check_import_failure_does_not_break_cli(monkeypatch):
