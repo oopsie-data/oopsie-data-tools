@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 import json
 
 import click
@@ -119,3 +120,36 @@ def test_cli_prints_update_warning_in_yellow_on_stderr(monkeypatch):
     cli._emit_update_warning("update notice")
 
     assert calls == [("update notice", {"fg": "yellow", "err": True})]
+
+
+def test_update_check_import_failure_does_not_break_cli(monkeypatch):
+    class InteractiveStderr:
+        @staticmethod
+        def isatty():
+            return True
+
+    real_import = builtins.__import__
+
+    def fail_update_check_import(name, *args, **kwargs):
+        if name == "oopsie_data_tools.utils.update_check":
+            raise ImportError("broken optional module")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(cli.sys, "stderr", InteractiveStderr())
+    monkeypatch.setattr(builtins, "__import__", fail_update_check_import)
+
+    assert cli._interactive_update_warning() is None
+
+
+def test_ctrl_c_during_update_check_uses_cli_interrupt_handler(monkeypatch, caplog):
+    def interrupted():
+        raise KeyboardInterrupt
+
+    emitted = []
+    caplog.set_level("INFO")
+    monkeypatch.setattr(cli, "_interactive_update_warning", interrupted)
+    monkeypatch.setattr(cli, "_emit_update_warning", emitted.append)
+
+    assert cli.main(["--version"]) == 130
+    assert "Interrupted." in caplog.text
+    assert emitted == []

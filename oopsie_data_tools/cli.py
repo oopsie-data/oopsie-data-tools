@@ -48,7 +48,11 @@ def _interactive_update_warning() -> str | None:
     """Return an update notice only when a person is running the command in a terminal."""
     if not sys.stderr.isatty():
         return None
-    from oopsie_data_tools.utils.update_check import update_warning_message
+    try:
+        from oopsie_data_tools.utils.update_check import update_warning_message
+    except Exception:
+        # A broken optional update checker must never prevent the requested command.
+        return None
 
     return update_warning_message()
 
@@ -853,8 +857,9 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     # Run outside Click's group callback so eager options such as --help and --version,
     # as well as every subcommand, all receive the same end-of-command update notice.
-    update_warning = _interactive_update_warning()
+    update_warning = None
     try:
+        update_warning = _interactive_update_warning()
         return cli.main(args=argv, prog_name="oopsie-data", standalone_mode=False) or 0
     except click.exceptions.Exit as e:
         return e.exit_code
