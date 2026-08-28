@@ -241,3 +241,6 @@ vendor/
 # Local mock/scratch driver for the annotation UI
 mock_rollout.py
 mock_rollout_data/
+
+# Auto-annotation pipeline scratch (data lives outside the repo, under $OOPSIE_ANNOT_ROOT)
+oopsie_data_tools/auto_annotate/__pycache__/
