@@ -24,6 +24,8 @@ observations/robot_states/<key>   (T, D) float64, keys equal to profile.robot_st
 observations/video_paths/<cam>    string, path relative to the .h5 file
 actions/<key>                     (T, D) float64 for keys in action_space;
                                   h5py.Empty(dtype=np.float64) for every other canonical key
+additional_data/<key>             only if profile.additional_data is set; write it with
+                                  write_additional_data(f, profile, arrays, video_paths, h5_path)
 episode_annotations/<annotator>/  annotation fields as attrs on the subgroup
 ```
 

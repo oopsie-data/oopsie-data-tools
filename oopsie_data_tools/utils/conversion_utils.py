@@ -36,6 +36,7 @@ from oopsie_data_tools.utils.validation.episode_validator import (
     MAX_IMAGE_SIZE,
     MIN_IMAGE_SIZE,
 )
+from oopsie_data_tools.utils.video_paths import write_video_path
 
 
 def resize_frames(frames: np.ndarray, max_dim: int = MAX_IMAGE_SIZE) -> np.ndarray:
@@ -194,15 +195,7 @@ def write_robot_states(
     and an undeclared key that is present are both rejected by the validator, so neither is
     allowed to slip through here.
     """
-    declared = set(robot_state_keys)
-    supplied = set(robot_states)
-    if declared != supplied:
-        missing = sorted(declared - supplied)
-        extra = sorted(supplied - declared)
-        raise ValueError(
-            "robot_states must match profile.robot_state_keys exactly "
-            f"(missing: {missing}, undeclared: {extra})"
-        )
+    _require_exact_keys("robot_states", robot_states, robot_state_keys, "profile.robot_state_keys")
 
     observations = file_handle.require_group("observations")
     group = observations.require_group("robot_states")
@@ -211,6 +204,18 @@ def write_robot_states(
         if array.ndim == 1:
             array = array[:, None]
         group.create_dataset(key, data=array, dtype=np.float64)
+
+
+def _require_exact_keys(
+    what: str, supplied: dict, declared: Sequence[str], declared_by: str
+) -> None:
+    """The validator rejects both a declared key that is absent and an undeclared one."""
+    missing = sorted(set(declared) - set(supplied))
+    extra = sorted(set(supplied) - set(declared))
+    if missing or extra:
+        raise ValueError(
+            f"{what} must match {declared_by} exactly (missing: {missing}, undeclared: {extra})"
+        )
 
 
 def write_actions(
@@ -248,15 +253,41 @@ def write_video_paths(
     h5_path: Path | str,
 ) -> None:
     """Write ``/observations/video_paths`` as paths relative to the episode file."""
-    import os
+    group = file_handle.require_group("observations").require_group("video_paths")
+    for cam, path in video_paths.items():
+        write_video_path(group, cam, path, Path(h5_path).parent)
 
-    str_dtype = h5py.string_dtype(encoding="utf-8")
-    episode_dir = Path(h5_path).resolve().parent
-    observations = file_handle.require_group("observations")
-    group = observations.require_group("video_paths")
-    for cam, raw in video_paths.items():
-        target = Path(raw).expanduser()
-        if not target.is_absolute():
-            target = episode_dir / target
-        rel = os.path.relpath(target.resolve(), start=episode_dir)
-        group.create_dataset(cam, data=rel.replace(os.sep, "/"), dtype=str_dtype)
+
+def write_additional_data(
+    file_handle: h5py.File,
+    profile: RobotProfile,
+    arrays: dict[str, np.ndarray],
+    video_paths: dict[str, str] | None = None,
+    h5_path: Path | str | None = None,
+) -> None:
+    """Write ``/additional_data``: ``(T, ...)`` arrays and MP4 paths per the profile.
+
+    ``arrays`` must cover the profile's array-format keys and ``video_paths`` its
+    video-format keys, exactly. Arrays keep their numeric dtype; video paths are stored
+    relative to ``h5_path``.
+    """
+    video_paths = video_paths or {}
+    _require_exact_keys(
+        "additional_data arrays", arrays, profile.additional_array_keys(),
+        "profile.additional_data (format: array)",
+    )
+    _require_exact_keys(
+        "additional_data video_paths", video_paths, profile.additional_video_keys(),
+        "profile.additional_data (format: video)",
+    )
+    if not profile.additional_data:
+        return
+    if video_paths and h5_path is None:
+        raise ValueError("h5_path is required to store video paths relative to the episode")
+
+    group = file_handle.require_group("additional_data")
+    for key, array in arrays.items():
+        group.create_dataset(key, data=np.asarray(array))
+    for key, path in video_paths.items():
+        write_video_path(group, key, path, Path(h5_path).parent)
+

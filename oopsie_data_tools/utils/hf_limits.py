@@ -18,5 +18,6 @@ FILE_LIMIT = 10_000
 
 #: Episodes per numbered subfolder when splitting an oversized directory. A batch is this
 #: many HDF5 files plus their videos, so it stays under FILE_LIMIT as long as episodes have
-#: fewer than FILE_LIMIT / BATCH_SIZE - 1 cameras — roughly 19 at the values above.
+#: fewer than FILE_LIMIT / BATCH_SIZE - 1 videos (cameras plus video-format additional
+#: sensors) — roughly 19 at the values above.
 BATCH_SIZE = 500

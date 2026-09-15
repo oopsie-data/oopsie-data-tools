@@ -42,6 +42,7 @@ class WebRolloutAnnotator:
         wait_for_annotation: bool = True,
         open_browser: bool = True,
         resume_session_name: str | None = None,
+        additional_data_nan_policy: str = "warn",
     ) -> None:
         self.robot_profile = robot_profile
         self.data_root_dir = Path(data_root_dir).resolve()
@@ -57,6 +58,7 @@ class WebRolloutAnnotator:
             data_root_dir=self.data_root_dir,
             resume_session_name=resume_session_name,
             operator_name=self.operator_name,
+            additional_data_nan_policy=additional_data_nan_policy,
         )
 
     # ------------------------------------------------------------------
@@ -187,8 +189,15 @@ class WebRolloutAnnotator:
     def reset_episode_recorder(self) -> None:
         self._active_recorder.reset_episode_recorder()
 
-    def record_step(self, observation: dict[str, Any], action: dict[str, Any]) -> None:
-        self._active_recorder.record_step(observation=observation, action=action)
+    def record_step(
+        self,
+        observation: dict[str, Any],
+        action: dict[str, Any],
+        additional_data: dict[str, Any] | None = None,
+    ) -> None:
+        self._active_recorder.record_step(
+            observation=observation, action=action, additional_data=additional_data
+        )
 
     @property
     def episode_name(self) -> str:

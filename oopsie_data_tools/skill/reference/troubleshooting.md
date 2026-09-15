@@ -48,6 +48,22 @@ annotate` — not a malformed file.
 **Undeclared keys.** `observations/robot_states contains N key(s) the robot profile does not
 declare`. Add them to the profile or stop recording them.
 
+**"additional_data is too large".** The array-format sensors of one episode exceed 100 MiB
+uncompressed; the message breaks it down per key. Raised at the `record_step` that crosses the
+cap, and by `validate`. Image-like data (tactile images, depth) belongs under `format: video`
+in the profile; otherwise record fewer values per step.
+
+**`additional_data` keys or shapes not matching the profile.** Raised at `record_step`: the dict
+must carry exactly the keys `profile.additional_data` declares, on every step, with the same
+shape each time. ±inf is always rejected. NaN marks a dropped reading: by default it is recorded
+with a warning, and `EpisodeRecorder(additional_data_nan_policy="ignore" | "error")` silences it
+or rejects the step instead.
+
+**"This upload is N GB, above the 200 GB we expect".** A warning from `upload`, which goes ahead
+anyway. Every upload logs its total size and the share taken by additional data; a very large
+one usually means raw sensor dumps, a duplicated session or a leftover `_restructured` copy
+inside `--path`.
+
 **"Too many files in a directory" on upload.** HuggingFace caps a directory at 10,000 files.
 `oopsie-data restructure --source ./samples` writes a split copy alongside the original, or
 `upload --with-restructure` does it inline. Both need room for a second copy.

@@ -20,9 +20,14 @@ import h5py
 import numpy as np
 
 from oopsie_data_tools.utils.h5 import decode_h5_scalar
-from oopsie_data_tools.utils.robot_profile.robot_profile import robot_profile_from_json
+from oopsie_data_tools.utils.robot_profile.robot_profile import (
+    RobotProfile,
+    robot_profile_from_json,
+)
 from oopsie_data_tools.utils.validation.episode_data import EpisodeData, VideoInfo
+from oopsie_data_tools.utils.validation.episode_validator import check_additional_data_size
 from oopsie_data_tools.utils.validation.errors import EpisodeValidationError
+from oopsie_data_tools.utils.video_paths import is_video_reference, resolve_from_episode
 
 OOPSIE_DATA_SCHEMA_V1 = "oopsiedata_format_v1"
 
@@ -42,13 +47,6 @@ _X264_CRF_PATTERN = re.compile(
 _CRF_SCAN_CHUNK_SIZE = 64 * 1024
 _CRF_SCAN_OVERLAP = 16 * 1024
 _CRF_SCAN_LIMIT = 8 * 1024 * 1024
-
-
-# ── HDF5 scalar helpers ────────────────────────────────────────────────────────
-
-
-def _read_string_dataset(ds: h5py.Dataset) -> str:
-    return decode_h5_scalar(ds[()]).strip()
 
 
 # ── Video loading ──────────────────────────────────────────────────────────────
@@ -123,7 +121,7 @@ def _resolve_video_path(rel: str, h5_dir: str, allowed_root: str, label: str) ->
             f"Video path for {label} is absolute ({rel}); it must be relative to the "
             "episode file so the session directory can be moved or uploaded."
         )
-    candidate = (Path(h5_dir) / rel).resolve()
+    candidate = resolve_from_episode(rel, h5_dir)
     root = Path(allowed_root).resolve()
     try:
         candidate.relative_to(root)
@@ -133,6 +131,14 @@ def _resolve_video_path(rel: str, h5_dir: str, allowed_root: str, label: str) ->
             f"to {candidate}, outside {root}."
         ) from e
     return str(candidate)
+
+
+def _load_referenced_video(
+    ds: h5py.Dataset, h5_dir: str, allowed_root: str, label: str
+) -> VideoInfo:
+    """Follow a stored video reference and read the MP4's metadata."""
+    rel = decode_h5_scalar(ds[()]).strip()
+    return load_video_info(_resolve_video_path(rel, h5_dir, allowed_root, label))
 
 
 # ── Schema-specific loaders ────────────────────────────────────────────────────
@@ -183,11 +189,12 @@ def _load_oopsie_v1(f: h5py.File, h5_dir: str, allowed_root: str) -> EpisodeData
             raise EpisodeValidationError(f"Missing observations/video_paths/{cam}")
     videos: dict[str, VideoInfo] = {}
     for cam in vp_group.keys():
-        rel = _read_string_dataset(vp_group[cam])
-        abs_path = _resolve_video_path(rel, h5_dir, allowed_root, f"camera {cam}")
-        videos[cam] = load_video_info(abs_path)
+        videos[cam] = _load_referenced_video(vp_group[cam], h5_dir, allowed_root, f"camera {cam}")
 
     annotations = _load_annotations_oopsie_v1(f)
+    additional_data, additional_videos = _load_additional_data(
+        f, profile, h5_dir, allowed_root
+    )
 
     trajectory_length = next(iter(observations.values())).shape[0]
 
@@ -203,7 +210,51 @@ def _load_oopsie_v1(f: h5py.File, h5_dir: str, allowed_root: str) -> EpisodeData
         actions=actions,
         videos=videos,
         annotations=annotations,
+        additional_data=additional_data,
+        additional_videos=additional_videos,
     )
+
+
+def _load_additional_data(
+    f: h5py.File, profile: RobotProfile, h5_dir: str, allowed_root: str
+) -> tuple[dict[str, np.ndarray], dict[str, VideoInfo]]:
+    """Load ``additional_data/``: arrays, plus video info for ``format: video`` keys.
+
+    The size cap is checked from dataset metadata before any array is read, so an oversized
+    episode is rejected without loading it into memory.
+    """
+    if "additional_data" not in f:
+        return {}, {}
+    group = f["additional_data"]
+    if not isinstance(group, h5py.Group):
+        raise EpisodeValidationError(
+            f"additional_data must be a group of per-sensor datasets, got {type(group).__name__}"
+        )
+
+    video_keys = set(profile.additional_video_keys())
+    array_datasets: dict[str, h5py.Dataset] = {}
+    videos: dict[str, VideoInfo] = {}
+    for key in group.keys():
+        ds = group[key]
+        if not isinstance(ds, h5py.Dataset) or ds.shape is None:
+            raise EpisodeValidationError(
+                f"additional_data/{key} must be a non-empty dataset, got {type(ds).__name__}"
+            )
+        if key in video_keys:
+            if not is_video_reference(ds):
+                raise EpisodeValidationError(
+                    f"additional_data/{key} is declared with format: video, so it must hold "
+                    f"the MP4 path as a string, got dtype {ds.dtype} with shape {ds.shape}"
+                )
+            videos[key] = _load_referenced_video(
+                ds, h5_dir, allowed_root, f"additional_data/{key}"
+            )
+        else:
+            array_datasets[key] = ds
+
+    check_additional_data_size({k: int(ds.nbytes) for k, ds in array_datasets.items()})
+    arrays = {k: ds[()] for k, ds in array_datasets.items()}
+    return arrays, videos
 
 
 def _load_annotations_oopsie_v1(f: h5py.File) -> dict[str, dict[str, Any]] | None:

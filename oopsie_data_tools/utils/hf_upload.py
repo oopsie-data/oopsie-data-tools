@@ -151,19 +151,81 @@ def check_folder_size(samples_dir: str, suggest_fix: bool = True) -> list[tuple[
     return oversized
 
 
+#: Total upload size above which ``upload`` warns. Advisory only; nothing is refused.
+LARGE_UPLOAD_WARN_BYTES = 200 * 10**9
+
+
+def summarize_upload_size(samples_dir: str) -> int:
+    """Log the upload's total size and its additional-data share; warn if it is very large.
+
+    Additional data is counted as stored on disk: the ``additional_data`` array datasets
+    inside each episode, and the MP4s of video-format sensors.
+
+    Returns:
+        Total bytes of every file under ``samples_dir``.
+    """
+    import h5py
+
+    from oopsie_data_tools.utils.h5 import find_episode_files
+    from oopsie_data_tools.utils.video_paths import (
+        is_video_reference,
+        read_video_paths,
+        resolve_from_episode,
+    )
+
+    total = sum(
+        os.path.getsize(os.path.join(root, name))
+        for root, _, files in os.walk(samples_dir)
+        for name in files
+    )
+
+    array_bytes = 0
+    video_bytes = 0
+    seen_videos: set[Path] = set()
+    for h5_path in find_episode_files(samples_dir):
+        try:
+            with h5py.File(h5_path, "r") as f:
+                group = f.get("additional_data")
+                if isinstance(group, h5py.Group):
+                    for ds in group.values():
+                        if isinstance(ds, h5py.Dataset) and not is_video_reference(ds):
+                            array_bytes += ds.id.get_storage_size()
+        except OSError as e:
+            logger.warning("[size] Could not read %s: %s", h5_path, e)
+            continue
+        for dataset_path, stored in read_video_paths(h5_path).items():
+            if not dataset_path.startswith("additional_data/"):
+                continue
+            video = resolve_from_episode(stored, h5_path.parent)
+            if video not in seen_videos and video.is_file():
+                seen_videos.add(video)
+                video_bytes += video.stat().st_size
+
+    logger.info("[size] Upload total: %.2f GB", total / 1e9)
+    if array_bytes or video_bytes:
+        logger.info(
+            "[size]   of which additional data: %.2f GB (arrays %.2f GB, sensor videos %.2f GB)",
+            (array_bytes + video_bytes) / 1e9, array_bytes / 1e9, video_bytes / 1e9,
+        )
+    if total > LARGE_UPLOAD_WARN_BYTES:
+        logger.warning(
+            "[size] This upload is %.0f GB, above the %.0f GB we expect from a single lab "
+            "upload. Check that nothing unintended is in %s (raw sensor dumps, duplicate "
+            "sessions, restructure copies) before continuing.",
+            total / 1e9, LARGE_UPLOAD_WARN_BYTES / 1e9, samples_dir,
+        )
+    return total
+
+
 def upload_dataset(api, repo: str, samples_dir: str) -> None:
     logger.info("[upload] Uploading %s → %s", samples_dir, repo)
     logger.info("[upload] Files to upload:")
-    total_bytes = 0
     for root, _, files in os.walk(samples_dir):
         for f in files:
             fpath = os.path.join(root, f)
-            size = os.path.getsize(fpath)
             rel = os.path.relpath(fpath, samples_dir)
-            total_bytes += size
-            logger.info("           %s  (%.1f MB)", rel, size / 1e6)
+            logger.info("           %s  (%.1f MB)", rel, os.path.getsize(fpath) / 1e6)
 
-    logger.info("[upload] Total size: %.2f GB", total_bytes / 1e9)
     logger.info("[upload] Uploading (this may take several minutes)...")
 
     api.upload_large_folder(

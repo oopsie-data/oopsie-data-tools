@@ -56,3 +56,7 @@ class EpisodeData:
     videos: dict[str, VideoInfo]
     # Optional: annotator_name → {attr_key: attr_val}.
     annotations: Optional[dict[str, dict[str, Any]]] = field(default=None)
+    # Additional sensors stored as arrays; shape (T, ...) for each key.
+    additional_data: dict[str, np.ndarray] = field(default_factory=dict)
+    # Additional sensors stored as MP4.
+    additional_videos: dict[str, VideoInfo] = field(default_factory=dict)

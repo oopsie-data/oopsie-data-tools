@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -60,6 +61,33 @@ ARM_ACTION_REQUIRED_ROBOT_STATE_KEY = {
     "cartesian_velocity": "cartesian_position",
 }
 
+# How an additional sensor's per-step data is stored: "array" as a (T, ...) numeric dataset
+# under additional_data/<key>, "video" as an MP4 whose relative path is stored there instead.
+ADDITIONAL_DATA_FORMAT_ARRAY = "array"
+ADDITIONAL_DATA_FORMAT_VIDEO = "video"
+ADDITIONAL_DATA_FORMATS = (ADDITIONAL_DATA_FORMAT_ARRAY, ADDITIONAL_DATA_FORMAT_VIDEO)
+
+_ADDITIONAL_DATA_FIELDS = frozenset({"sensor", "sensor_info", "format"})
+# Keys become HDF5 dataset names and MP4 filename suffixes.
+_ADDITIONAL_DATA_KEY_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
+
+
+@dataclasses.dataclass(frozen=True)
+class AdditionalDataSource:
+    """One additional sensor stream declared by a robot profile.
+
+    ``sensor`` names the device recording the data; ``sensor_info`` is free-form (a string
+    or a JSON-serializable mapping) for units, frames, mounting, native rate and the like.
+    """
+
+    sensor: str
+    sensor_info: str | Dict[str, Any] | None = None
+    format: str = ADDITIONAL_DATA_FORMAT_ARRAY
+
+    @property
+    def is_video(self) -> bool:
+        return self.format == ADDITIONAL_DATA_FORMAT_VIDEO
+
 
 @dataclasses.dataclass(frozen=True)
 class RobotProfile:
@@ -67,8 +95,7 @@ class RobotProfile:
 
     Options specific to :class:`WebRolloutAnnotator` (browser server port, blocking
     until annotation, resuming a session directory) are *not* part of this profile;
-    pass those separately when constructing the annotator, e.g. via
-    :meth:`WebRolloutAnnotator.from_robot_profile`.
+    pass those separately when constructing the annotator.
     """
     policy_name: str
     robot_name: str
@@ -87,6 +114,13 @@ class RobotProfile:
     gains: Optional[Dict[str, Any]] = None
     intrinsic_calibration_matrix: Optional[Dict[str, Any]] = None
     extrinsic_calibration_matrix: Optional[Dict[str, Any]] = None
+    additional_data: Dict[str, AdditionalDataSource] = dataclasses.field(default_factory=dict)
+
+    def additional_array_keys(self) -> list[str]:
+        return [k for k, src in self.additional_data.items() if not src.is_video]
+
+    def additional_video_keys(self) -> list[str]:
+        return [k for k, src in self.additional_data.items() if src.is_video]
 
     def get_rot_option(self) -> RotOption | None:
         if self.orientation_representation is None:
@@ -197,6 +231,9 @@ def robot_profile_from_raw(raw: Any) -> RobotProfile:
             f"{sorted(ACTION_SPACE_SET_3)}"
         )
 
+    camera_names = list(raw["camera_names"])
+    additional_data = _additional_data(raw.get("additional_data"), camera_names)
+
     return RobotProfile(
         policy_name=raw["policy_name"],
         robot_name=raw["robot_name"],
@@ -206,7 +243,7 @@ def robot_profile_from_raw(raw: Any) -> RobotProfile:
         uses_mobile_base=bool(raw["uses_mobile_base"]),
         gripper_name=raw["gripper_name"],
         control_freq=raw["control_freq"],
-        camera_names=list(raw["camera_names"]),
+        camera_names=camera_names,
         # Observation Related
         robot_state_keys=robot_state_keys,
         robot_state_joint_names=robot_state_joint_names or [],
@@ -220,7 +257,73 @@ def robot_profile_from_raw(raw: Any) -> RobotProfile:
         gains=raw.get("gains"),
         intrinsic_calibration_matrix=_calibration_matrix(raw, "intrinsic"),
         extrinsic_calibration_matrix=_calibration_matrix(raw, "extrinsic"),
+        additional_data=additional_data,
     )
+
+
+def _additional_data(value: Any, camera_names: list[str]) -> dict[str, AdditionalDataSource]:
+    """Parse the ``additional_data`` mapping of sensor key → sensor metadata."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError(
+            f"additional_data must be a mapping of data key to sensor metadata, "
+            f"got {type(value).__name__}"
+        )
+
+    # A video sensor's MP4 is named <episode>_<key>.mp4, the same pattern as a camera's, and
+    # case-insensitive filesystems (macOS, Windows) treat names differing in case as one file.
+    taken = {name.casefold(): f"camera {name!r}" for name in camera_names}
+    sources: dict[str, AdditionalDataSource] = {}
+    for key, entry in value.items():
+        label = f"additional_data[{key!r}]"
+        if not isinstance(key, str) or not _ADDITIONAL_DATA_KEY_PATTERN.fullmatch(key):
+            raise ValueError(
+                f"{label}: keys may only contain letters, digits, '_' and '-'"
+            )
+        if key.casefold() in taken:
+            raise ValueError(
+                f"{label}: key collides with {taken[key.casefold()]} (names are compared "
+                "ignoring case, since their files would collide on macOS and Windows)"
+            )
+        taken[key.casefold()] = f"additional_data key {key!r}"
+        if not isinstance(entry, dict):
+            raise ValueError(
+                f"{label} must be a mapping with at least 'sensor', got {type(entry).__name__}"
+            )
+        unknown = sorted(set(entry) - _ADDITIONAL_DATA_FIELDS)
+        if unknown:
+            raise ValueError(
+                f"{label} has unknown field(s) {unknown}; "
+                f"allowed: {sorted(_ADDITIONAL_DATA_FIELDS)}"
+            )
+
+        sensor = entry.get("sensor")
+        if not isinstance(sensor, str) or not sensor.strip():
+            raise ValueError(f"{label}.sensor must be a non-empty string naming the sensor")
+
+        sensor_info = entry.get("sensor_info")
+        if sensor_info is not None:
+            if not isinstance(sensor_info, (str, dict)):
+                raise ValueError(
+                    f"{label}.sensor_info must be a string or a mapping, "
+                    f"got {type(sensor_info).__name__}"
+                )
+            try:
+                json.dumps(sensor_info)
+            except (TypeError, ValueError) as e:
+                raise ValueError(f"{label}.sensor_info is not JSON-serializable: {e}") from e
+
+        fmt = entry.get("format") or ADDITIONAL_DATA_FORMAT_ARRAY
+        if fmt not in ADDITIONAL_DATA_FORMATS:
+            raise ValueError(
+                f"{label}.format must be one of {list(ADDITIONAL_DATA_FORMATS)}, got {fmt!r}"
+            )
+
+        sources[key] = AdditionalDataSource(
+            sensor=sensor, sensor_info=sensor_info, format=fmt
+        )
+    return sources
 
 
 def _calibration_matrix(raw: dict[str, Any], kind: str) -> dict[str, Any] | None:

@@ -659,6 +659,7 @@ def upload(
         require_repo,
         resolve_hf_target,
         run_validation,
+        summarize_upload_size,
         upload_dataset,
     )
     from oopsie_data_tools.utils.validation.diversity import check_diversity
@@ -688,6 +689,9 @@ def upload(
     if check_diversity(samples_dir) and strict_diversity:
         logger.error("Aborting: low-diversity warnings present and --strict-diversity is set.")
         return 1
+
+    # Advisory: logs the size and warns on a very large upload, never aborts.
+    summarize_upload_size(samples_dir)
 
     if skip_upload:
         logger.info("[upload] Skipped (--skip-upload).")

@@ -16,9 +16,15 @@ observations/
   video_paths/<camera>    one string dataset per profile.camera_names, holding a path
                           relative to the .h5 file
 actions/<key>             one dataset per VALID_ACTION_KEYS
+additional_data/<key>     only when profile.additional_data declares sensors: a (T, ...)
+                          numeric dataset per `format: array` key, or a string path to an
+                          MP4 relative to the .h5 per `format: video` key
 episode_annotations/<annotator_name>/    annotation fields are HDF5 attrs on the subgroup,
                           not datasets
 ```
+
+The sensor metadata (`sensor`, `sensor_info`, `format`) lives in the embedded `robot_profile`,
+not on the datasets.
 
 State datasets live under `observations/robot_states/`, not directly under `observations/`.
 
@@ -57,6 +63,15 @@ Profile consistency — the profile documents the episode, so both directions ar
 Trajectories: every observation and action array must be real numeric and finite, and must share
 the same leading dimension `T`.
 
+Additional data:
+
+- Every `profile.additional_data` key must be present, and nothing undeclared may be.
+- `format: array` datasets must be real numeric, with leading dimension `T`. NaN is accepted
+  as a dropped reading; ±inf is rejected.
+- Their uncompressed size summed over all keys must stay under 100 MiB per episode
+  (`MAX_ADDITIONAL_DATA_BYTES`). The loader checks this from dataset metadata, before reading.
+- `format: video` entries go through the video checks below, except the minimum resolution.
+
 Videos:
 
 - The stored path must be relative to the `.h5`; an absolute path resolves only on the machine
@@ -65,7 +80,7 @@ Videos:
   Parent-relative paths are allowed when they still resolve inside that directory.
 - Each side between 180 and 1280 px.
 - Frame count within `max(5, 0.1 * T)` of `T`, and duration within 0.5 s of `T / control_freq`.
-- Frame counts across cameras within 1 of each other.
+- Frame counts across all videos, cameras and video sensors alike, within 1 of each other.
 
 ## Annotations
 
@@ -111,7 +126,16 @@ stay visible but are rejected by strict upload validation.
 `record_step` requires `observation` to be a dict with both `robot_state` and
 `image_observation`; `robot_state` to contain every `robot_state_keys` entry and
 `image_observation` a key named exactly `<cam>` for every `camera_names` entry; and `action` keys
-to equal `action_space` exactly, with no `None` values.
+to equal `action_space` exactly, with no `None` values. Other keys in `robot_state` or
+`image_observation` are ignored, not recorded; sensor data belongs in `additional_data`.
+
+`additional_data` must carry exactly the keys `profile.additional_data` declares, with the same
+shape on every step: arrays real numeric without ±inf, video frames `(H, W, 3)` uint8, at least 16×16. NaN in
+an array follows `EpisodeRecorder(additional_data_nan_policy=...)`: `warn` (default) records it,
+warns on the first one per key and logs a per-episode count on save; `ignore` records it
+silently; `error` rejects the step. The size cap is
+enforced as the rollout goes, so an episode that grows too large fails at the step that crosses
+it.
 
 `cartesian_position` is converted to `(x, y, z, qx, qy, qz, qw)` via
 `orientation_representation`, then shape-checked to `(7,)` or `(14,)` with a unit quaternion in
