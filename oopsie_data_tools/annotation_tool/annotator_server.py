@@ -37,6 +37,7 @@ from oopsie_data_tools.annotation_tool.annotation_schema import (
     write_annotation_attrs,
 )
 from oopsie_data_tools.utils.validation.annotation_completeness import is_complete
+from oopsie_data_tools.utils.video_paths import resolve_from_episode
 
 app = Flask(__name__)
 
@@ -288,13 +289,9 @@ def _resolve_video_path(
 ) -> Path | None:
     candidate = Path(raw_path)
 
-    if candidate.is_absolute():
-        if candidate.exists():
-            return candidate
-    else:
-        local_candidate = (h5_path.parent / candidate).resolve()
-        if local_candidate.exists():
-            return local_candidate
+    stored_candidate = resolve_from_episode(raw_path, h5_path.parent)
+    if stored_candidate.exists():
+        return stored_candidate
 
     basename_candidate = (h5_path.parent / candidate.name).resolve()
     if basename_candidate.exists():

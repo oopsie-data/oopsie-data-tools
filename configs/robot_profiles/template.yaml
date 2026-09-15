@@ -92,4 +92,25 @@ intrinsic_calibration_matrix:
 extrinsic_calibration_matrix:
   <str>: # camera name str
     - # 4 x list of four floats (camera extrinsics in the form of a transformation matrix)
+
+
+# ====================================
+# ===== Additional Data (Optional) ===
+# ====================================
+
+# Sensor streams beyond robot state and cameras (force/torque, IMU, tactile, audio features ...).
+# Every declared key must then be passed to record_step(..., additional_data={key: value})
+# on every step, with the same shape each step.
+# Keys may contain letters, digits, "_" and "-", and must not repeat a camera name or each other, ignoring case.
+#   sensor:      str (Required) the device recording the data (Example: "ATI Mini45")
+#   sensor_info: str or mapping (Optional) units, frame, mounting, native rate ...
+#   format:      "array" (default) stored as a (T, ...) numeric dataset, capped per episode;
+#                "video" for image-like data (H, W, 3) uint8, stored as an MP4 like a camera
+additional_data:
+#  wrist_ft:
+#    sensor: # str
+#    sensor_info: # str or mapping
+#  tactile_left:
+#    sensor: # str
+#    format: video
 # ========================

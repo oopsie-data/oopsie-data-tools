@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import datetime
-import os
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -21,14 +21,30 @@ from oopsie_data_tools.utils.robot_profile.robot_profile import RobotProfile, ro
 from oopsie_data_tools.utils.robot_profile.rotation_utils import ActionQuatConversion
 from oopsie_data_tools.utils.validation.array_validation import (
     require_finite_real_array,
+    require_real_array_without_inf,
     validate_cartesian_quaternions,
     validate_gripper_binary_step,
 )
 from oopsie_data_tools.utils.validation.episode_data import EpisodeData, VideoInfo
-from oopsie_data_tools.utils.validation.episode_validator import validate_episode
+from oopsie_data_tools.utils.validation.episode_validator import (
+    check_additional_data_size,
+    validate_episode,
+)
+from oopsie_data_tools.utils.validation.errors import EpisodeValidationError
 from oopsie_data_tools.utils.video_encoding import VIDEO_CRF
+from oopsie_data_tools.utils.video_paths import write_video_path
+
+logger = logging.getLogger(__name__)
 
 REQUIRED_OBSERVATION_KEYS = ["robot_state", "image_observation"]
+
+#: How record_step treats NaN in array-format additional_data, which usually marks a
+#: dropped sensor reading. ±inf is always rejected.
+ADDITIONAL_DATA_NAN_POLICIES = ("ignore", "warn", "error")
+
+#: Smallest frame side accepted for a video-format sensor. libx264 via imageio upscales
+#: anything smaller to 16 px, which distorts a coarse taxel grid.
+MIN_SENSOR_FRAME_SIZE = 16
 
 VALID_ACTION_KEYS = {
     "cartesian_position",
@@ -85,6 +101,7 @@ class EpisodeRecorder:
         data_root_dir: Path | str,
         operator_name: str,
         resume_session_name: str | None = None,
+        additional_data_nan_policy: str = "warn",
     ) -> None:
         """Initialize a recorder instance.
 
@@ -93,10 +110,22 @@ class EpisodeRecorder:
             data_root_dir (str): Base output directory for saved artifacts.
             operator_name (str): Name of the operator recording the episode.
             resume_session_name (str | None): Optional unique session name
+            additional_data_nan_policy (str): What a NaN in array-format additional_data
+                does: ``"ignore"`` records it silently, ``"warn"`` records it and logs a
+                warning the first time per key and a summary when the episode is saved,
+                ``"error"`` rejects the step.
 
         Raises:
-            ValueError: If ``data_root_dir`` is not a valid directory.
+            ValueError: If ``data_root_dir`` is not a valid directory, or
+                ``additional_data_nan_policy`` is not one of
+                :data:`ADDITIONAL_DATA_NAN_POLICIES`.
         """
+        if additional_data_nan_policy not in ADDITIONAL_DATA_NAN_POLICIES:
+            raise ValueError(
+                f"additional_data_nan_policy must be one of {list(ADDITIONAL_DATA_NAN_POLICIES)}, "
+                f"got {additional_data_nan_policy!r}"
+            )
+        self.additional_data_nan_policy = additional_data_nan_policy
         self.data_root_dir = Path(data_root_dir)
         self.session_name = (
             resume_session_name
@@ -127,6 +156,10 @@ class EpisodeRecorder:
             else None
         )
         self.frames: dict[str, list[np.ndarray]] = {}
+        # Per-step values of each profile.additional_data key; frames for video-format keys.
+        self.additional_buffers: dict[str, list[np.ndarray]] = {}
+        # additional_data key -> (NaN values, steps containing NaN) in the current episode.
+        self.nan_counts: dict[str, tuple[int, int]] = {}
         self.timesteps: list[dict[str, Any]] = []
         self.timestamp: float = 0.0
         self.save_fname: str = ""
@@ -146,6 +179,8 @@ class EpisodeRecorder:
         self.timestamp = ts.timestamp()
         self.save_fname = self._unused_episode_name(ts)
         self.frames = {cam: [] for cam in self.camera_names}
+        self.additional_buffers = {key: [] for key in self.robot_profile.additional_data}
+        self.nan_counts = {}
         self.timesteps = []
 
     def _unused_episode_name(self, ts: datetime.datetime) -> str:
@@ -165,7 +200,10 @@ class EpisodeRecorder:
         return candidate
 
     def record_step(
-        self, observation: dict[str, Any], action: dict[str, np.ndarray]
+        self,
+        observation: dict[str, Any],
+        action: dict[str, np.ndarray],
+        additional_data: dict[str, Any] | None = None,
     ) -> None:
         """Append one rollout timestep to in-memory buffers.
 
@@ -173,6 +211,9 @@ class EpisodeRecorder:
             observation (dict[str, Any]): Observation payload containing state
                 and optional images.
             action (dict[str, np.ndarray]): Dictionary of action vector applied at this timestep.
+            additional_data (dict[str, Any] | None): One value per key declared in
+                ``robot_profile.additional_data``; required exactly when the profile
+                declares any.
 
         Returns:
             None: This method only updates in-memory buffers.
@@ -180,6 +221,7 @@ class EpisodeRecorder:
         # TODO: Make sure all checks are present here
         # Returns normalized copies; the caller's dicts are left untouched.
         robot_state, action = self._check_and_normalize_step_data(observation, action)
+        additional = self._check_additional_data(additional_data)
 
         # Buffer frames for each configured camera (if available)
         for cam in self.camera_names:
@@ -190,26 +232,164 @@ class EpisodeRecorder:
         step_data = {"robot_state": {}, "action_dict": {}}
         for key in self.robot_profile.robot_state_keys:
             step_data["robot_state"][key] = np.asarray(robot_state[key], dtype=np.float32)
-        step_data["action_dict"] = {k: action.get(k) for k in sorted(VALID_ACTION_KEYS)}
+        step_data["action_dict"] = action
         self.timesteps.append(step_data)
+        for key, value in additional.items():
+            self.additional_buffers[key].append(value)
+        self._count_nans(additional)
 
-    def _save_videos(self) -> dict[str, str]:
-        """Write one MP4 per camera into the session directory.
+    def _count_nans(self, additional: dict[str, np.ndarray]) -> None:
+        """Tally NaN in a buffered step, warning on the first one per key if configured."""
+        for key, value in additional.items():
+            if value.dtype.kind != "f":
+                continue
+            n_nan = int(np.count_nonzero(np.isnan(value)))
+            if not n_nan:
+                continue
+            values, steps = self.nan_counts.get(key, (0, 0))
+            if steps == 0 and self.additional_data_nan_policy == "warn":
+                logger.warning(
+                    "additional_data[%r] contains NaN at step %d; recording continues. "
+                    "Further NaNs in this episode are summarized when it is saved.",
+                    key, len(self.timesteps) - 1,
+                )
+            self.nan_counts[key] = (values + n_nan, steps + 1)
+
+    def _log_nan_summary(self) -> None:
+        if self.additional_data_nan_policy != "warn":
+            return
+        for key, (values, steps) in sorted(self.nan_counts.items()):
+            logger.warning(
+                "Episode %s: additional_data/%s has %d NaN value(s) in %d of %d step(s).",
+                self.save_fname, key, values, steps, len(self.timesteps),
+            )
+
+    def _check_additional_data(self, additional_data: Any) -> dict[str, np.ndarray]:
+        """Validate one step's additional sensor data and return copies safe to buffer."""
+        declared = self.robot_profile.additional_data
+        if not declared:
+            if additional_data:
+                raise ValueError(
+                    f"additional_data was passed with keys {sorted(additional_data)}, but the "
+                    "robot profile declares no additional_data. Declare the sensors in the "
+                    "profile first."
+                )
+            return {}
+        if additional_data is None:
+            raise ValueError(
+                f"additional_data is required: the robot profile declares {sorted(declared)}. "
+                "Pass record_step(..., additional_data={key: value})."
+            )
+        if not isinstance(additional_data, dict):
+            raise ValueError(
+                f"additional_data must be a dictionary, got {type(additional_data)}"
+            )
+        if set(additional_data) != set(declared):
+            raise ValueError(
+                f"additional_data keys {sorted(additional_data)} must match the robot profile "
+                f"additional_data {sorted(declared)}"
+            )
+
+        checked: dict[str, np.ndarray] = {}
+        for key, source in declared.items():
+            label = f"additional_data[{key!r}]"
+            # A copy, so a caller reusing one buffer across steps cannot rewrite history.
+            value = np.array(additional_data[key])
+            if source.is_video:
+                if value.dtype != np.uint8 or value.ndim != 3 or value.shape[-1] != 3:
+                    raise ValueError(
+                        f"{label} is declared with format: video and must be one (H, W, 3) "
+                        f"uint8 frame, got shape {value.shape} and dtype {value.dtype}"
+                    )
+                if min(value.shape[:2]) < MIN_SENSOR_FRAME_SIZE:
+                    raise ValueError(
+                        f"{label} is a {value.shape[0]}x{value.shape[1]} frame; video frames "
+                        f"must be at least {MIN_SENSOR_FRAME_SIZE}x{MIN_SENSOR_FRAME_SIZE} or "
+                        "the encoder upscales them. Declare small sensor grids with "
+                        "'format: array' instead."
+                    )
+            else:
+                require_real_array_without_inf(value, label)
+                if self.additional_data_nan_policy == "error" and np.isnan(value).any():
+                    raise ValueError(
+                        f"{label} contains NaN (additional_data_nan_policy='error'). Pass "
+                        "additional_data_nan_policy='warn' or 'ignore' to EpisodeRecorder to "
+                        "record dropped readings as NaN."
+                    )
+            buffered = self.additional_buffers[key]
+            if buffered and buffered[0].shape != value.shape:
+                raise ValueError(
+                    f"{label} has shape {value.shape}, but earlier steps had "
+                    f"{buffered[0].shape}; every step must have the same shape"
+                )
+            checked[key] = value
+
+        # Fail during the rollout rather than at save time once the episode is too big.
+        steps = len(self.timesteps) + 1
+        try:
+            check_additional_data_size(
+                {
+                    key: steps * checked[key].nbytes
+                    for key in self.robot_profile.additional_array_keys()
+                }
+            )
+        except EpisodeValidationError as e:
+            raise ValueError(str(e)) from e
+        return checked
+
+    def _write_videos(self, buffers: dict[str, list[np.ndarray]]) -> dict[str, str]:
+        """Write ``<episode>_<name>.mp4`` into the session directory for each buffer.
 
         Returns:
-            ``{camera: absolute mp4 path}``. Cameras that buffered no frames are skipped
-            rather than crashing in ``np.stack`` on an empty list.
+            ``{name: absolute mp4 path}``. Empty buffers are skipped rather than crashing in
+            ``np.stack`` on an empty list.
         """
-        video_paths: dict[str, str] = {}
+        paths: dict[str, str] = {}
         self.session_dir.mkdir(parents=True, exist_ok=True)
         fps = float(self.robot_profile.control_freq)
-        for cam_name, frames in self.frames.items():
+        for name, frames in buffers.items():
             if not frames:
                 continue
-            video_path = self.session_dir / f"{self.save_fname}_{cam_name}.mp4"
+            video_path = self.session_dir / f"{self.save_fname}_{name}.mp4"
             write_mp4(video_path=video_path, frames=np.asarray(frames), fps=fps)
-            video_paths[cam_name] = str(video_path.resolve())
-        return video_paths
+            paths[name] = str(video_path.resolve())
+        return paths
+
+    def _save_videos(self) -> dict[str, str]:
+        """Write one MP4 per camera; returns ``{camera: absolute mp4 path}``."""
+        return self._write_videos(self.frames)
+
+    def _additional_video_buffers(self) -> dict[str, list[np.ndarray]]:
+        return {
+            key: self.additional_buffers[key]
+            for key in self.robot_profile.additional_video_keys()
+        }
+
+    def _stacked_robot_states(self) -> dict[str, np.ndarray]:
+        return {
+            key: np.stack([t["robot_state"][key] for t in self.timesteps], axis=0)
+            for key in self.robot_profile.robot_state_keys
+        }
+
+    def _stacked_actions(self) -> dict[str, np.ndarray]:
+        return {
+            key: np.stack([t["action_dict"][key] for t in self.timesteps], axis=0)
+            for key in self.robot_profile.action_space
+        }
+
+    def _stacked_additional_arrays(self) -> dict[str, np.ndarray]:
+        return {
+            key: np.stack(self.additional_buffers[key], axis=0)
+            for key in self.robot_profile.additional_array_keys()
+        }
+
+    def _video_infos(self, buffers: dict[str, list[np.ndarray]]) -> dict[str, VideoInfo]:
+        return {
+            name: VideoInfo.from_frames(
+                frames, fps=self.robot_profile.control_freq, crf=float(VIDEO_CRF)
+            )
+            for name, frames in buffers.items()
+        }
 
     def finish_rollout(self, instruction: str, success: float | None = None) -> None:
         data = {
@@ -257,18 +437,23 @@ class EpisodeRecorder:
         if len(self.timesteps) == 0:
             raise ValueError("No steps recorded. Call record_step() first.")
 
-        # Converts the absolute paths finish_rollout() hands over into paths relative to
-        # the episode file, which is what the HDF5 stores. Batch 4 folds this together with
-        # _save_videos so there is one writer.
-        data["video_paths"] = self._resolve_video_paths(
-            output_dir=self.session_dir,
-            provided_video_paths=data.get("video_paths", {}),
-        )
+        # finish_rollout() has already written the camera videos and passes their paths;
+        # a direct save() call writes whichever cameras were not supplied.
+        provided = data.get("video_paths")
+        provided = provided if isinstance(provided, dict) else {}
+        unwritten = {
+            cam: self.frames[cam]
+            for cam in self.camera_names
+            if not str(provided.get(cam, "")).strip()
+        }
+        data["video_paths"] = {**provided, **self._write_videos(unwritten)}
+        data["additional_video_paths"] = self._write_videos(self._additional_video_buffers())
 
         # Save HDF5 file to disk
         h5_filename = f"{self.save_fname}.h5"
         h5_path = self.session_dir / h5_filename
         self._save_h5(h5_path, data)
+        self._log_nan_summary()
 
         return h5_path
 
@@ -416,7 +601,6 @@ class EpisodeRecorder:
         Returns:
             None: This method only performs file I/O side effects.
         """
-        str_dtype = h5py.string_dtype(encoding="utf-8")
         with h5py.File(path, "w") as f:
             # 1. Save the metadata attributes
             f.attrs["schema"] = "oopsiedata_format_v1"
@@ -445,101 +629,36 @@ class EpisodeRecorder:
             observations_group = f.create_group("observations")
             video_paths_group = observations_group.create_group("video_paths")
             video_paths = data.get("video_paths", {})
-            if not isinstance(video_paths, dict):
-                video_paths = {}
             for cam in self.camera_names:
-                raw_video_path = str(video_paths.get(cam, "")).strip()
-                if not raw_video_path:
-                    continue
-
-                episode_dir = path.parent.resolve()
-                video_path_obj = Path(raw_video_path).expanduser()
-                if not video_path_obj.is_absolute():
-                    video_path_obj = episode_dir / video_path_obj
-                rel_video_path = os.path.relpath(video_path_obj.resolve(), start=episode_dir)
-
-                video_paths_group.create_dataset(
-                    cam,
-                    data=rel_video_path.replace(os.sep, "/"),
-                    dtype=str_dtype,
-                )
+                video_path = str(video_paths.get(cam, "")).strip()
+                if video_path:
+                    write_video_path(video_paths_group, cam, video_path, path.parent)
 
             # 3. Save the robot state data
             robot_states = observations_group.create_group("robot_states")
-            for key in self.robot_profile.robot_state_keys:
-                robot_states.create_dataset(
-                    key,
-                    data=np.stack(
-                        [t["robot_state"][key] for t in self.timesteps], axis=0
-                    ),
-                    dtype=np.float64,
-                )
+            for key, values in self._stacked_robot_states().items():
+                robot_states.create_dataset(key, data=values, dtype=np.float64)
 
-            # 4. Save the action data
+            # 4. Save the action data: every valid key, h5py.Empty outside the action space.
             action_group = f.create_group("actions")
-
-            for action_key in self.timesteps[0]["action_dict"]:
-                action_values = [t["action_dict"][action_key] for t in self.timesteps]
-                if all(v is None for v in action_values):
+            actions = self._stacked_actions()
+            for action_key in sorted(VALID_ACTION_KEYS):
+                if action_key in actions:
                     action_group.create_dataset(
-                        action_key, data=h5py.Empty(dtype=np.float64)
+                        action_key, data=actions[action_key], dtype=np.float64
                     )
                 else:
                     action_group.create_dataset(
-                        action_key,
-                        data=np.stack(action_values, axis=0),
-                        dtype=np.float64,
+                        action_key, data=h5py.Empty(dtype=np.float64)
                     )
 
-    def _resolve_video_paths(
-        self,
-        output_dir: Path,
-        provided_video_paths: Any,
-    ) -> dict[str, str]:
-        """Resolve per-camera MP4 paths to paths relative to the episode file.
-
-        On the ``finish_rollout`` path every camera arrives in ``provided_video_paths``
-        (absolute, already written by :meth:`_save_videos`) and this only relativizes them —
-        which is what the HDF5 stores. A recorder driven directly through :meth:`save`
-        supplies nothing, and the buffered frames are written here instead, through the same
-        :func:`write_mp4`.
-
-        Args:
-            output_dir (Path): Directory used as the base for relative path
-                storage.
-            provided_video_paths (Any): Optional external mapping from camera to
-                MP4 path.
-
-        Returns:
-            dict[str, str]: Mapping from camera name to relative MP4 path.
-        """
-        paths: dict[str, str] = {}
-        provided = (
-            provided_video_paths if isinstance(provided_video_paths, dict) else {}
-        )
-        # Both sides of every relpath below must be resolved otherwise complex
-        # relative paths can produce a convoluted path
-        base = Path(output_dir).resolve()
-
-        for cam in self.camera_names:
-            provided_path = str(provided.get(cam, ""))
-            if provided_path:
-                abs_path = Path(provided_path).expanduser().resolve()
-                if abs_path.suffix.lower() != ".mp4":
-                    abs_path = abs_path.with_suffix(".mp4")
-                paths[cam] = os.path.relpath(abs_path, start=base)
-                continue
-
-            frames = self.frames.get(cam, [])
-            if len(frames) == 0:
-                continue
-
-            video_path = output_dir / f"{self.save_fname}_{cam}.mp4"
-            fps = float(self.robot_profile.control_freq)
-            write_mp4(video_path=video_path, frames=np.asarray(frames), fps=fps)
-            paths[cam] = os.path.relpath(video_path.resolve(), start=base)
-
-        return paths
+            # 5. Save additional sensor data: arrays keep their dtype, videos are paths.
+            if self.robot_profile.additional_data:
+                additional_group = f.create_group("additional_data")
+                for key, values in self._stacked_additional_arrays().items():
+                    additional_group.create_dataset(key, data=values)
+                for key, video_path in data.get("additional_video_paths", {}).items():
+                    write_video_path(additional_group, key, video_path, path.parent)
 
     def _get_camera_frame(
         self, observation: dict[str, Any], cam_name: str
@@ -564,29 +683,12 @@ class EpisodeRecorder:
             operator_name=data["metadata"]["operator_name"],
             trajectory_length=len(self.timesteps),
             control_freq=float(self.robot_profile.control_freq),
-            observations={
-                key: np.stack([t["robot_state"][key] for t in self.timesteps], axis=0)
-                for key in self.robot_profile.robot_state_keys
-            },
-            # Only the keys actually recorded, which record_step guarantees are exactly
-            # profile.action_space. The buffer carries all nine VALID_ACTION_KEYS with None
-            # in the unused slots; stacking those produced object arrays of None that the
-            # validator's ndim guards happened to skip. episode_loader builds this dict from
-            # the non-empty datasets only, so this keeps the two construction sites agreeing
-            # on what `actions` means.
-            actions={
-                key: np.stack([t["action_dict"][key] for t in self.timesteps], axis=0)
-                for key in self.robot_profile.action_space
-            },
-            videos={
-                cam: VideoInfo.from_frames(
-                    self.frames[cam],
-                    fps=self.robot_profile.control_freq,
-                    crf=float(VIDEO_CRF),
-                )
-                for cam in self.camera_names
-            },
+            observations=self._stacked_robot_states(),
+            actions=self._stacked_actions(),
+            videos=self._video_infos(self.frames),
             annotations=data.get("episode_annotations", None),
+            additional_data=self._stacked_additional_arrays(),
+            additional_videos=self._video_infos(self._additional_video_buffers()),
         )
         validate_episode(episode_data)
 

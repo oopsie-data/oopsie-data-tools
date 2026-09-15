@@ -32,6 +32,11 @@ import click
 import h5py
 
 from oopsie_data_tools.utils.hf_limits import BATCH_SIZE, FILE_LIMIT
+from oopsie_data_tools.utils.video_paths import (
+    read_video_paths,
+    resolve_from_episode,
+    write_video_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,39 +58,11 @@ def collect_h5_files(directory: Path) -> list[Path]:
     )
 
 
-def read_video_paths(h5_path: Path) -> dict[str, str]:
-    """Return ``{camera: stored_path_string}`` from ``observations/video_paths``."""
-    paths: dict[str, str] = {}
-    try:
-        with h5py.File(h5_path, "r") as f:
-            vp = f.get("observations/video_paths")
-            if vp is None:
-                return paths
-            for cam in vp.keys():
-                raw = vp[cam][()]
-                if isinstance(raw, bytes):
-                    raw = raw.decode("utf-8", errors="replace")
-                paths[cam] = str(raw).strip()
-    except Exception as exc:
-        logger.warning("  ! Could not read video paths from %s: %s", h5_path.name, exc)
-    return paths
-
-
-def resolve_video_path(stored_path: str, h5_dir: Path) -> Path:
-    """Resolve a stored video path to an absolute Path."""
-    p = Path(stored_path)
-    return p.resolve() if p.is_absolute() else (h5_dir / p).resolve()
-
-
 def write_video_paths(h5_path: Path, new_paths: dict[str, str]) -> None:
-    """Overwrite the video path datasets in the HDF5 file at *h5_path*."""
-    str_dtype = h5py.string_dtype(encoding="utf-8")
+    """Overwrite the video references, keyed by dataset path, in the HDF5 at *h5_path*."""
     with h5py.File(h5_path, "r+") as f:
-        vp = f["observations/video_paths"]
-        for cam, rel in new_paths.items():
-            if cam in vp:
-                del vp[cam]
-            vp.create_dataset(cam, data=rel, dtype=str_dtype)
+        for dataset_path, path in new_paths.items():
+            write_video_path(f, dataset_path, path, h5_path.parent)
 
 
 def dirs_to_split(source: Path) -> tuple[list[Path], list[Path]]:
@@ -127,7 +104,7 @@ def estimate_bytes(source: Path, h5_files: list[Path]) -> int:
     # Videos can live outside the source tree entirely (stored paths may contain "..").
     for h5 in h5_files:
         for stored in read_video_paths(h5).values():
-            abs_v = resolve_video_path(stored, h5.parent)
+            abs_v = resolve_from_episode(stored, h5.parent)
             if abs_v not in seen and abs_v.is_file():
                 total += abs_v.stat().st_size
                 seen.add(abs_v)
@@ -210,22 +187,23 @@ def restructure(output: Path, h5_files: list[Path]) -> set[Path]:
             # Resolve each video to an absolute path, copy it flat into the subfolder, and
             # record what the new relative path will be.
             new_rel_paths: dict[str, str] = {}
-            for cam, stored in stored_video_paths.items():
-                abs_video = resolve_video_path(stored, h5_dir)
+            for dataset_path, stored in stored_video_paths.items():
+                abs_video = resolve_from_episode(stored, h5_dir)
                 if not abs_video.exists():
                     logger.warning(
                         "    ! video not found, skipping: %s  (ref'd by %s)",
                         abs_video, h5_src.name,
                     )
                     # Leave the original path; validation will catch this later.
-                    new_rel_paths[cam] = stored
+                    new_rel_paths[dataset_path] = stored
                     continue
 
-                dest_name = _unique_video_dest(abs_video, cam, h5_src.stem, used_filenames)
+                name = dataset_path.rsplit("/", 1)[-1]
+                dest_name = _unique_video_dest(abs_video, name, h5_src.stem, used_filenames)
                 shutil.copy2(abs_video, sub / dest_name)
                 consumed.add(abs_video)
                 # Stored relative to the HDF5 location, which is now the same folder.
-                new_rel_paths[cam] = dest_name
+                new_rel_paths[dataset_path] = dest_name
 
             # Always write the updated paths back into the HDF5 copy so it is
             # self-consistent regardless of how the original paths were formatted.

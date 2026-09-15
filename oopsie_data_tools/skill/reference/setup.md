@@ -106,6 +106,8 @@ Ask the user:
 - Where is their robot control loop? (file path)
 - What variable holds the observation dict? (needs `robot_state` and `image_observation` keys)
 - What variable holds the action dict? (keys must equal `action_space` in the profile exactly)
+- Only if the profile declares `additional_data`: where do those sensor readings come from?
+  (a dict with exactly the declared keys, passed on every step)
 - Where should episode HDF5 files and videos be saved? (`data_root_dir`)
 - Who is running the evaluation? (`operator_name`, stamped into every episode)
 
@@ -119,6 +121,7 @@ recorder = EpisodeRecorder(
     data_root_dir="./samples",
     operator_name="<operator>",
     # resume_session_name="20260101_120000",  # optional: append to an existing session
+    # additional_data_nan_policy="warn",  # NaN in additional_data: "ignore" | "warn" | "error"
 )
 
 for _ in range(num_episodes):
@@ -126,6 +129,9 @@ for _ in range(num_episodes):
 
     # Inside the control loop:
     recorder.record_step(observation=obs, action=action)
+    # With additional_data declared in the profile, every step also passes its readings:
+    # recorder.record_step(observation=obs, action=action,
+    #                      additional_data={"wrist_ft": ft_reading, "tactile_left": frame})
 
     # After the rollout. `instruction` is required; `success` is optional — omit it to leave
     # the episode for the web annotator, but an episode with no annotation at all fails
@@ -136,4 +142,10 @@ for _ in range(num_episodes):
 `finish_rollout` validates *before* writing anything, so a rejected episode leaves no MP4s and
 no HDF5 on disk. The keys in the profile and the keys passed to `record_step` must agree exactly
 — see `reference/format.md`.
+
+Only the profile's `robot_state_keys` and `camera_names` are recorded from `observation`; any
+other key in `robot_state` or `image_observation` is **ignored without an error**. Sensor data
+(force/torque, IMU, tactile images, ...) put there is lost. It must be declared under
+`additional_data` in the profile and passed as `record_step(..., additional_data=...)`. When
+wiring a user's loop, check that every sensor they expect to record ends up in one of these.
 

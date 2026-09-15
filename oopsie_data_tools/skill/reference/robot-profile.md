@@ -87,3 +87,36 @@ them: `controller` (e.g. `OSC`, `joint_position`, `joint_velocity`), `gains` (se
 the expected nesting), and `intrinsic_calibration_matrix` / `extrinsic_calibration_matrix`, keyed
 by camera name — the spaced spelling (`intrinsic calibration matrix`) is also read, but the
 underscored one is canonical.
+
+## Additional data
+
+Optional sensor streams beyond robot state and cameras — force/torque, IMU, tactile. Ask whether
+the setup records any. Each entry is keyed by the name the data is stored under:
+
+```yaml
+additional_data:
+  wrist_ft:
+    sensor: ATI Mini45                # required: the device recording the data
+    sensor_info:                      # optional: a string or a mapping, free-form
+      units: N, Nm
+      frame: sensor
+  tactile_left:
+    sensor: GelSight Mini
+    format: video                     # "array" (default) or "video"
+```
+
+- Keys may contain letters, digits, `_` and `-`, and must not repeat a camera name or each other, ignoring case.
+- `sensor` must be non-empty; any other field than `sensor`, `sensor_info` and `format` is
+  rejected at profile load, so a typo does not silently drop metadata.
+- `format: array` stores the per-step values as a `(T, ...)` dataset with its numeric dtype
+  kept. The sum over all array keys is capped at 100 MiB per episode (uncompressed).
+- `format: video` takes one `(H, W, 3)` uint8 frame per step and stores it as an MP4, like a
+  camera. Use it for anything image-like; raw images as arrays hit the cap within minutes.
+  Frames must be at least 16×16; a coarse taxel grid (e.g. 4×4) belongs under `format: array`.
+- Sensor readings must go through `additional_data`. Extra keys in the observation's
+  `robot_state` or `image_observation` are ignored, not recorded.
+
+Once declared, every key must be passed on every step:
+`record_step(observation, action, additional_data={"wrist_ft": ft, "tactile_left": frame})`,
+with the same shape each step. Passing `additional_data` to a profile that declares none is an
+error.

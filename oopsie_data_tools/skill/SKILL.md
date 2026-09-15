@@ -72,7 +72,8 @@ Read the one you need; do not read all five.
 
 - `reference/setup.md` — installing, where configs live, `init`, and wiring `EpisodeRecorder`
   into a control loop. The onboarding path.
-- `reference/robot-profile.md` — profile fields, legal values, and the questions to ask.
+- `reference/robot-profile.md` — profile fields, legal values, and the questions to ask,
+  including declaring additional sensors (force/torque, tactile, ...) under `additional_data`.
 - `reference/format.md` — the HDF5 layout and what the validator enforces. Read before
   theorizing about a rejection.
 - `reference/conversion.md` — the same schema from the writing side, for converting an existing
