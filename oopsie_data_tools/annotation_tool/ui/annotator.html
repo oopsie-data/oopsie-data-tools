@@ -492,6 +492,13 @@
       .ef-val { flex: 1; color: var(--text-muted); font-family: var(--font-mono); word-break: break-word; }
 
       #autofillRow { margin-bottom: 16px; }
+
+      #qaPanel .card { margin-bottom: 16px; }
+      .qa-ann { padding: 6px 0; border-top: 1px solid var(--border-divider); }
+      .qa-ann:first-child { border-top: none; padding-top: 0; }
+      .qa-ann-head { font-weight: 600; }
+      .qa-ann-row { color: var(--text-muted); white-space: pre-wrap; word-break: break-word; }
+      #qaNotes { width: 100%; min-height: 160px; }
       .autofill-label { display: block; font-size: var(--fs-ui); color: var(--text-muted-2); font-weight: 500; margin-bottom: 4px; }
       #autofillRow select { margin-top: 4px; }
       /* Clears the instruction field's focus ring, which is drawn 2px outside its border
@@ -605,7 +612,7 @@
           <span class="ctx-label">Status</span>
           <span class="statusline" id="statusLine">Loading…</span>
           <span class="ctx-sep">·</span>
-          <span class="ctx-label">Annotator</span>
+          <span class="ctx-label" id="annotatorLabel">Annotator</span>
           <span id="sessionAnnotatorName">—</span>
         </div>
         <div class="header-actions">
@@ -727,6 +734,17 @@
               </div>
             </div>
             <div id="episodeFields" hidden></div>
+            <!-- QA mode only: read-only provenance and annotations, plus the QA note. -->
+            <div id="qaPanel" hidden>
+              <h2 class="card-title">Episode</h2>
+              <div class="card" id="qaSource"></div>
+              <h2 class="card-title">Existing annotations (read-only)</h2>
+              <div class="card" id="qaAnnotations"></div>
+              <h2 class="card-title">QA notes</h2>
+              <div class="card">
+                <textarea id="qaNotes" placeholder="Anything wrong with this episode: videos, instruction, annotation, robot data…"></textarea>
+              </div>
+            </div>
             <div id="autofillRow" hidden>
               <label class="autofill-label" for="autofillSelect">Copy from a previous annotation</label>
               <select id="autofillSelect"><option value="">— select —</option></select>
@@ -973,7 +991,7 @@
         if (taskEl) taskEl.textContent = task;
         // The task instruction is only editable for a selected HDF5 episode (#31).
         const editBtn = el("editInstrBtn");
-        if (editBtn) editBtn.hidden = !browseRelPath;
+        if (editBtn) editBtn.hidden = !browseRelPath || qaMode();
         if (!browseRelPath) el("instrEditRow").hidden = true;
       }
 
@@ -1023,10 +1041,12 @@
         }
         setHidden("annotateControls", which !== "annotateCard");
         if (which === "annotateCard") {
-          setHidden("questionnaire", false);
+          setHidden("questionnaire", qaMode());
+          setHidden("qaPanel", !qaMode());
           setHidden("saveBar", false);
-          setHidden("autofillRow", !(state.recentAnnotations && state.recentAnnotations.length));
+          setHidden("autofillRow", qaMode() || !(state.recentAnnotations && state.recentAnnotations.length));
         } else {
+          setHidden("qaPanel", true);
           setHidden("episodeFields", true);
           setHidden("autofillRow", true);
           setHidden("questionnaire", true);
@@ -1616,6 +1636,45 @@
       function inTheLoopMode() {
         return !(typeof ANNOTATOR_BROWSE_ONLY !== "undefined" && ANNOTATOR_BROWSE_ONLY);
       }
+      // QA launches (`oopsie-data qa`) show episodes read-only; the only edit is a QA note.
+      function qaMode() {
+        return typeof ANNOTATOR_QA_MODE !== "undefined" && Boolean(ANNOTATOR_QA_MODE);
+      }
+      function renderQA(sample) {
+        if (!qaMode()) return;
+        const entry = (sample && sample.qa) || {};
+        const row = (k, v) => `<div class="ef-row"><span class="ef-key">${escHtml(k)}</span><span class="ef-val">${escHtml(fmtFieldVal(v))}</span></div>`;
+        el("qaSource").innerHTML = sample
+          ? [
+              row("qa_id", entry.qa_id),
+              row("dataset_repo", entry.dataset_repo),
+              row("repo_path", entry.repo_path),
+              row("lab_id", entry.lab_id),
+              row("operator", entry.operator),
+              row("robot", entry.robot_name),
+            ].join("")
+          : '<div class="muted">Select an episode.</div>';
+        const anns = (sample && sample.all_annotations) || [];
+        el("qaAnnotations").innerHTML = anns.length
+          ? anns.map((a) => {
+              const cats = (a.failure_category || []).join(", ");
+              const lines = [
+                a.episode_description && `Description: ${a.episode_description}`,
+                cats && `Categories: ${cats}`,
+                a.severity && `Severity: ${a.severity}`,
+                a.additional_notes && `Notes: ${a.additional_notes}`,
+              ].filter(Boolean);
+              const meta = [a.source, a.timestamp].filter(Boolean).join(" · ");
+              return `<div class="qa-ann">
+                <div class="qa-ann-head">${escHtml(a.annotator)} — ${escHtml(a.outcome || "no outcome")}</div>
+                ${meta ? `<div class="muted">${escHtml(meta)}</div>` : ""}
+                ${lines.map((l) => `<div class="qa-ann-row">${escHtml(l)}</div>`).join("")}
+              </div>`;
+            }).join("")
+          : '<div class="muted">No annotations.</div>';
+        el("qaNotes").value = entry.qa_notes || "";
+        el("qaNotes").disabled = !sample;
+      }
       function autoAdvanceEnabled() {
         const chk = el("autoAdvanceChk");
         return chk ? chk.checked : false;
@@ -1880,6 +1939,7 @@
           }
           if (formPopulatedFor !== browseRelPath) {
             populateForm(currentBrowseSample?.existing_annotation || {});
+            renderQA(currentBrowseSample);
             formPopulatedFor = browseRelPath;
           }
           syncHeaderPanel(st);
@@ -1896,6 +1956,7 @@
           }
           if (formPopulatedFor !== "__browse_landing__") {
             populateForm({});
+            renderQA(null);
             formPopulatedFor = "__browse_landing__";
           }
           syncHeaderPanel(st);
@@ -1991,7 +2052,31 @@
         el("instructionHistorySel").value = "";
       });
 
+      async function saveQANotes() {
+        if (!browseRelPath) return;
+        el("saveMsg").textContent = "";
+        el("saveBtn").disabled = true;
+        try {
+          const res = await jpost(
+            `/api/qa/notes?path=${encodeURIComponent(browseRelPath)}`,
+            { notes: el("qaNotes").value },
+          );
+          if (currentBrowseSample) currentBrowseSample.qa = res.entry;
+          markSaved();
+          await pollH5List();
+          if (autoAdvanceEnabled() && !(await navigateToNextUnannotated())) {
+            showToast("Saved. No episodes without QA notes left after this one.", "info");
+          }
+        } catch (e) {
+          el("saveMsg").textContent = "Error saving.";
+          showToast(`Could not save QA notes: ${e}`);
+        } finally {
+          updateSaveButtonState();
+        }
+      }
+
       el("saveBtn").addEventListener("click", async () => {
+        if (qaMode()) return saveQANotes();
         if (!currentSampleId && !browseRelPath) return;
         const answers = gatherAnswers();
         const saveValidationError = validateSaveAnswers(answers);
@@ -2101,6 +2186,7 @@
 
       // Dirty tracking: any real edit flips the indicator and clears stale messages (#34).
       el("questionnaire").addEventListener("input", () => { setDirty(true); el("saveMsg").textContent = ""; });
+      el("qaNotes").addEventListener("input", () => { setDirty(true); el("saveMsg").textContent = ""; });
       el("questionnaire").addEventListener("change", () => { setDirty(true); el("saveMsg").textContent = ""; });
 
       // Theme toggle: dark/light. Reads OS preference by default; explicit choice is
@@ -2211,6 +2297,7 @@
         if (e.key === "ArrowRight" || e.key === "n" || e.key === "j") { e.preventDefault(); navigateBy(1); return; }
         if (e.key === "ArrowLeft" || e.key === "p" || e.key === "k") { e.preventDefault(); navigateBy(-1); return; }
         if (!browseRelPath && !currentSampleId) return;
+        if (qaMode()) return;
         if (e.key === "s" || e.key === "S") { e.preventDefault(); setOutcome("success"); }
         else if (e.key === "f" || e.key === "F") { e.preventDefault(); setOutcome("failure"); }
         // 1-4 reach the two qualified successes, which s/f alone cannot.
@@ -2274,6 +2361,18 @@
       if (IS_IN_THE_LOOP) {
         el("backToTaskBtn").hidden = false;
         el("saveBarRolloutBtn").hidden = false;
+      }
+
+      if (qaMode()) {
+        document.querySelector("header h1").textContent = "OopsieData QA";
+        el("annotatorLabel").textContent = "Reviewer";
+        el("saveBtn").textContent = "Save QA notes";
+        el("nextUnannotatedBtn").textContent = "Next without notes ▶▶";
+        el("statsComplete").previousElementSibling.textContent = "With QA notes";
+        document.querySelector(".sidebar-filter-text").firstChild.textContent = "Hide episodes with notes ";
+        document.querySelector(".h5-legend").innerHTML =
+          '<div class="h5-legend-row"><span class="tick">✓✓</span> QA notes written</div>' +
+          '<div class="h5-legend-row"><span class="other-mark">◆</span> Has annotations</div>';
       }
 
       updateSaveButtonState(); // start disabled with the "select an episode" tooltip

@@ -28,6 +28,7 @@ from urllib.parse import quote
 import h5py
 from flask import Flask, abort, jsonify, request, send_file
 
+from oopsie_data_tools.annotation_tool import qa_manifest
 from oopsie_data_tools.annotation_tool.annotation_schema import (
     ANNOTATION_SCHEMA_CURRENT,
     OUTCOME_SUCCESS,
@@ -67,6 +68,9 @@ class ServerConfig:
     annotator_name: str
     # HDF5 browser + annotation form only (no instruction / rollout cards).
     browse_only: bool = False
+    # QA mode: episodes are read-only and the only editable field is a QA note per
+    # episode, stored in this manifest.
+    qa_manifest: Path | None = None
 
 
 class Runtime:
@@ -170,11 +174,13 @@ def configure_runtime(
     annotator_name: str,
     *,
     browse_only: bool = False,
+    qa_manifest: Path | None = None,
 ) -> Runtime:
     cfg = ServerConfig(
         samples_dir=samples_dir.resolve(),
         annotator_name=annotator_name,
-        browse_only=browse_only,
+        browse_only=browse_only or qa_manifest is not None,
+        qa_manifest=qa_manifest.resolve() if qa_manifest is not None else None,
     )
     rt = Runtime(cfg)
     app.extensions["annotator_runtime"] = rt
@@ -184,11 +190,14 @@ def configure_runtime(
 @app.get("/")
 def index() -> str:
     html = _load_template("annotator.html")
-    browse = "true" if _get_runtime().cfg.browse_only else "false"
-    name_js = json.dumps(_get_runtime().cfg.annotator_name)
+    cfg = _get_runtime().cfg
+    browse = "true" if cfg.browse_only else "false"
+    qa = "true" if cfg.qa_manifest is not None else "false"
+    name_js = json.dumps(cfg.annotator_name)
     html = html.replace(
         "<script>",
         f"<script>\n      const ANNOTATOR_BROWSE_ONLY = {browse};\n"
+        f"      const ANNOTATOR_QA_MODE = {qa};\n"
         f"      const ANNOTATOR_NAME = {name_js};\n",
         1,
     )
@@ -413,6 +422,43 @@ def _read_existing_annotation_dict(ea: h5py.Group, annotator_name: str) -> dict[
     return existing_annotation
 
 
+def _read_all_annotations(h5f: h5py.File) -> list[dict[str, Any]]:
+    """Every annotator's annotation, decoded to v2 keys, for read-only display."""
+    ea = h5f.get("episode_annotations")
+    if not isinstance(ea, h5py.Group):
+        return []
+    out: list[dict[str, Any]] = []
+    for name in sorted(ea.keys()):
+        sub = ea[name]
+        if not isinstance(sub, h5py.Group):
+            continue
+        ann = read_annotation_attrs(sub.attrs)
+        ann["annotator"] = name
+        ann["source"] = str(_read_h5_attr(sub, "source", "") or "")
+        ann["timestamp"] = str(_read_h5_attr(sub, "timestamp", "") or "")
+        out.append(ann)
+    if not out and _read_h5_attr(ea, "success", None) is not None:
+        ann = read_annotation_attrs(ea.attrs)
+        ann["annotator"] = "(episode-level)"
+        out.append(ann)
+    return out
+
+
+def _qa_notes_by_path(rt: Runtime) -> dict[str, str]:
+    if rt.cfg.qa_manifest is None:
+        return {}
+    manifest = qa_manifest.read_manifest(rt.cfg.qa_manifest)
+    return {
+        str(e.get("bundle_path")): str(e.get("qa_notes") or "")
+        for e in manifest.get("episodes", [])
+    }
+
+
+def _forbid_in_qa_mode(rt: Runtime) -> None:
+    if rt.cfg.qa_manifest is not None:
+        abort(403, description="episodes are read-only in QA mode")
+
+
 def _annotation_tick_level(ann: dict[str, Any]) -> int:
     """0 = not annotated, 1 = outcome only, 2 = complete for that outcome.
 
@@ -579,6 +625,7 @@ def api_h5_list():
     rt = _get_runtime()
     root = rt.cfg.samples_dir.resolve()
     entries: list[dict[str, Any]] = []
+    qa_notes = _qa_notes_by_path(rt)
     for p in root.rglob("*.h5"):
         if not p.is_file():
             continue
@@ -586,6 +633,8 @@ def api_h5_list():
         meta = _h5_meta(p, rt.cfg.annotator_name)
         tick_level = meta["tick_level"]
         others = meta["annotated_by_others"]
+        if rt.cfg.qa_manifest is not None:
+            tick_level = 2 if qa_notes.get(rel, "").strip() else 0
         annotated = tick_level >= 1
         entries.append(
             {
@@ -702,6 +751,7 @@ def api_h5_sample():
         metadata["episode_id"] = str(_read_h5_attr(h5f, "episode_id", "")) or ""
         metadata["operator_name"] = str(_read_h5_attr(h5f, "operator_name", "")) or ""
         episode_fields = _summarize_episode_fields(h5f)
+        all_annotations = _read_all_annotations(h5f)
 
         ea = h5f.get("episode_annotations")
         if isinstance(ea, h5py.Group):
@@ -741,6 +791,12 @@ def api_h5_sample():
                 continue
             video_urls[cam] = f"/videos-path/{quote(rel, safe='/')}"
 
+    qa_entry = None
+    if rt.cfg.qa_manifest is not None:
+        qa_entry = qa_manifest.entry_for(
+            qa_manifest.read_manifest(rt.cfg.qa_manifest), metadata["rel_path"]
+        )
+
     return jsonify(
         {
             "rel_path": metadata["rel_path"],
@@ -748,6 +804,8 @@ def api_h5_sample():
             "video_urls": video_urls,
             "existing_annotation": existing_annotation,
             "episode_fields": episode_fields,
+            "all_annotations": all_annotations,
+            "qa": qa_entry,
         }
     )
 
@@ -755,6 +813,7 @@ def api_h5_sample():
 @app.post("/api/h5/annotations")
 def api_h5_save_annotation():
     rt = _get_runtime()
+    _forbid_in_qa_mode(rt)
     samples_root = rt.cfg.samples_dir.resolve()
     h5_path = _safe_h5_path_from_query(samples_root)
 
@@ -783,6 +842,7 @@ def api_h5_save_annotation():
 def api_h5_set_instruction():
     """Overwrite an episode's ``language_instruction`` root attr (issue #31)."""
     rt = _get_runtime()
+    _forbid_in_qa_mode(rt)
     samples_root = rt.cfg.samples_dir.resolve()
     h5_path = _safe_h5_path_from_query(samples_root)
 
@@ -797,6 +857,33 @@ def api_h5_set_instruction():
         return jsonify({"error": f"could not write instruction: {e}"}), 500
 
     return jsonify({"status": "saved", "language_instruction": instruction})
+
+
+@app.get("/api/qa/notes")
+def api_qa_notes():
+    rt = _get_runtime()
+    if rt.cfg.qa_manifest is None:
+        abort(404)
+    return jsonify(qa_manifest.read_manifest(rt.cfg.qa_manifest))
+
+
+@app.post("/api/qa/notes")
+def api_qa_save_note():
+    """Store the QA note for one episode in the manifest; the episode file is untouched."""
+    rt = _get_runtime()
+    if rt.cfg.qa_manifest is None:
+        abort(404)
+    h5_path = _safe_h5_path_from_query(rt.cfg.samples_dir.resolve())
+    rel = h5_path.relative_to(rt.cfg.samples_dir.resolve()).as_posix()
+    notes = str(_json_payload().get("notes", ""))
+    try:
+        with rt._lock:
+            entry = qa_manifest.set_note(
+                rt.cfg.qa_manifest, rel, notes, rt.cfg.annotator_name
+            )
+    except KeyError:
+        return jsonify({"error": f"{rel} is not listed in the QA manifest"}), 404
+    return jsonify({"status": "saved", "entry": entry})
 
 
 TEMPLATE_DIR = Path(__file__).parent / "ui"
@@ -828,6 +915,7 @@ def run_server(
     port: int = 5001,
     open_browser: bool = True,
     with_rollouts: bool = False,
+    qa_manifest: Path | None = None,
 ) -> int:
     """Configure the runtime and serve the annotation UI (blocks until interrupted).
 
@@ -839,6 +927,7 @@ def run_server(
         samples_dir=samples_dir,
         annotator_name=annotator_name.strip(),
         browse_only=bool(not with_rollouts),
+        qa_manifest=qa_manifest,
     )
 
     # Checked before the browser opens: werkzeug would otherwise fail its own bind a

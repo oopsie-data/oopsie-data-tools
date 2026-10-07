@@ -19,6 +19,7 @@ import logging
 import os
 import sys
 import textwrap
+import zipfile
 from pathlib import Path
 
 import click
@@ -497,6 +498,68 @@ def annotate(samples_dir, annotator_name, port, no_browser, with_rollouts):
         port=port,
         open_browser=not no_browser,
         with_rollouts=with_rollouts,
+    )
+
+
+# ── qa ────────────────────────────────────────────────────────────────────────
+
+
+@cli.command()
+@click.argument("bundle", type=click.Path(exists=True, path_type=Path))
+@click.option("--reviewer", default=None, metavar="NAME", help="Reviewer name (prompted for if omitted)")
+@click.option(
+    "--out",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    metavar="DIR",
+    help="Where to unpack a zip bundle (default: next to the zip)",
+)
+@click.option("--port", type=int, default=5001, metavar="N", help="Server port (default: 5001)")
+@click.option("--no-browser", is_flag=True, help="Do not open a browser window on start")
+def qa(bundle, reviewer, out, port, no_browser):
+    """Review a QA bundle: watch each episode and write QA notes.
+
+    BUNDLE is a qa_bundle_XX.zip or its unpacked directory. Episodes and their existing
+    annotations are shown read-only; the only field you edit is a free-text QA note per
+    episode. Notes are saved into qa_manifest.json inside the bundle directory — send that
+    file back when you are done. Re-running on the same zip resumes with your notes intact.
+
+    \b
+    Examples:
+      oopsie-data qa qa_bundle_01.zip --reviewer alex
+      oopsie-data qa ./qa_bundle_01 --reviewer alex --port 8080
+    """
+    from oopsie_data_tools.annotation_tool import qa_manifest
+    from oopsie_data_tools.annotation_tool.annotator_server import run_server
+
+    name = (reviewer or "").strip()
+    if not name:
+        if not sys.stdin.isatty():
+            logger.error("--reviewer is required when stdin is not a terminal.")
+            return 1
+        name = click.prompt("Reviewer name").strip()
+    if not name:
+        logger.error("A reviewer name is required. Pass --reviewer.")
+        return 1
+
+    try:
+        if bundle.is_dir():
+            bundle_dir = bundle.resolve()
+        else:
+            bundle_dir = qa_manifest.unpack_bundle(bundle, out or bundle.resolve().parent)
+        manifest_path = qa_manifest.find_manifest(bundle_dir)
+    except (qa_manifest.QABundleError, OSError, zipfile.BadZipFile) as e:
+        logger.error("%s", e)
+        return 1
+    qa_manifest.set_reviewer(manifest_path, name)
+    logger.info("QA notes are saved to %s", manifest_path)
+
+    return run_server(
+        samples_dir=bundle_dir,
+        annotator_name=name,
+        port=port,
+        open_browser=not no_browser,
+        qa_manifest=manifest_path,
     )
 
 
