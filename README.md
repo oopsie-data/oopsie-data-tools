@@ -18,7 +18,7 @@ This repository currently provides tools for:
 - Web annotation workflows
 - In-the-loop annotation during policy rollout
 
-as well as all the necessary utilities to validate, inspect, and upload Oopsie-Data to the official repositories.
+as well as all the necessary utilities to validate, quality-check (`oopsie-data qa`), inspect, and upload Oopsie-Data to the official repositories.
 
 
 ## Need help integrating?
