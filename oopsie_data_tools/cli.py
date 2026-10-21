@@ -141,6 +141,7 @@ A typical session, in order:
   oopsie-data new-profile                # once per robot, then fill the file in
   oopsie-data annotate --samples-dir ./samples --annotator-name "your name"
   oopsie-data validate --path ./samples
+  oopsie-data qa       --path ./samples     # optional: data-quality report
   oopsie-data upload   --path ./samples
 
 If upload refuses because a directory holds too many files for HuggingFace, split it with
@@ -564,6 +565,153 @@ def validate(path, episode_id, log_path, as_json):
     # An empty directory is a failure in the prose path too — nothing was checked, so
     # nothing can be said to have passed.
     return 1 if failed or not episodes else 0
+
+
+# ── qa ────────────────────────────────────────────────────────────────────────
+
+_QA_LISTED_EPISODES = 20
+
+
+def _print_qa_summary(report: dict, output: Path) -> None:
+    summary = report["summary"]
+    click.echo(
+        f"Checked {summary['episodes_checked']} of {summary['episodes_found']} episode(s): "
+        f"{summary['episodes_flagged']} flagged, {summary['episodes_clean']} clean, "
+        f"{summary['episodes_not_checked']} not checked, {summary['episodes_errored']} errored."
+    )
+    per_check = summary["flagged_episodes_per_check"]
+    if per_check:
+        click.echo("\nFlagged episodes per check:")
+        width = max(len(name) for name in per_check)
+        for name, count in per_check.items():
+            click.echo(f"  {name:<{width}}  {count}")
+    flagged = [e for e in report["episodes"] if e["status"] in ("flagged", "error")]
+    if flagged:
+        click.echo("\nEpisodes:")
+        for e in flagged[:_QA_LISTED_EPISODES]:
+            what = e["error"] if e["status"] == "error" else ", ".join(e["flagged_checks"])
+            click.echo(f"  {e['episode']}: {e['status'].upper()} ({what})")
+        if len(flagged) > _QA_LISTED_EPISODES:
+            click.echo(f"  ... and {len(flagged) - _QA_LISTED_EPISODES} more")
+    click.echo(f"\nReport: {output}")
+
+
+@cli.command()
+@click.option(
+    "--path",
+    required=True,
+    metavar="PATH",
+    help="A single .h5 file, or a session directory containing .h5 files",
+)
+@click.option(
+    "--episode-id",
+    default=None,
+    metavar="ID",
+    help="Zero-padded episode id (e.g. 000001) to check just that episode inside --path",
+)
+@click.option(
+    "--output",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=Path("qa_report.yaml"),
+    show_default=True,
+    metavar="FILE",
+    help="Where to write the YAML report",
+)
+@click.option(
+    "--limit",
+    type=click.IntRange(min=0),
+    default=0,
+    metavar="N",
+    help="Check a random sample of N episodes (default: all)",
+)
+@click.option("--seed", type=int, default=None, metavar="N", help="Seed for --limit's sample")
+@click.option(
+    "--workers",
+    type=click.IntRange(min=1),
+    default=min(8, os.cpu_count() or 1),
+    show_default="min(8, CPU count)",
+    metavar="N",
+    help="Episodes checked in parallel",
+)
+@click.option("--no-video", is_flag=True, help="Skip the video checks (they decode every frame)")
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    metavar="FILE",
+    help="YAML file overriding check toggles and thresholds",
+)
+@click.option("--strict", is_flag=True, help="Exit 1 if any episode is flagged or errored")
+@json_option("the report")
+def qa(path, episode_id, output, limit, seed, workers, no_video, config_path, strict, as_json):
+    """Run data-quality checks on recorded episodes.
+
+    Looks for problems that pass 'oopsie-data validate' but make the data less useful:
+    actions in the wrong units, normalized or stored as deltas, commands that do not match
+    the robot state, swapped arms, quaternion sign flips, and videos that are dark,
+    frozen, out of sync with the trajectory or recorded at the wrong rate.
+
+    Findings are advisory: the command exits 0 when episodes are flagged (unless --strict)
+    and 1 only if nothing could be checked. The full report is written as YAML to --output,
+    one record per episode with each finding's check, a one-line description and the values
+    that tripped it.
+
+    \b
+    Examples:
+      oopsie-data qa --path ./samples
+      oopsie-data qa --path ./samples --limit 50 --output qa/first_pass.yaml
+      oopsie-data qa --path ./samples --episode-id 000001 --no-video
+    """
+    from oopsie_data_tools.qa.config import disable_category, load_qa_config
+    from oopsie_data_tools.qa.runner import run_qa, write_report
+
+    target = Path(path).resolve()
+    if episode_id:
+        target = target / f"{episode_id}.h5"
+    if not target.exists():
+        if as_json:
+            _emit_json({"path": str(target), "error": "path does not exist"})
+            return 1
+        logger.error("Path does not exist: %s", target)
+        return 1
+
+    try:
+        config = load_qa_config(config_path)
+    except (ValueError, OSError) as e:
+        raise RuntimeError(f"Could not load QA config {config_path}: {e}") from e
+    if no_video:
+        config = disable_category(config, "video")
+
+    output = output.resolve()
+    if target.is_dir() and target in output.parents:
+        logger.warning(
+            "The report is inside %s and would be uploaded with the episodes; "
+            "consider writing it elsewhere with --output.",
+            target,
+        )
+
+    def progress(done: int, total: int, record: dict) -> None:
+        if not as_json:
+            click.echo(f"[{done}/{total}] {record['episode']}: {record['status']}", err=True)
+
+    report = run_qa(target, config, limit=limit, seed=seed, workers=workers, progress=progress)
+    write_report(report, output)
+
+    summary = report["summary"]
+    if as_json:
+        _emit_json({"report_path": str(output), **report})
+    else:
+        _print_qa_summary(report, output)
+
+    checked = summary["episodes_flagged"] + summary["episodes_clean"]
+    if checked == 0:
+        if not as_json:
+            logger.error("No episode could be checked under %s.", target)
+        return 1
+    if strict and (summary["episodes_flagged"] or summary["episodes_errored"]):
+        return 1
+    return 0
 
 
 # ── upload ────────────────────────────────────────────────────────────────────

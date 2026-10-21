@@ -20,6 +20,7 @@ oopsie-data new-profile                       # robot profile skeleton, then fil
 #           ... record episodes by calling EpisodeRecorder from the robot control loop
 oopsie-data annotate --samples-dir ./samples  # label episodes in a browser UI
 oopsie-data validate --path ./samples         # check against oopsiedata_format_v1
+oopsie-data qa       --path ./samples         # optional: data-quality report (YAML)
 oopsie-data upload   --path ./samples         # validates again, then publishes
 ```
 
@@ -30,7 +31,7 @@ bypasses every recording-time check — see `reference/conversion.md`.
 Also: `show-config`, `submissions` (counts, total size and when the last upload landed, all
 from Hub metadata — nothing is downloaded), `inspect <file.h5>` (structure dump; works even on files
 `validate` rejects, and the path is positional), `restructure` (split a directory HuggingFace
-would reject), `install-skill`. `validate`, `show-config` and `inspect` take `--json`; prefer it.
+would reject), `install-skill`. `validate`, `qa`, `show-config` and `inspect` take `--json`; prefer it.
 Two things the payloads do not tell you: a failed episode's `error_type` is either `validation`
 (the episode is bad — the user's to fix) or `unexpected` (the validator broke — report it, do not
 work around it), and `inspect`'s `robot_profile` attr is a JSON string *inside* the JSON, so it
@@ -62,13 +63,18 @@ record what actually happened in a rollout. If one is missing, ask.
 placeholder, writes mode 0600, and keeps the token out of the checkout. Writing it yourself
 loses all three.
 
+**`qa` findings are advisory, `validate` failures are not.** `qa` flags data that is valid but
+probably wrong (units, deltas, frames, video timing); `upload` does not run it. Report what it
+finds and trace it to the recording code; never edit episodes or loosen thresholds to make a
+report clean.
+
 **If validation fails, fix the data or report it — never `--skip-validate`.** Same for a robot
 profile skeleton that will not load: its required fields are blank on purpose, so that a
 half-edited profile cannot stamp placeholder metadata into every episode.
 
 ## Reference files
 
-Read the one you need; do not read all five.
+Read the one you need; do not read all six.
 
 - `reference/setup.md` — installing, where configs live, `init`, and wiring `EpisodeRecorder`
   into a control loop. The onboarding path.
@@ -78,6 +84,8 @@ Read the one you need; do not read all five.
   theorizing about a rejection.
 - `reference/conversion.md` — the same schema from the writing side, for converting an existing
   dataset instead of recording it.
+- `reference/qa.md` — `oopsie-data qa`: the data-quality checks, the YAML report, and what a
+  finding usually means on the recording side.
 - `reference/troubleshooting.md` — common errors, and the mistakes that pass validation silently.
 
 Docs: <https://oopsie-data.com> · Source:
