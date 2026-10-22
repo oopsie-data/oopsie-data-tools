@@ -8,11 +8,15 @@ checks run on that probe:
   count differing from the container's.
 - ``brightness``: median luma too dark or too bright, or a large share of
   near-black / near-white frames.
-- ``speed``: container fps differs from ``control_freq``, video duration differs
-  from the trajectory duration, irregular frame timestamps, or the cameras of one
-  episode disagreeing in duration.
-- ``heavy_artifacts_and_desync``: frozen runs or many duplicate frames while the
-  robot moves, image jumps (sudden one-way changes), and single corrupted frames.
+- ``fps``: container fps differs from ``control_freq``.
+- ``duration``: video duration (decoded frames / fps) differs from the trajectory
+  duration (T / ``control_freq``).
+- ``camera_duration_mismatch``: the cameras of one episode disagree in duration.
+- ``corrupted_frames``: a single frame unlike both its neighbours.
+- ``state_jump`` / ``video_jump`` / ``recording_gap``: a sudden jump in only the robot
+  state, only the video, or both at the same moment (time missing from the recording).
+- ``choppy``: many duplicate frames while the robot moves.
+- ``frozen``: a long run of static frames while the robot moves.
 - ``periodic_skips``: recording pauses at a regular period (e.g. during each
   action-chunk inference) while the low-level controller keeps the robot moving,
   seen as robot state that jumps at that period throughout the motion, with the
@@ -36,11 +40,12 @@ import numpy as np
 from oopsie_data_tools.qa.action_checks import _finding, _params, _skip
 
 CATEGORY = "video"
-ARTIFACTS = "heavy_artifacts_and_desync"
-CHECKS = ("resolution", "decoding", "brightness", "speed", ARTIFACTS, "periodic_skips")
+CHECKS = (
+    "decoding", "corrupted_frames", "state_jump", "video_jump", "recording_gap", "periodic_skips", "choppy",
+    "frozen", "resolution", "brightness", "fps", "duration", "camera_duration_mismatch",
+)
 ALL_CAMERAS = "all cameras"
 PROBE_SIZE = 96
-_PTS_RE = re.compile(r"pts_time:\s*([-+\d.eE]+)")
 _ERROR_RE = re.compile(r"\[(error|fatal)\]")
 SKIP_WINDOW = 8
 SKIP_MAX_PERIOD = 30
@@ -56,7 +61,6 @@ class VideoProbe:
     container_frames: int
     returncode: int
     errors: list[str] = field(default_factory=list)
-    pts: np.ndarray = field(default_factory=lambda: np.zeros(0))
     luma: np.ndarray = field(default_factory=lambda: np.zeros(0))
     diff: np.ndarray = field(default_factory=lambda: np.zeros(0))
     skip_diff: np.ndarray = field(default_factory=lambda: np.zeros(0))
@@ -92,7 +96,7 @@ def probe_video(path: Path, size: int = PROBE_SIZE) -> VideoProbe:
         "-fps_mode",
         "passthrough",
         "-vf",
-        f"scale={size}:{size},format=gray,showinfo",
+        f"scale={size}:{size},format=gray",
         "-f",
         "rawvideo",
         "-",
@@ -100,7 +104,6 @@ def probe_video(path: Path, size: int = PROBE_SIZE) -> VideoProbe:
     proc = subprocess.run(cmd, capture_output=True, check=False)
     log = proc.stderr.decode("utf-8", errors="replace").splitlines()
     errors = [line.strip() for line in log if _ERROR_RE.search(line)]
-    pts = np.array([float(m.group(1)) for line in log if (m := _PTS_RE.search(line))])
 
     raw = np.frombuffer(proc.stdout, dtype=np.uint8)
     n = raw.size // (size * size)
@@ -112,21 +115,51 @@ def probe_video(path: Path, size: int = PROBE_SIZE) -> VideoProbe:
         container_frames=container_frames,
         returncode=proc.returncode,
         errors=errors,
-        pts=pts,
         luma=frames.mean(axis=(1, 2)),
         diff=np.abs(np.diff(frames, axis=0)).mean(axis=(1, 2)),
         skip_diff=np.abs(frames[2:] - frames[:-2]).mean(axis=(1, 2)),
     )
 
 
+def _continuous_quaternions(pose: np.ndarray) -> np.ndarray:
+    """Copy of a ``(T, 7 * arms)`` cartesian pose with each arm's quaternion sign-flipped
+    where needed so consecutive quaternions agree (q and -q are the same orientation, so a
+    sign flip is not motion, but as raw numbers it looks like a jump of up to 2)."""
+    pose = pose.astype(float, copy=True)
+    for start in range(3, pose.shape[1], 7):
+        q = pose[:, start : start + 4]
+        for t in range(1, len(q)):
+            if np.dot(q[t], q[t - 1]) < 0:
+                q[t] = -q[t]
+    return pose
+
+
+def _unwrap_angles(a: np.ndarray, cols: range) -> np.ndarray:
+    """Copy with the angle columns ``cols`` unwrapped (a jump from +pi to -pi is not motion).
+    Only columns that look like radians (all values within +-(pi + 0.1)) are touched, so
+    degrees or other units are left alone."""
+    a = a.astype(float, copy=True)
+    for c in cols:
+        if c < a.shape[1] and np.all(np.abs(a[:, c]) <= np.pi + 0.1):
+            a[:, c] = np.unwrap(a[:, c])
+    return a
+
+
 def state_step(states: dict[str, np.ndarray]) -> np.ndarray | None:
     """Per-step size of the robot state change, over all non-gripper states, each
     scaled by its standard deviation. None without usable state."""
-    arrays = [
-        a.reshape(len(a), -1)
-        for k, a in states.items()
-        if k != "gripper_position" and a.ndim >= 1 and len(a) >= 2
-    ]
+    arrays = []
+    for k, a in states.items():
+        if k == "gripper_position" or a.ndim < 1 or len(a) < 2:
+            continue
+        a = a.reshape(len(a), -1)
+        if k == "cartesian_position" and a.shape[1] % 7 == 0:
+            a = _continuous_quaternions(a)  # [x, y, z, qx, qy, qz, qw] per arm: remove q -> -q flips
+        elif k == "cartesian_position" and a.shape[1] % 6 == 0:
+            a = _unwrap_angles(a, [c for c in range(a.shape[1]) if c % 6 >= 3])  # [x, y, z, euler] per arm
+        elif k == "joint_position":
+            a = _unwrap_angles(a, range(a.shape[1]))  # continuous joints wrapping at +-pi
+        arrays.append(a)
     if not arrays:
         return None
     n = min(len(a) for a in arrays)
@@ -228,78 +261,95 @@ def check_brightness(
     return issues
 
 
-def check_speed(
+def check_fps(p: VideoProbe, control_freq: float | None, fps_rel_tol: float) -> list[str]:
+    """The container's fps is a header value: a mismatch alone misaligns nothing if the frame
+    count still equals T (that is ``check_duration``), but playback runs at the wrong speed."""
+    if control_freq and p.fps > 0 and abs(p.fps - control_freq) > fps_rel_tol * control_freq:
+        return [f"video fps {p.fps:g} != control_freq {control_freq:g}"]
+    return []
+
+
+def check_duration(
     p: VideoProbe,
     n_steps: int | None,
     control_freq: float | None,
-    fps_rel_tol: float,
     duration_tol_s: float,
     duration_rel_tol: float,
-    frame_interval_cv: float,
 ) -> list[str]:
-    issues = []
-    if control_freq and p.fps > 0 and abs(p.fps - control_freq) > fps_rel_tol * control_freq:
-        issues.append(f"video fps {p.fps:g} != control_freq {control_freq:g}")
+    """With fps == control_freq this is "decoded frames == T": frame i is no longer step i."""
     if control_freq and n_steps and p.duration is not None:
         expected = n_steps / control_freq
         if abs(p.duration - expected) > max(duration_tol_s, duration_rel_tol * expected):
-            issues.append(
+            return [
                 f"video lasts {p.duration:.1f}s, trajectory {expected:.1f}s "
                 f"({p.decoded_frames} frames, {n_steps} steps)"
-            )
-    if len(p.pts) > 2:
-        dt = np.diff(p.pts)
-        mean = dt.mean()
-        if mean > 0 and dt.std() / mean > frame_interval_cv:
-            issues.append(
-                f"irregular frame timestamps: interval {mean * 1000:.0f}±{dt.std() * 1000:.0f} ms"
-            )
-    return issues
+            ]
+    return []
 
 
-def check_frames(
-    p: VideoProbe,
-    moving: np.ndarray | None,
-    rate: float,
-    static_diff: float,
-    duplicate_diff: float,
-    frozen_s: float,
-    choppy_fraction: float,
-    jump_diff: float,
-    jump_ratio: float,
-    glitch_diff: float,
-    glitch_ratio: float,
-) -> list[str]:
-    """Frozen/choppy need ``moving`` (robot-state motion); jumps and glitches do not."""
+def check_frozen(p: VideoProbe, moving: np.ndarray | None, rate: float, static_diff: float, frozen_s: float) -> list[str]:
+    """The longest run of static frames while the robot moves, if at least ``frozen_s``."""
     d = p.diff
-    if len(d) < 3:
+    if len(d) < 3 or moving is None or not moving.any():
         return []
-    issues = []
     rate = rate if rate > 0 else 1.0
+    frozen = _longest_run((d < static_diff) & _resample(moving, len(d)))
+    return [f"frozen for {frozen / rate:.1f}s while the robot moves"] if frozen / rate >= frozen_s else []
 
-    if moving is not None and moving.any():
-        mov = _resample(moving, len(d))
-        frozen = _longest_run((d < static_diff) & mov)
-        if frozen / rate >= frozen_s:
-            issues.append(f"frozen for {frozen / rate:.1f}s while the robot moves")
-        dup = float(((d < duplicate_diff) & mov).sum() / mov.sum())
-        if dup >= choppy_fraction:
-            issues.append(f"{dup:.0%} duplicate frames while the robot moves (choppy)")
 
+def check_choppy(
+    p: VideoProbe, moving: np.ndarray | None, duplicate_diff: float, choppy_fraction: float
+) -> list[str]:
+    """Share of near-duplicate frames while the robot moves, if at least ``choppy_fraction``."""
+    d = p.diff
+    if len(d) < 3 or moving is None or not moving.any():
+        return []
+    mov = _resample(moving, len(d))
+    dup = float(((d < duplicate_diff) & mov).sum() / mov.sum())
+    return [f"{dup:.0%} duplicate frames while the robot moves"] if dup >= choppy_fraction else []
+
+
+def find_corrupted_frames(p: VideoProbe, glitch_diff: float, glitch_ratio: float) -> list[int]:
+    """Frames unlike both neighbours: differing by at least ``glitch_diff`` from each, while
+    the neighbours differ ``glitch_ratio`` times less from each other. Frame indices."""
+    d = p.diff
+    return [
+        t for t in range(1, len(d))
+        if (a := min(d[t - 1], d[t])) >= glitch_diff and a / (p.skip_diff[t - 1] + 1.0) >= glitch_ratio
+    ]
+
+
+def find_video_jumps(p: VideoProbe, rate: float, jump_diff: float, jump_ratio: float, exclude: set[int]) -> list[float]:
+    """Times (s) of sudden one-way image changes: a frame difference of at least
+    ``jump_diff`` and ``jump_ratio`` times the median of the surrounding second. Frame
+    differences in ``exclude`` (around corrupted frames) are skipped."""
+    d = p.diff
+    rate = rate if rate > 0 else 1.0
     window = max(2, round(rate))
-    glitch_at = set()
-    for t in range(1, len(d)):
-        a = min(d[t - 1], d[t])
-        if a >= glitch_diff and a / (p.skip_diff[t - 1] + 1.0) >= glitch_ratio:
-            glitch_at.update({t - 1, t})
-            issues.append(f"corrupted frame at {t / rate:.1f}s")
+    times = []
     for t in range(len(d)):
-        if t in glitch_at or d[t] < jump_diff:
+        if t in exclude or d[t] < jump_diff:
             continue
         neighbours = np.r_[d[max(0, t - window) : t], d[t + 1 : t + 1 + window]]
         if neighbours.size and d[t] / (np.median(neighbours) + 1.0) >= jump_ratio:
-            issues.append(f"image jump at {(t + 1) / rate:.1f}s")
-    return issues
+            times.append((t + 1) / rate)
+    return times
+
+
+def state_jumps_at(step: np.ndarray, time_s: float, control_freq: float | None, state_jump_ratio: float) -> bool:
+    """Whether the robot state also changes abruptly within one step of ``time_s``: a step
+    at least ``state_jump_ratio`` times the mean step of the surrounding second."""
+    hz = control_freq if control_freq and control_freq > 0 else None
+    if hz is None or len(step) < 3:
+        return False
+    k = int(round(time_s * hz)) - 1  # step[k] is the change from state k to k+1
+    near = [i for i in (k - 1, k, k + 1) if 0 <= i < len(step)]
+    if not near:
+        return False
+    window = max(2, round(hz))
+    around = np.r_[step[max(0, near[0] - window) : near[0]], step[near[-1] + 1 : near[-1] + 1 + window]]
+    mean = float(np.mean(around)) if around.size else 0.0
+    return max(step[i] for i in near) > state_jump_ratio * mean
 
 
 def _position_jump(states: dict[str, np.ndarray], idx: np.ndarray) -> tuple[str, np.ndarray] | None:
@@ -425,16 +475,81 @@ def check_periodic_skips(
     return [issue]
 
 
+def find_state_jumps(
+    step: np.ndarray,
+    control_freq: float | None,
+    jump_ratio: float,
+    min_fraction_of_p95: float,
+    moving_fraction_of_p95: float,
+) -> list[tuple[int, float]]:
+    """Isolated one-step jumps of the robot state: ``(step index, size / local median)``.
+
+    A jump is at least ``jump_ratio`` times the mean step of the surrounding second
+    (excluding itself; the mean, not the median, so a state that updates only every few
+    steps - zeros in between - doesn't make each update look like a jump), at least ``min_fraction_of_p95`` of the episode's 95th-percentile
+    step (so jitter while the robot stands still doesn't count), and neither neighbour is
+    one (a run of big steps is fast motion, not a gap). Most of the surrounding second must
+    also be moving (at least half its steps above ``moving_fraction_of_p95`` of the 95th
+    percentile, the "robot moving" test): missing time only shows as a jump while the robot
+    moves, and a small twitch in an otherwise still second (e.g. the arm settling at the
+    start) is not one.
+    """
+    if len(step) < 5:
+        return []
+    window = max(2, round(control_freq or 10))
+    p95 = np.percentile(step, 95)
+    floor = min_fraction_of_p95 * p95
+    ratios = np.zeros(len(step))
+    surroundings_moving = np.zeros(len(step), dtype=bool)
+    for t in range(len(step)):
+        neighbours = np.r_[step[max(0, t - window) : t], step[t + 1 : t + 1 + window]]
+        mean = float(np.mean(neighbours)) if neighbours.size else 0.0
+        ratios[t] = step[t] / mean if mean > 0 else np.inf
+        surroundings_moving[t] = neighbours.size > 0 and np.mean(neighbours > moving_fraction_of_p95 * p95) >= 0.5
+    candidate = (ratios >= jump_ratio) & (step >= floor) & (step > 0) & surroundings_moving
+    isolated = candidate & ~(np.r_[False, candidate[:-1]] | np.r_[candidate[1:], False])
+    return [(int(t), float(ratios[t])) for t in np.flatnonzero(isolated)]
+
+
+def video_jumps_at(p: "VideoProbe", time_s: float, control_freq: float | None, video_jump_ratio: float) -> bool:
+    """Whether this camera's frame difference also spikes within one frame of ``time_s``,
+    compared with the median difference of the surrounding second."""
+    rate = p.fps or control_freq or 0.0
+    d = p.diff
+    if rate <= 0 or len(d) < 3:
+        return False
+    k = int(round(time_s * rate)) - 1  # d[k] is the change from frame k to k+1
+    near = range(max(0, k - 1), min(len(d), k + 2))
+    if not near:
+        return False
+    window = max(2, round(rate))
+    around = np.r_[d[max(0, k - 1 - window) : max(0, k - 1)], d[min(len(d), k + 2) : k + 2 + window]]
+    base = float(np.median(around)) if around.size else 0.0
+    return max(d[i] for i in near) / (base + 1.0) >= video_jump_ratio
+
+
+def drop_ignored_cameras(videos: dict[str, Path], ignore_cameras) -> tuple[dict[str, Path], list[str]]:
+    """Split off cameras named in ``ignore_cameras`` (case-insensitive): streams that are
+    other sensors stored as cameras, e.g. CMU_Intent's ``tactile``."""
+    ignore = {str(name).strip().lower() for name in ignore_cameras}
+    kept = {cam: path for cam, path in videos.items() if cam.lower() not in ignore}
+    return kept, sorted(set(videos) - set(kept))
+
+
 def run_video_checks(
     videos: dict[str, Path],
     states: dict[str, np.ndarray],
     control_freq: float | None,
     cfg: dict,
+    settings: dict,
     actions: dict[str, np.ndarray] | None = None,
 ) -> dict:
     """Run every enabled video check. ``videos`` maps camera name to mp4 path,
-    ``cfg`` is the ``video`` section of the action QA config, ``actions`` the
-    logged actions (used by ``periodic_skips`` to tell large commands from gaps).
+    ``cfg`` is the ``video`` section of the action QA config and ``settings`` its
+    ``video_settings``: cameras named in ``ignore_cameras`` are left out of every check
+    (recorded as an ``ignored_camera`` skip), and ``moving_fraction_of_p95`` sets when the
+    robot counts as moving. ``actions`` are the logged actions, used by ``periodic_skips``
+    to tell large commands from recording gaps.
 
     Returns ``{"findings", "skips", "checked"}`` like ``run_action_qa_on_episode``;
     findings are keyed by camera and carry the readable ``issue``.
@@ -444,19 +559,24 @@ def run_video_checks(
     skips: list[dict] = []
     if not enabled:
         return {"findings": findings, "skips": skips, "checked": []}
+    videos, ignored = drop_ignored_cameras(videos, settings["ignore_cameras"])
+    skips += [_skip(CATEGORY, t, cam, "ignored_camera") for cam in ignored for t in enabled]
     if not videos:
         skips += [_skip(CATEGORY, t, ALL_CAMERAS, "no_video_files") for t in enabled]
         return {"findings": findings, "skips": skips, "checked": []}
 
-    def add(test: str, camera: str, issues: list[str]) -> None:
-        findings.extend(_finding(CATEGORY, test, camera, issue=issue) for issue in issues)
+    def add(test: str, camera: str, issues: list[str], time_s: float | None = None) -> None:
+        # time_s: when a single-moment issue happens, for the report's evidence panel.
+        extra = {} if time_s is None else {"time_s": round(float(time_s), 3)}
+        findings.extend(_finding(CATEGORY, test, camera, issue=issue, **extra) for issue in issues)
 
     n_steps = next((len(a) for a in states.values() if a.ndim >= 1), None)
     moving = None
-    artifacts_params = _params(cfg[ARTIFACTS])
-    moving_fraction = artifacts_params.pop("moving_fraction_of_p95")
-    state_tests = [t for t in (ARTIFACTS, "periodic_skips") if cfg[t]["enabled"]]
-    step = state_step(states) if state_tests else None
+    moving_fraction = settings["moving_fraction_of_p95"]
+    state_tests = [t for t in ("state_jump", "recording_gap", "periodic_skips", "choppy", "frozen") if cfg[t]["enabled"]]
+    # video_jump also reads the state, to leave out jumps the state shares; without
+    # state it still runs and says so.
+    step = state_step(states) if state_tests or cfg["video_jump"]["enabled"] else None
     if state_tests and step is None:
         skips += [_skip(CATEGORY, t, ALL_CAMERAS, "no_robot_state") for t in state_tests]
     if step is not None:
@@ -465,6 +585,8 @@ def run_video_checks(
         skips.append(_skip(CATEGORY, "periodic_skips", ALL_CAMERAS, "no_position_state"))
 
     durations: dict[str, float] = {}
+    probes: dict[str, VideoProbe] = {}
+    video_jumps: dict[str, list[float]] = {}
     diffs: dict[str, np.ndarray] = {}
     for camera, path in sorted(videos.items()):
         if not Path(path).is_file():
@@ -472,29 +594,81 @@ def run_video_checks(
                 add("decoding", camera, [f"missing file {Path(path).name}"])
             continue
         p = probe_video(Path(path))
+        probes[camera] = p
         if cfg["resolution"]["enabled"]:
             add("resolution", camera, check_resolution(p, **_params(cfg["resolution"])))
         if cfg["decoding"]["enabled"]:
             add("decoding", camera, check_decoding(p, **_params(cfg["decoding"])))
         if cfg["brightness"]["enabled"]:
             add("brightness", camera, check_brightness(p, **_params(cfg["brightness"])))
-        if cfg["speed"]["enabled"]:
-            add("speed", camera, check_speed(p, n_steps, control_freq, **_params(cfg["speed"])))
-        if cfg[ARTIFACTS]["enabled"]:
-            rate = p.fps or control_freq or 0.0
-            add(ARTIFACTS, camera, check_frames(p, moving, rate, **artifacts_params))
+        if cfg["fps"]["enabled"]:
+            add("fps", camera, check_fps(p, control_freq, **_params(cfg["fps"])))
+        if cfg["duration"]["enabled"]:
+            add("duration", camera, check_duration(p, n_steps, control_freq, **_params(cfg["duration"])))
+        rate = p.fps or control_freq or 0.0
+        if cfg["corrupted_frames"]["enabled"] or cfg["video_jump"]["enabled"]:
+            corrupted = find_corrupted_frames(p, **_params(cfg["corrupted_frames"]))
+            if cfg["corrupted_frames"]["enabled"]:
+                for t in corrupted:
+                    add("corrupted_frames", camera, [f"corrupted frame at {t / (rate or 1.0):.1f}s"], t / (rate or 1.0))
+            if cfg["video_jump"]["enabled"]:
+                vj = _params(cfg["video_jump"])
+                around_corrupted = {i for t in corrupted for i in (t - 1, t)}
+                video_jumps[camera] = find_video_jumps(p, rate, vj["jump_diff"], vj["jump_ratio"], around_corrupted)
+        if cfg["choppy"]["enabled"]:
+            add("choppy", camera, check_choppy(p, moving, **_params(cfg["choppy"])))
+        if cfg["frozen"]["enabled"]:
+            add("frozen", camera, check_frozen(p, moving, rate, **_params(cfg["frozen"])))
         if p.duration is not None:
             durations[camera] = p.duration
         diffs[camera] = p.diff
 
-    if cfg["speed"]["enabled"] and len(durations) > 1:
-        spread = max(durations.values()) - min(durations.values())
-        if spread > cfg["speed"]["duration_tol_s"]:
-            detail = ", ".join(f"{c} {d:.1f}s" for c, d in durations.items())
-            add("speed", ALL_CAMERAS, [f"camera durations differ: {detail}"])
+    # State jumps, split by whether the video jumps at the same moment: both -> time is
+    # missing from the recording (recording_gap); state only -> a state glitch or the
+    # state and video out of step (state_jump). Video-only jumps are video_jump, below.
+    if step is not None and (cfg["recording_gap"]["enabled"] or cfg["state_jump"]["enabled"]):
+        hz = control_freq if control_freq and control_freq > 0 else None
+        for t, ratio in find_state_jumps(step, hz, **_params(cfg["state_jump"]), moving_fraction_of_p95=moving_fraction):
+            time_s = (t + 1) / hz if hz else float(t + 1)
+            when = f"{time_s:.1f}s" if hz else f"step {t + 1}"
+            cams = [c for c, p in probes.items() if video_jumps_at(p, time_s, hz, **_params(cfg["recording_gap"]))]
+            if cams and cfg["recording_gap"]["enabled"]:
+                add("recording_gap", ALL_CAMERAS, [
+                    f"robot state and video ({', '.join(cams)}) both jump at {when} "
+                    f"({ratio:.0f}x the surrounding motion): time looks missing from the recording"
+                ], time_s)
+            elif not cams and cfg["state_jump"]["enabled"]:
+                video_note = "but the video doesn't" if probes else "(no video to compare)"
+                add("state_jump", ALL_CAMERAS, [
+                    f"robot state jumps at {when} ({ratio:.0f}x the surrounding motion) {video_note}"
+                ], time_s)
+
+    # Image jumps the robot state doesn't share. Ones it does share are recording gaps
+    # (reported above when the state jump is clear enough).
+    if cfg["video_jump"]["enabled"]:
+        hz = control_freq if control_freq and control_freq > 0 else None
+        ratio = cfg["video_jump"]["state_jump_ratio"]
+        for camera, times in video_jumps.items():
+            for time_s in times:
+                if step is None:
+                    add("video_jump", camera, [f"image jump at {time_s:.1f}s (no robot state to compare)"], time_s)
+                elif not state_jumps_at(step, time_s, hz, ratio):
+                    add("video_jump", camera, [f"image jump at {time_s:.1f}s while the robot state changes smoothly"], time_s)
+
+    checked = list(enabled)
+    if cfg["camera_duration_mismatch"]["enabled"]:
+        if len(durations) > 1:
+            spread = max(durations.values()) - min(durations.values())
+            if spread > cfg["camera_duration_mismatch"]["duration_tol_s"]:
+                detail = ", ".join(f"{c} {d:.1f}s" for c, d in durations.items())
+                add("camera_duration_mismatch", ALL_CAMERAS, [f"camera durations differ: {detail}"])
+        else:
+            # One camera has nothing to agree with - not applicable rather than passed.
+            checked.remove("camera_duration_mismatch")
+            skips.append(_skip(CATEGORY, "camera_duration_mismatch", ALL_CAMERAS, "fewer_than_two_cameras"))
 
     if cfg["periodic_skips"]["enabled"] and step is not None:
         skip_params = _params(cfg["periodic_skips"])
         add("periodic_skips", ALL_CAMERAS, check_periodic_skips(step, moving, states, actions, diffs, control_freq, **skip_params))
 
-    return {"findings": findings, "skips": skips, "checked": [(CATEGORY, t) for t in enabled]}
+    return {"findings": findings, "skips": skips, "checked": [(CATEGORY, t) for t in checked]}

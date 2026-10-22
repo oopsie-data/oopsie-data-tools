@@ -583,8 +583,9 @@ def _print_qa_summary(report: dict, output: Path) -> None:
     if per_check:
         click.echo("\nFlagged episodes per check:")
         width = max(len(name) for name in per_check)
-        for name, count in per_check.items():
-            click.echo(f"  {name:<{width}}  {count}")
+        for name, entry in per_check.items():
+            label = f"{entry['confidence'].replace('_', ' ')}, {entry['suggested_action'].replace('_', ' ')}"
+            click.echo(f"  {name:<{width}}  {entry['episodes']:>5}  ({label})")
     flagged = [e for e in report["episodes"] if e["status"] in ("flagged", "error")]
     if flagged:
         click.echo("\nEpisodes:")
@@ -649,13 +650,13 @@ def qa(path, episode_id, output, limit, seed, workers, no_video, config_path, st
 
     Looks for problems that pass 'oopsie-data validate' but make the data less useful:
     actions in the wrong units, normalized or stored as deltas, commands that do not match
-    the robot state, swapped arms, quaternion sign flips, and videos that are dark,
-    frozen, out of sync with the trajectory or recorded at the wrong rate.
+    the robot state, action chunks recorded per step, placeholder names, and videos that
+    are frozen, choppy, out of sync with the trajectory or recorded at the wrong rate.
 
     Findings are advisory: the command exits 0 when episodes are flagged (unless --strict)
     and 1 only if nothing could be checked. The full report is written as YAML to --output,
-    one record per episode with each finding's check, a one-line description and the values
-    that tripped it.
+    one record per episode with each finding's check, a one-line description, its confidence and
+    suggested action, and the values that tripped it.
 
     \b
     Examples:
