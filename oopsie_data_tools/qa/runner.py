@@ -2,7 +2,9 @@
 
 The report is one YAML document: a ``summary`` (counts, and the episodes flagged per check),
 then one record per episode with its findings. Every finding carries the check's one-line
-``description`` next to the values that tripped it, so the file reads without the source.
+``description``, its ``confidence`` and ``suggested_action`` next to the values that tripped
+it, so the file reads without the source. An episode is ``flagged`` only by findings whose
+suggested action is not ``informational``.
 """
 
 from __future__ import annotations
@@ -23,8 +25,9 @@ from oopsie_data_tools.qa.action_checks import (
     load_action_state_arrays,
     profile_control_freq,
     run_action_qa_on_arrays,
+    run_metadata_checks,
 )
-from oopsie_data_tools.qa.config import CHECK_DESCRIPTIONS, DEFAULT_CHECKS, build_checks
+from oopsie_data_tools.qa.config import CHECK_DESCRIPTIONS, DEFAULT_CHECKS, FEEDBACK, build_checks
 from oopsie_data_tools.qa.video_checks import run_video_checks
 from oopsie_data_tools.utils.h5 import find_episode_files
 from oopsie_data_tools.utils.video_paths import read_video_paths, resolve_from_episode
@@ -36,6 +39,8 @@ STATUS_FLAGGED = "flagged"
 STATUS_CLEAN = "clean"
 STATUS_NOT_CHECKED = "not_checked"
 STATUS_ERROR = "error"
+
+INFORMATIONAL = "informational"
 
 
 def episode_cameras(h5_path: Path) -> Dict[str, Path]:
@@ -60,13 +65,23 @@ def check_episode(h5_path: Path, config: dict) -> dict:
     """
     with h5py.File(h5_path, "r") as f:
         actions, states, profile = load_action_state_arrays(f)
+        metadata = run_metadata_checks(f, profile, config)
     result = run_action_qa_on_arrays(actions, states, profile, config)
+    if metadata["checked"]:
+        result = _merge(result, metadata)
     video_cfg = config["video"]
     if any(cfg["enabled"] for cfg in video_cfg.values()):
         cameras = episode_cameras(h5_path)
         result = _merge(
             result,
-            run_video_checks(cameras, states, profile_control_freq(profile), video_cfg, actions),
+            run_video_checks(
+                cameras,
+                states,
+                profile_control_freq(profile),
+                video_cfg,
+                config["video_settings"],
+                actions,
+            ),
         )
     return result or {"findings": [], "skips": [], "checked": []}
 
@@ -107,13 +122,21 @@ def _check_name(category: str, test: str) -> str:
 
 def _finding_record(finding: dict) -> dict:
     category, test = finding["category"], finding["test"]
+    name = _check_name(category, test)
+    confidence, action = FEEDBACK[name]
     details = {k: v for k, v in finding.items() if k not in ("category", "test", "key")}
     return {
-        "check": _check_name(category, test),
+        "check": name,
         "key": finding["key"],
-        "description": CHECK_DESCRIPTIONS.get((category, test), ""),
+        "description": CHECK_DESCRIPTIONS[(category, test)],
+        "confidence": confidence,
+        "suggested_action": action,
         "details": _plain(details),
     }
+
+
+def is_actionable(check: str) -> bool:
+    return FEEDBACK[check][1] != INFORMATIONAL
 
 
 def _skip_record(skip: dict) -> dict:
@@ -129,7 +152,8 @@ def _episode_record(path: Path, root: Path, result: Optional[dict], error: Optio
     if error is not None:
         record.update(status=STATUS_ERROR, error=error)
         return record
-    if result["findings"]:
+    hit = sorted({_check_name(f["category"], f["test"]) for f in result["findings"]})
+    if any(is_actionable(c) for c in hit):
         status = STATUS_FLAGGED
     elif result["checked"]:
         status = STATUS_CLEAN
@@ -137,10 +161,8 @@ def _episode_record(path: Path, root: Path, result: Optional[dict], error: Optio
         status = STATUS_NOT_CHECKED
     record["status"] = status
     record["checks_run"] = len(result["checked"])
-    if result["findings"]:
-        record["flagged_checks"] = sorted(
-            {_check_name(f["category"], f["test"]) for f in result["findings"]}
-        )
+    if hit:
+        record["flagged_checks"] = hit
         record["findings"] = [_finding_record(f) for f in result["findings"]]
     if result["skips"]:
         record["skipped"] = [_skip_record(s) for s in result["skips"]]
@@ -151,11 +173,16 @@ def _config_overrides(config: dict) -> dict:
     """The values of ``config`` that differ from the defaults, nested like the config."""
     defaults = build_checks({})
     out: dict = {}
-    for category, checks in config.items():
-        for check, params in checks.items():
-            changed = {k: v for k, v in params.items() if defaults[category][check][k] != v}
+    for section, values in config.items():
+        if section not in DEFAULT_CHECKS:
+            changed = {k: v for k, v in values.items() if defaults[section][k] != v}
             if changed:
-                out.setdefault(category, {})[check] = changed
+                out[section] = changed
+            continue
+        for check, params in values.items():
+            changed = {k: v for k, v in params.items() if defaults[section][check][k] != v}
+            if changed:
+                out.setdefault(section, {})[check] = changed
     return out
 
 
@@ -231,7 +258,14 @@ def run_qa(
         "episodes_clean": status_counts[STATUS_CLEAN],
         "episodes_not_checked": status_counts[STATUS_NOT_CHECKED],
         "episodes_errored": status_counts[STATUS_ERROR],
-        "flagged_episodes_per_check": dict(flagged_per_check.most_common()),
+        "flagged_episodes_per_check": {
+            check: {
+                "episodes": count,
+                "confidence": FEEDBACK[check][0],
+                "suggested_action": FEEDBACK[check][1],
+            }
+            for check, count in flagged_per_check.most_common()
+        },
         "checks_enabled": enabled,
         "config_overrides": _plain(_config_overrides(config)),
     }

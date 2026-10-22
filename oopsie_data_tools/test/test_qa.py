@@ -2,8 +2,8 @@
 
 The checks run on synthetic arrays built to be clean, then broken in one named way, so each
 test fails on the defect it is named for. The CLI tests run on the shared valid fixtures,
-whose random-noise data and 224 px videos are flagged by several checks; they pin the shape
-of the report rather than which checks fire.
+whose random-noise data, placeholder names and static videos are flagged by several checks;
+they pin the shape of the report rather than which checks fire.
 """
 
 from __future__ import annotations
@@ -17,14 +17,24 @@ import yaml
 from scipy.spatial.transform import Rotation
 
 from oopsie_data_tools import cli
-from oopsie_data_tools.qa.action_checks import run_action_qa_on_arrays
+from oopsie_data_tools.qa.action_checks import placeholder_reason, run_action_qa_on_arrays
 from oopsie_data_tools.qa.config import (
     CHECK_DESCRIPTIONS,
+    CONFIDENCE_LEVELS,
     DEFAULT_CHECKS,
+    FEEDBACK,
+    SUGGESTED_ACTIONS,
+    build_checks,
     disable_category,
     load_qa_config,
 )
-from oopsie_data_tools.qa.runner import episode_cameras, run_qa, select_episodes
+from oopsie_data_tools.qa.runner import (
+    _episode_record,
+    episode_cameras,
+    run_qa,
+    select_episodes,
+)
+from oopsie_data_tools.qa.video_checks import run_video_checks
 
 T = 100
 JOINTS = [f"joint{i + 1}" for i in range(7)]
@@ -83,6 +93,14 @@ def test_every_check_has_a_description():
     assert checks == set(CHECK_DESCRIPTIONS)
 
 
+def test_every_check_has_a_confidence_and_suggested_action():
+    checks = {f"{c}.{t}" for c, tests in DEFAULT_CHECKS.items() for t in tests}
+    assert checks == set(FEEDBACK)
+    for confidence, action in FEEDBACK.values():
+        assert confidence in CONFIDENCE_LEVELS
+        assert action in SUGGESTED_ACTIONS
+
+
 def test_clean_joint_episode_has_no_findings(joint_episode):
     result = run_action_qa_on_arrays(*joint_episode, load_qa_config())
     assert result["findings"] == []
@@ -110,12 +128,14 @@ def test_clean_cartesian_episode_has_no_findings(cartesian_episode):
     assert result["findings"] == []
 
 
-def test_quaternion_sign_flip_is_flagged(cartesian_episode):
+def test_quaternion_sign_flip_is_flagged_when_enabled(cartesian_episode):
+    """Off by default; the check itself still has to work when a user turns it on."""
     actions, states, profile = cartesian_episode
     pose = actions["cartesian_position"].copy()
     pose[T // 2 :, 3:] *= -1
+    config = build_checks({"cartesian_position": {"quaternion_sign_flip": {"enabled": True}}})
     result = run_action_qa_on_arrays(
-        {**actions, "cartesian_position": pose}, states, profile, load_qa_config()
+        {**actions, "cartesian_position": pose}, states, profile, config
     )
     assert _tested(result) == {"cartesian_position.quaternion_sign_flip"}
 
@@ -129,6 +149,59 @@ def test_cartesian_positions_in_millimetres_are_flagged(cartesian_episode):
     )
     assert "cartesian_position.position_units" in _tested(result)
 
+
+def test_constant_action_is_flagged(joint_episode):
+    actions, states, profile = joint_episode
+    held = np.repeat(actions["joint_position"][:1], T, axis=0)
+    result = run_action_qa_on_arrays(
+        {**actions, "joint_position": held}, states, profile, load_qa_config()
+    )
+    assert "general.constant_action" in _tested(result)
+
+
+def test_actions_held_for_several_steps_are_flagged_as_command_rate(joint_episode):
+    actions, states, profile = joint_episode
+    held = np.repeat(actions["joint_position"][::3], 3, axis=0)[:T]
+    result = run_action_qa_on_arrays(
+        {**actions, "joint_position": held}, states, profile, load_qa_config()
+    )
+    (finding,) = [f for f in result["findings"] if f["test"] == "command_rate"]
+    assert finding["period"] == 3
+
+
+def test_action_chunk_recorded_per_step_is_flagged(joint_episode):
+    actions, states, profile = joint_episode
+    chunked = np.repeat(actions["joint_position"][:, None, :], 4, axis=1)
+    result = run_action_qa_on_arrays(
+        {**actions, "joint_position": chunked}, states, profile, load_qa_config()
+    )
+    assert "general.action_chunk_shape" in _tested(result)
+
+
+def test_missing_gripper_state_is_flagged(joint_episode):
+    actions, states, profile = joint_episode
+    states = {k: v for k, v in states.items() if k != "gripper_position"}
+    result = run_action_qa_on_arrays(actions, states, profile, load_qa_config())
+    assert {f["key"] for f in result["findings"] if f["test"] == "required_state_keys"} == {
+        "gripper_position"
+    }
+
+
+@pytest.mark.parametrize(
+    "field, value, reason",
+    [
+        ("operator_name", "", "blank"),
+        ("operator_name", "pending_operator", "placeholder"),
+        ("operator_name", "autoeval_orchestrator", "not_a_person"),
+        ("robot_name", "your_robot", "template"),
+        ("policy_name", "Unknown", "placeholder"),
+        ("operator_name", "Jane Doe", None),
+        ("robot_name", "franka_panda", None),
+    ],
+)
+def test_placeholder_metadata(field, value, reason):
+    cfg = load_qa_config()["general"]["placeholder_metadata"]
+    assert placeholder_reason(field, value, cfg) == reason
 
 # ── config ────────────────────────────────────────────────────────────────────
 
@@ -152,7 +225,20 @@ def test_disable_category_leaves_the_input_untouched():
     config = load_qa_config()
     off = disable_category(config, "video")
     assert not any(c["enabled"] for c in off["video"].values())
-    assert config["video"]["resolution"]["enabled"]
+    assert config["video"]["decoding"]["enabled"]
+
+
+def test_config_file_category_switch_turns_off_every_check(tmp_path):
+    path = tmp_path / "qa.yaml"
+    path.write_text("video:\n  enabled: false\n  decoding:\n    enabled: true\n")
+    config = load_qa_config(path)
+    assert not any(c["enabled"] for c in config["video"].values())
+
+
+def test_config_file_sets_video_settings(tmp_path):
+    path = tmp_path / "qa.yaml"
+    path.write_text("video:\n  ignore_cameras: [wrist]\n")
+    assert load_qa_config(path)["video_settings"]["ignore_cameras"] == ["wrist"]
 
 
 # ── runner ────────────────────────────────────────────────────────────────────
@@ -163,6 +249,23 @@ def test_episode_cameras_resolves_relative_video_paths(valid_episode):
     assert cameras
     for path in cameras.values():
         assert path.is_absolute() and path.is_file()
+
+
+def test_ignored_camera_is_skipped_by_every_video_check(valid_episode):
+    cameras = episode_cameras(valid_episode)
+    config = load_qa_config()
+    settings = {**config["video_settings"], "ignore_cameras": list(cameras)}
+    result = run_video_checks(cameras, {}, 10.0, config["video"], settings)
+    assert result["findings"] == []
+    assert {s["reason"] for s in result["skips"]} >= {"ignored_camera"}
+
+
+def test_informational_findings_do_not_flag_an_episode(tmp_path):
+    finding = {"category": "joint_velocity", "test": "smoothness", "key": "joint_velocity"}
+    result = {"findings": [finding], "skips": [], "checked": [("joint_velocity", "smoothness")]}
+    record = _episode_record(tmp_path / "e.h5", tmp_path, result, None)
+    assert record["status"] == "clean"
+    assert record["findings"][0]["suggested_action"] == "informational"
 
 
 def test_select_episodes_is_reproducible_with_a_seed():
@@ -201,7 +304,14 @@ def test_qa_writes_a_parseable_report(tmp_path, valid_session_dir):
     assert summary["episodes_flagged"] + summary["episodes_clean"] == 4
     for episode in episodes:
         for finding in episode.get("findings", []):
-            assert set(finding) == {"check", "key", "description", "details"}
+            assert set(finding) == {
+                "check",
+                "key",
+                "description",
+                "confidence",
+                "suggested_action",
+                "details",
+            }
             assert finding["check"] in episode["flagged_checks"]
 
 
@@ -210,15 +320,15 @@ def test_qa_no_video_runs_no_video_check(tmp_path, valid_session_dir):
     assert code == 0
     report = yaml.safe_load(output.read_text())
     assert not any(c.startswith("video.") for c in report["summary"]["checks_enabled"])
-    assert report["summary"]["config_overrides"]["video"]["resolution"] == {"enabled": False}
+    assert report["summary"]["config_overrides"]["video"]["decoding"] == {"enabled": False}
 
 
 def test_qa_strict_exits_1_on_findings(tmp_path, valid_episode):
-    """The fixture's 224 px video is below the resolution threshold."""
+    """The fixture's operator is ``test_operator``, a placeholder name."""
     code, output = _qa(tmp_path, "--path", str(valid_episode), "--strict")
     assert code == 1
     report = yaml.safe_load(output.read_text())
-    assert "video.resolution" in report["episodes"][0]["flagged_checks"]
+    assert "general.placeholder_metadata" in report["episodes"][0]["flagged_checks"]
 
 
 def test_qa_exits_1_when_nothing_could_be_checked(tmp_path):
