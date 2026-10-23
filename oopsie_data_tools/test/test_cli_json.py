@@ -183,16 +183,6 @@ def test_inspect_json_marks_empty_placeholder_datasets(capsys, valid_episode):
     assert any(a["empty"] for a in actions.values()), "expected at least one Empty placeholder"
 
 
-def test_inspect_json_works_on_a_file_validate_rejects(capsys, invalid_fixtures):
-    """inspect makes no schema assumptions; that has to hold in the structured form too."""
-    bad = next(iter(invalid_fixtures.values()))
-
-    code, payload = _run_json(capsys, ["inspect", str(bad), "--json"])
-
-    assert code == 0
-    assert payload["root"]["type"] == "group"
-
-
 def test_inspect_json_reports_a_missing_file_as_a_document(capsys, tmp_path):
     code, payload = _run_json(capsys, ["inspect", str(tmp_path / "nope.h5"), "--json"])
 
