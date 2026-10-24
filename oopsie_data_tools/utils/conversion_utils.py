@@ -1,6 +1,6 @@
 """Shared utilities for dataset-to-HDF5 conversion scripts.
 
-A converter writes ``oopsiedata_format_v1`` directly instead of going through
+A converter writes the oopsie-data HDF5 format directly instead of going through
 :class:`~oopsie_data_tools.annotation_tool.episode_recorder.EpisodeRecorder`, so none of the
 recording-time checks run. These helpers exist so the parts that are easy to get silently
 wrong — the annotation layout and the image bounds — come from the same definitions the
@@ -31,7 +31,7 @@ from oopsie_data_tools.utils.robot_profile.rotation_utils import (
     ActionQuatConversion,
     RotOption,
 )
-from oopsie_data_tools.utils.validation.episode_loader import OOPSIE_DATA_SCHEMA_V1
+from oopsie_data_tools.utils.validation.episode_data import CURRENT_OOPSIE_DATA_SCHEMA
 from oopsie_data_tools.utils.validation.episode_validator import (
     MAX_IMAGE_SIZE,
     MIN_IMAGE_SIZE,
@@ -84,7 +84,7 @@ def write_root_attrs(
     ``"your_lab_id"`` is rejected by name.
     """
     str_dtype = h5py.string_dtype(encoding="utf-8")
-    file_handle.attrs["schema"] = OOPSIE_DATA_SCHEMA_V1
+    file_handle.attrs["schema"] = CURRENT_OOPSIE_DATA_SCHEMA
     file_handle.attrs["episode_id"] = episode_id
     file_handle.attrs["language_instruction"] = language_instruction
     file_handle.attrs["lab_id"] = lab_id

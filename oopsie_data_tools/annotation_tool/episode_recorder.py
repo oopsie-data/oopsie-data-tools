@@ -25,7 +25,11 @@ from oopsie_data_tools.utils.validation.array_validation import (
     validate_cartesian_quaternions,
     validate_gripper_binary_step,
 )
-from oopsie_data_tools.utils.validation.episode_data import EpisodeData, VideoInfo
+from oopsie_data_tools.utils.validation.episode_data import (
+    CURRENT_OOPSIE_DATA_SCHEMA,
+    EpisodeData,
+    VideoInfo,
+)
 from oopsie_data_tools.utils.validation.episode_validator import (
     check_additional_data_size,
     validate_episode,
@@ -603,7 +607,7 @@ class EpisodeRecorder:
         """
         with h5py.File(path, "w") as f:
             # 1. Save the metadata attributes
-            f.attrs["schema"] = "oopsiedata_format_v1"
+            f.attrs["schema"] = CURRENT_OOPSIE_DATA_SCHEMA
             f.attrs["episode_id"] = data["metadata"]["episode_id"]
             f.attrs.create(
                 "robot_profile",

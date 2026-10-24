@@ -273,7 +273,7 @@ def test_save_writes_the_episode_it_buffered(recorder):
     assert h5_path.parent == recorder.session_dir
     with h5py.File(h5_path, "r") as f:
         assert f.attrs["language_instruction"] == "pick up the cup"
-        assert f.attrs["schema"] == "oopsiedata_format_v1"
+        assert f.attrs["schema"] == "oopsiedata_format_v2"
         assert "actions" in f
         assert "joint_position" in f["observations/robot_states"]
         assert f["observations/robot_states/joint_position"].shape[0] == 4

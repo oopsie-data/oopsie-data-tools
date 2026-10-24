@@ -20,6 +20,7 @@ from oopsie_data_tools.annotation_tool.annotation_schema import (
     OUTCOMES,
     SEVERITIES,
     SUCCESS_THRESHOLD,
+    TEMPORAL_SEGMENT_TYPES,
     outcome_to_success,
     read_annotation_attrs,
     success_to_outcome,
@@ -194,6 +195,15 @@ def test_ui_vocabulary_matches_python(field, expected):
     the markup would otherwise only show up as data that quietly fails to round-trip.
     """
     assert _html_values(field) == list(expected)
+
+
+def test_ui_segment_types_match_python():
+    """The segment type picker offers exactly TEMPORAL_SEGMENT_TYPES."""
+    html = _ANNOTATOR_HTML.read_text(encoding="utf-8")
+    picker = re.search(r'<select[^>]*id="tsType"[^>]*>(.*?)</select>', html, re.S)
+    assert picker is not None
+    values = re.findall(r'<option[^>]*value="([^"]*)"', picker.group(1))
+    assert values == list(TEMPORAL_SEGMENT_TYPES)
 
 
 def test_the_form_marks_only_outcome_as_required():

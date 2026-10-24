@@ -135,6 +135,80 @@ def test_save_outcome_roundtrip(client, tmp_path: Path) -> None:
     assert ann["severity"] == "low"
 
 
+def test_temporal_segments_roundtrip(client, tmp_path: Path) -> None:
+    """Temporal segments save into the annotator subgroup and read back sorted by start."""
+    write_valid_episode(tmp_path, stem="ep", n=20)
+
+    resp = client.post(
+        "/api/h5/annotations?path=ep.h5",
+        json={
+            "outcome": "failure",
+            "failure_category": ["grasp"],
+            "episode_description": "dropped the block",
+            "severity": "low",
+            "temporal_segments": [
+                {"start": 12, "end": 15, "type": "failure", "label": "block dropped"},
+                {"start": 3, "end": 6, "type": "suboptimal_action", "label": "shaky grasp"},
+            ],
+        },
+    )
+    assert resp.status_code == 200, resp.data
+
+    with h5py.File(tmp_path / "ep.h5", "r") as f:
+        assert "temporal_segments" in f["episode_annotations"]["test_annotator"].attrs
+
+    segments = _get_sample(client, "ep.h5")["existing_annotation"]["temporal_segments"]
+    assert [(seg["start"], seg["end"]) for seg in segments] == [(3, 6), (12, 15)]
+    assert segments[0]["type"] == "suboptimal_action"
+    assert segments[1]["label"] == "block dropped"
+
+
+def test_failure_category_is_union_of_segment_categories(client, tmp_path: Path) -> None:
+    """With segments present, the episode's categories are the union of theirs."""
+    write_valid_episode(tmp_path, stem="ep", n=20)
+
+    resp = client.post(
+        "/api/h5/annotations?path=ep.h5",
+        json={
+            "outcome": "failure",
+            "failure_category": ["hardware"],
+            "temporal_segments": [
+                {"start": 1, "end": 4, "type": "side_effect", "failure_category": ["collision"]},
+                {"start": 9, "end": 12, "type": "failure", "failure_category": ["grasp", "collision"]},
+            ],
+        },
+    )
+    assert resp.status_code == 200, resp.data
+
+    ann = _get_sample(client, "ep.h5")["existing_annotation"]
+    assert ann["failure_category"] == ["grasp", "collision"]
+    assert ann["temporal_segments"][1]["failure_category"] == ["grasp", "collision"]
+
+
+def test_save_rejects_unknown_segment_type(client, tmp_path: Path) -> None:
+    write_valid_episode(tmp_path, stem="ep", n=20)
+    resp = client.post(
+        "/api/h5/annotations?path=ep.h5",
+        json={"outcome": "failure", "temporal_segments": [{"start": 1, "end": 2, "type": "oops"}]},
+    )
+    assert resp.status_code == 400
+    assert "is not one of" in resp.get_json()["error"]
+
+
+def test_temporal_segments_cleared_on_resave(client, tmp_path: Path) -> None:
+    """Saving without segments removes previously stored ones."""
+    write_valid_episode(tmp_path, stem="ep", n=20)
+    body = {"outcome": "failure"}
+    segment = {"start": 3, "end": 5, "type": "failure", "label": ""}
+    client.post("/api/h5/annotations?path=ep.h5", json={**body, "temporal_segments": [segment]})
+    client.post("/api/h5/annotations?path=ep.h5", json=body)
+
+    with h5py.File(tmp_path / "ep.h5", "r") as f:
+        attrs = f["episode_annotations"]["test_annotator"].attrs
+        assert "temporal_segments" not in attrs
+        assert "temporal_segments_schema" not in attrs
+
+
 def test_save_rejects_unknown_vocabulary(client, tmp_path: Path) -> None:
     """Slugs are opaque, so a typo must be caught before it reaches disk."""
     write_valid_episode(tmp_path, stem="ep")

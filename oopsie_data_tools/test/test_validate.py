@@ -19,6 +19,8 @@ TestVideos                – missing or too-small video files
 TestValidEpisodes         – happy-path: all registered tests pass
 TestProfileDocumentsTheEpisode – profile and file must agree in both directions
 TestValidateSessionDir    – directory-level validation
+TestSchemaVersions        – v1 and v2 file formats both load
+TestTemporalSegments      – optional per-annotator temporal segments
 """
 
 from __future__ import annotations
@@ -694,3 +696,111 @@ class TestAnnotationSemantics:
             extra.attrs["source"] = "cosmos-7b"
             extra.attrs["success"] = 1.0
         assert validate_h5_file(str(h5_path), strict_annotation_check=True) is True
+
+
+# ---------------------------------------------------------------------------
+# Format version compatibility (v1 + v2)
+# ---------------------------------------------------------------------------
+
+
+class TestSchemaVersions:
+    def test_current_fixtures_are_v2(self, valid_episode) -> None:
+        with h5py.File(valid_episode, "r") as f:
+            assert f.attrs["schema"] == "oopsiedata_format_v2"
+
+    def test_legacy_v1_still_validates(self, tmp_path: Path) -> None:
+        h5_path = write_valid_episode(tmp_path, stem="ep")
+        with h5py.File(h5_path, "r+") as f:
+            f.attrs["schema"] = "oopsiedata_format_v1"
+        assert validate_h5_file(str(h5_path), strict_annotation_check=True) is True
+
+
+# ---------------------------------------------------------------------------
+# Temporal segments (optional)
+# ---------------------------------------------------------------------------
+
+
+def _set_temporal_segments(h5_path: Path, segments, annotator: str = "test_annotator") -> None:
+    """Write a raw ``temporal_segments`` attr (JSON string or list) onto a subgroup."""
+    with h5py.File(h5_path, "r+") as f:
+        g = f["episode_annotations"][annotator]
+        g.attrs["temporal_segments"] = (
+            segments if isinstance(segments, str) else json.dumps(segments)
+        )
+
+
+def _segment(start, end, type_="failure", label=""):
+    return {"start": start, "end": end, "type": type_, "label": label}
+
+
+class TestTemporalSegments:
+    def test_valid_segments_pass(self, tmp_path: Path) -> None:
+        h5_path = write_valid_episode(tmp_path, stem="ep", n=20)
+        _set_temporal_segments(
+            h5_path,
+            [_segment(2, 6, "suboptimal_action", "shaky grasp"), _segment(14, 19, "failure")],
+        )
+        assert validate_h5_file(str(h5_path), strict_annotation_check=True) is True
+
+    def test_single_frame_segment_passes(self, tmp_path: Path) -> None:
+        h5_path = write_valid_episode(tmp_path, stem="ep", n=20)
+        _set_temporal_segments(h5_path, [_segment(7, 7)])
+        assert validate_h5_file(str(h5_path), strict_annotation_check=True) is True
+
+    def test_absent_segments_pass(self, tmp_path: Path) -> None:
+        h5_path = write_valid_episode(tmp_path, stem="ep")
+        assert validate_h5_file(str(h5_path), strict_annotation_check=True) is True
+
+    def test_end_out_of_range_raises(self, tmp_path: Path) -> None:
+        h5_path = write_valid_episode(tmp_path, stem="ep", n=20)
+        _set_temporal_segments(h5_path, [_segment(5, 20)])
+        with pytest.raises(EpisodeValidationError, match=r"end 20 out of range"):
+            validate_h5_file(str(h5_path), strict_annotation_check=True)
+
+    def test_negative_start_raises(self, tmp_path: Path) -> None:
+        h5_path = write_valid_episode(tmp_path, stem="ep", n=20)
+        _set_temporal_segments(h5_path, [_segment(-1, 3)])
+        with pytest.raises(EpisodeValidationError, match=r"start -1 out of range"):
+            validate_h5_file(str(h5_path), strict_annotation_check=True)
+
+    def test_start_after_end_raises(self, tmp_path: Path) -> None:
+        h5_path = write_valid_episode(tmp_path, stem="ep", n=20)
+        _set_temporal_segments(h5_path, [_segment(9, 4)])
+        with pytest.raises(EpisodeValidationError, match="starts after it ends"):
+            validate_h5_file(str(h5_path), strict_annotation_check=True)
+
+    def test_non_integer_bound_raises(self, tmp_path: Path) -> None:
+        h5_path = write_valid_episode(tmp_path, stem="ep", n=20)
+        _set_temporal_segments(h5_path, [_segment(4.5, 8)])
+        with pytest.raises(EpisodeValidationError, match="start must be an integer"):
+            validate_h5_file(str(h5_path), strict_annotation_check=True)
+
+    def test_overlapping_segments_raise(self, tmp_path: Path) -> None:
+        h5_path = write_valid_episode(tmp_path, stem="ep", n=20)
+        _set_temporal_segments(h5_path, [_segment(2, 8), _segment(8, 12, "side_effect")])
+        with pytest.raises(EpisodeValidationError, match="overlap"):
+            validate_h5_file(str(h5_path), strict_annotation_check=True)
+
+    def test_unknown_segment_category_raises(self, tmp_path: Path) -> None:
+        h5_path = write_valid_episode(tmp_path, stem="ep", n=20)
+        _set_temporal_segments(h5_path, [{**_segment(2, 8), "failure_category": ["nope"]}])
+        with pytest.raises(EpisodeValidationError, match="unrecognized failure_category"):
+            validate_h5_file(str(h5_path), strict_annotation_check=True)
+
+    def test_unknown_type_raises(self, tmp_path: Path) -> None:
+        h5_path = write_valid_episode(tmp_path, stem="ep", n=20)
+        _set_temporal_segments(h5_path, [_segment(5, 6, "not_a_real_type")])
+        with pytest.raises(EpisodeValidationError, match="is not one of"):
+            validate_h5_file(str(h5_path), strict_annotation_check=True)
+
+    def test_malformed_json_raises(self, tmp_path: Path) -> None:
+        h5_path = write_valid_episode(tmp_path, stem="ep", n=20)
+        _set_temporal_segments(h5_path, "{not valid json")
+        with pytest.raises(EpisodeValidationError, match="not valid JSON"):
+            validate_h5_file(str(h5_path), strict_annotation_check=True)
+
+    def test_non_list_raises(self, tmp_path: Path) -> None:
+        h5_path = write_valid_episode(tmp_path, stem="ep", n=20)
+        _set_temporal_segments(h5_path, json.dumps(_segment(3, 4)))
+        with pytest.raises(EpisodeValidationError, match="must be a JSON list"):
+            validate_h5_file(str(h5_path), strict_annotation_check=True)

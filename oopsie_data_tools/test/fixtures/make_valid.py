@@ -34,6 +34,10 @@ import imageio
 import numpy as np
 
 from oopsie_data_tools.annotation_tool.annotation_schema import write_annotation_attrs
+from oopsie_data_tools.utils.validation.episode_data import (
+    CURRENT_OOPSIE_DATA_SCHEMA,
+    OOPSIE_DATA_SCHEMA_V1,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -114,7 +118,7 @@ def _write_base_h5(
     robot_profile_json: str = _ROBOT_PROFILE,
     n_steps: int = 20,
 ) -> None:
-    f.attrs["schema"] = "oopsiedata_format_v1"
+    f.attrs["schema"] = CURRENT_OOPSIE_DATA_SCHEMA
     f.attrs["episode_id"] = episode_id
     f.attrs["robot_profile"] = robot_profile_json
     f.attrs["language_instruction"] = language_instruction
@@ -147,6 +151,7 @@ def _write_annotation(
     failure_category: list[str] | None = None,
     severity: str = "",
     additional_notes: str = "",
+    temporal_segments: list[dict] | None = None,
 ) -> None:
     """Write a v2 annotation through the real writer.
 
@@ -165,6 +170,7 @@ def _write_annotation(
             "failure_category": list(failure_category or []),
             "severity": severity,
             "additional_notes": additional_notes,
+            "temporal_segments": list(temporal_segments or []),
         },
     )
 
@@ -317,6 +323,30 @@ def make_failure(out_dir: Path) -> None:
         )
 
 
+def make_temporal(out_dir: Path) -> None:
+    """A failure episode with segments marking a suboptimal grasp and the failure itself."""
+    _write_video(out_dir / "episode_temporal_front.mp4", color=(200, 90, 60))
+    with h5py.File(out_dir / "episode_temporal.h5", "w") as f:
+        _write_base_h5(
+            f,
+            episode_id="episode_temporal",
+            language_instruction="pick up the block and place it on the plate",
+            camera_video_paths={"front": "episode_temporal_front.mp4"},
+        )
+        _write_annotation(
+            f,
+            annotator="test_annotator",
+            outcome="failure",
+            episode_description="Grasp was shaky and the block was later dropped in transit.",
+            failure_category=["grasp"],
+            severity="medium",
+            temporal_segments=[
+                {"start": 2, "end": 6, "type": "suboptimal_action", "label": "shaky grasp on the block"},
+                {"start": 14, "end": 17, "type": "failure", "label": "block dropped out of gripper"},
+            ],
+        )
+
+
 def make_multi_camera(out_dir: Path) -> None:
     _write_video(out_dir / "episode_multi_camera_left.mp4", color=(160, 80, 200))
     _write_video(out_dir / "episode_multi_camera_wrist.mp4", color=(200, 160, 40))
@@ -353,6 +383,7 @@ def make_legacy_v1(out_dir: Path) -> None:
             language_instruction="stack the red block on the blue block",
             camera_video_paths={"front": "episode_legacy_v1_front.mp4"},
         )
+        f.attrs["schema"] = OOPSIE_DATA_SCHEMA_V1
         _write_legacy_v1_annotation(
             f,
             annotator="test_annotator",
@@ -388,6 +419,7 @@ def main() -> None:
         make_no_annotations,
         make_success,
         make_failure,
+        make_temporal,
         make_multi_camera,
         make_legacy_v1,
     ]:

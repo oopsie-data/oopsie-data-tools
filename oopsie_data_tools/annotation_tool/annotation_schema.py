@@ -21,7 +21,7 @@ import h5py
 
 # ── Schema identifiers ────────────────────────────────────────────────────────
 # Written as attrs on episode_annotations/<annotator>. Distinct from the *file* schema
-# (OOPSIE_DATA_SCHEMA_V1 in episode_loader.py), which versions the episode layout itself.
+# (CURRENT_OOPSIE_DATA_SCHEMA in episode_data.py), which versions the episode layout itself.
 ANNOTATION_SCHEMA_V1 = "oopsie_failure_taxonomy_v1"
 ANNOTATION_SCHEMA_V2 = "oopsie_failure_taxonomy_v2"
 ANNOTATION_SCHEMA_CURRENT = ANNOTATION_SCHEMA_V2
@@ -57,6 +57,12 @@ FAILURE_CATEGORIES: tuple[str, ...] = (
 
 SEVERITIES: tuple[str, ...] = ("low", "medium", "catastrophic")
 
+# Temporal segments mark non-overlapping windows of the episode by inclusive frame range.
+# Each carries its own failure categories; the episode-level ``failure_category`` is their
+# union whenever segments are present. The free-text ``label`` carries the specifics.
+TEMPORAL_SEGMENTS_SCHEMA = "oopsie_temporal_segments_v1"
+TEMPORAL_SEGMENT_TYPES: tuple[str, ...] = ("failure", "suboptimal_action", "side_effect")
+
 
 def validate_annotation_vocabulary(
     annotation: Mapping[str, Any], *, require_outcome: bool = True
@@ -77,6 +83,16 @@ def validate_annotation_vocabulary(
     unknown = [category for category in categories if category not in FAILURE_CATEGORIES]
     if unknown:
         return f"unrecognized failure_category: {unknown}"
+
+    for i, segment in enumerate(normalize_temporal_segments(annotation.get("temporal_segments"))):
+        if segment["type"] not in TEMPORAL_SEGMENT_TYPES:
+            return (
+                f"temporal_segments[{i}].type {segment['type']!r} is not one of "
+                f"{list(TEMPORAL_SEGMENT_TYPES)}"
+            )
+        unknown = [c for c in segment["failure_category"] if c not in FAILURE_CATEGORIES]
+        if unknown:
+            return f"temporal_segments[{i}] has unrecognized failure_category: {unknown}"
 
     severity = decode_attr(annotation.get("severity"))
     if severity and severity not in SEVERITIES:
@@ -209,6 +225,62 @@ def parse_taxonomy(raw: Any) -> dict:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def normalize_temporal_segments(raw: Any) -> list[dict[str, Any]]:
+    """Coerce a segments value into a sorted list of ``{start, end, type, label}``.
+
+    Accepts a JSON string or a decoded list. Entries whose ``start`` or ``end`` is not an
+    integer are dropped. Range, overlap and vocabulary checks are left to the validator.
+    """
+    if not isinstance(raw, (list, tuple)):
+        text = decode_attr(raw)
+        if not text:
+            return []
+        try:
+            raw = json.loads(text)
+        except json.JSONDecodeError:
+            return []
+    if not isinstance(raw, (list, tuple)):
+        return []
+
+    segments: list[dict[str, Any]] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            start = int(entry.get("start"))
+            end = int(entry.get("end"))
+        except (TypeError, ValueError):
+            continue
+        segments.append(
+            {
+                "start": start,
+                "end": end,
+                "type": decode_attr(entry.get("type")),
+                "label": decode_attr(entry.get("label")),
+                "failure_category": [
+                    normalize_category(c) for c in as_value_list(entry.get("failure_category"))
+                ],
+            }
+        )
+    segments.sort(key=lambda seg: (seg["start"], seg["end"]))
+    return segments
+
+
+def segment_category_union(segments: list[dict[str, Any]]) -> list[str]:
+    """Episode-level failure categories: every category on any segment, once each.
+
+    Known categories come in vocabulary order; unknown ones follow in order of appearance so
+    they stay visible to the vocabulary check.
+    """
+    seen = {c for segment in segments for c in segment.get("failure_category", [])}
+    ordered = [c for c in FAILURE_CATEGORIES if c in seen]
+    for segment in segments:
+        for c in segment.get("failure_category", []):
+            if c not in ordered:
+                ordered.append(c)
+    return ordered
+
+
 # ── Read ──────────────────────────────────────────────────────────────────────
 
 
@@ -251,6 +323,10 @@ def read_annotation_attrs(attrs: Mapping[str, Any]) -> dict:
     if "additional_notes" in attrs:
         out["additional_notes"] = decode_attr(attrs.get("additional_notes"))
 
+    segments = normalize_temporal_segments(attrs.get("temporal_segments", ""))
+    if segments:
+        out["temporal_segments"] = segments
+
     return out
 
 
@@ -278,18 +354,35 @@ def annotation_attrs_dict(annotation: Mapping[str, Any]) -> dict:
     if success is not None:
         attrs["success"] = float(success)
 
+    segments = normalize_temporal_segments(annotation.get("temporal_segments", []))
+    if segments:
+        categories = segment_category_union(segments)
+    else:
+        categories = [
+            normalize_category(c) for c in as_value_list(annotation.get("failure_category"))
+        ]
     taxonomy = {
         "outcome": outcome,
-        "failure_category": [
-            normalize_category(c) for c in as_value_list(annotation.get("failure_category"))
-        ],
+        "failure_category": categories,
         "severity": normalize_severity(annotation.get("severity", "")),
     }
     attrs["taxonomy"] = json.dumps(taxonomy, ensure_ascii=False)
+
+    if segments:
+        attrs["temporal_segments_schema"] = TEMPORAL_SEGMENTS_SCHEMA
+        attrs["temporal_segments"] = json.dumps(segments, ensure_ascii=False)
     return attrs
 
 
 def write_annotation_attrs(group: h5py.Group, annotation: Mapping[str, Any]) -> None:
-    """Write the oopsie annotation attr set onto an ``episode_annotations`` subgroup."""
-    for key, value in annotation_attrs_dict(annotation).items():
+    """Write the oopsie annotation attr set onto an ``episode_annotations`` subgroup.
+
+    Temporal segments absent from ``annotation`` are removed from the group, so clearing
+    them and re-saving persists.
+    """
+    attrs = annotation_attrs_dict(annotation)
+    for key in ("temporal_segments", "temporal_segments_schema"):
+        if key not in attrs:
+            group.attrs.pop(key, None)
+    for key, value in attrs.items():
         group.attrs[key] = value

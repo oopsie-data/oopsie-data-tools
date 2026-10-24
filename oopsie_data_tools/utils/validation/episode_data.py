@@ -9,6 +9,16 @@ import numpy as np
 
 from oopsie_data_tools.utils.robot_profile.robot_profile import RobotProfile
 
+# oopsie-data episode format versions.
+#   v1 → original layout.
+#   v2 → strict superset of v1: adds optional ``temporal_segments`` attrs on
+#        ``episode_annotations/<annotator>`` subgroups. All v1 files remain valid.
+# New writers stamp CURRENT_OOPSIE_DATA_SCHEMA; readers accept every supported version.
+OOPSIE_DATA_SCHEMA_V1 = "oopsiedata_format_v1"
+OOPSIE_DATA_SCHEMA_V2 = "oopsiedata_format_v2"
+CURRENT_OOPSIE_DATA_SCHEMA = OOPSIE_DATA_SCHEMA_V2
+SUPPORTED_OOPSIE_DATA_SCHEMAS = (OOPSIE_DATA_SCHEMA_V1, OOPSIE_DATA_SCHEMA_V2)
+
 
 @dataclass
 class VideoInfo:

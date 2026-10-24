@@ -24,12 +24,15 @@ from oopsie_data_tools.utils.robot_profile.robot_profile import (
     RobotProfile,
     robot_profile_from_json,
 )
-from oopsie_data_tools.utils.validation.episode_data import EpisodeData, VideoInfo
+from oopsie_data_tools.utils.validation.episode_data import (
+    SUPPORTED_OOPSIE_DATA_SCHEMAS,
+    EpisodeData,
+    VideoInfo,
+)
 from oopsie_data_tools.utils.validation.episode_validator import check_additional_data_size
 from oopsie_data_tools.utils.validation.errors import EpisodeValidationError
 from oopsie_data_tools.utils.video_paths import is_video_reference, resolve_from_episode
 
-OOPSIE_DATA_SCHEMA_V1 = "oopsiedata_format_v1"
 
 _OOPSIE_V1_REQUIRED_ROOT_ATTRS = (
     "schema",
@@ -304,7 +307,8 @@ def load_episode_from_h5(
     resolved_root = str(Path(allowed_root).resolve()) if allowed_root is not None else h5_dir
     try:
         schema = decode_h5_scalar(f.attrs.get("schema", ""))
-        if schema == OOPSIE_DATA_SCHEMA_V1:
+        if schema in SUPPORTED_OOPSIE_DATA_SCHEMAS:
+            # v2 only adds optional annotation attrs, so one loader handles both.
             return _load_oopsie_v1(f, h5_dir, resolved_root)
         else:
             raise EpisodeValidationError(

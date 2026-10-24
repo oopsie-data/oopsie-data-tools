@@ -18,7 +18,9 @@ import numpy as np
 from oopsie_data_tools.annotation_tool.annotation_schema import (
     OUTCOME_SUCCESS,
     OUTCOMES,
+    FAILURE_CATEGORIES,
     SUCCESS_THRESHOLD,
+    TEMPORAL_SEGMENT_TYPES,
     read_annotation_attrs,
     validate_annotation_vocabulary,
 )
@@ -425,6 +427,8 @@ def _validate_annotations(data: EpisodeData) -> None:
                 f"episode_annotations/{annotator}/success out of range [0.0, 1.0]: {success}"
             )
 
+        _validate_temporal_segments(annotator, attrs, data.trajectory_length)
+
         taxonomy_raw = _annotation_attr_scalar_str(attrs.get("taxonomy", ""))
         if taxonomy_raw:
             try:
@@ -462,3 +466,77 @@ def _validate_annotations(data: EpisodeData) -> None:
                 raise EpisodeValidationError(
                     f"episode_annotations/{annotator}/taxonomy {vocabulary_error}"
                 )
+
+
+def _validate_temporal_segments(
+    annotator: str, attrs: dict[str, Any], trajectory_length: int
+) -> None:
+    """Check the optional ``temporal_segments`` attr on an annotator subgroup.
+
+    When present it must be a JSON list of ``{start, end, type, label, failure_category}``
+    objects: ``start`` and ``end`` integers with ``0 <= start <= end < trajectory_length``
+    (inclusive range), ``type`` one of TEMPORAL_SEGMENT_TYPES, ``label`` a string and
+    ``failure_category`` a list of FAILURE_CATEGORIES if given. Segments may not overlap.
+    """
+    raw = _annotation_attr_scalar_str(attrs.get("temporal_segments", ""))
+    if not raw:
+        return
+
+    prefix = f"episode_annotations/{annotator}/temporal_segments"
+    try:
+        segments = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise EpisodeValidationError(f"{prefix} is not valid JSON ({e})") from e
+    if not isinstance(segments, list):
+        raise EpisodeValidationError(
+            f"{prefix} must be a JSON list, got {type(segments).__name__}"
+        )
+
+    for i, segment in enumerate(segments):
+        loc = f"{prefix}[{i}]"
+        if not isinstance(segment, dict):
+            raise EpisodeValidationError(
+                f"{loc} must be an object, got {type(segment).__name__}"
+            )
+
+        for key in ("start", "end"):
+            value = segment.get(key)
+            if not isinstance(value, int) or isinstance(value, bool):
+                raise EpisodeValidationError(f"{loc}.{key} must be an integer, got {value!r}")
+            if not 0 <= value < trajectory_length:
+                raise EpisodeValidationError(
+                    f"{loc}.{key} {value} out of range [0, {trajectory_length})"
+                )
+        if segment["start"] > segment["end"]:
+            raise EpisodeValidationError(
+                f"{loc} starts after it ends ({segment['start']} > {segment['end']})"
+            )
+
+        segment_type = segment.get("type")
+        if segment_type not in TEMPORAL_SEGMENT_TYPES:
+            raise EpisodeValidationError(
+                f"{loc}.type {segment_type!r} is not one of {list(TEMPORAL_SEGMENT_TYPES)}"
+            )
+
+        label = segment.get("label", "")
+        if not isinstance(label, str):
+            raise EpisodeValidationError(
+                f"{loc}.label must be a string, got {type(label).__name__}"
+            )
+
+        categories = segment.get("failure_category", [])
+        if not isinstance(categories, list):
+            raise EpisodeValidationError(
+                f"{loc}.failure_category must be a list, got {type(categories).__name__}"
+            )
+        unknown = [c for c in categories if c not in FAILURE_CATEGORIES]
+        if unknown:
+            raise EpisodeValidationError(f"{loc} has unrecognized failure_category: {unknown}")
+
+    ordered = sorted(segments, key=lambda seg: (seg["start"], seg["end"]))
+    for prev, cur in zip(ordered, ordered[1:]):
+        if cur["start"] <= prev["end"]:
+            raise EpisodeValidationError(
+                f"{prefix}: segments {prev['start']}–{prev['end']} and "
+                f"{cur['start']}–{cur['end']} overlap"
+            )

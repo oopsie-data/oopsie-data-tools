@@ -19,6 +19,8 @@
         --fs-ui: 0.9rem;       /* every interface control + secondary body text */
         --fs-heading: 1.1rem;  /* section headings inside a panel */
         --fs-title: 1.5rem;    /* page title only */
+        /* Episode list | videos | form; shared by the header and the main grid so they line up. */
+        --main-cols: minmax(200px, 1.1fr) minmax(0, 3.4fr) minmax(280px, 1.4fr);
         --tree-indent: 14px;
         --video-h: min(60vh, 420px);
         --tooltip-w: min(280px, 90vw);
@@ -49,6 +51,9 @@
         --other-mark:          light-dark(#7c3aed, #a78bfa);
         --warn:                light-dark(#b45309, #fbbf24);
         --danger:              light-dark(#dc2626, #f87171);
+        --seg-failure:         var(--danger);
+        --seg-suboptimal:      var(--warn);
+        --seg-side-effect:     light-dark(#c026d3, #e879f9);
         /* Constant across themes. */
         --bg-tooltip: #1e293b;
         --video-bg: #000;
@@ -94,28 +99,26 @@
       }
       header {
         flex: 0 0 auto;
-        display: flex;
-        justify-content: space-between;
+        display: grid;
+        grid-template-columns: var(--main-cols);
+        gap: 16px;
         align-items: center;
-        flex-wrap: wrap;
-        gap: 12px 20px;
-        margin-bottom: 14px;
-        padding-bottom: 12px;
+        margin-bottom: 10px;
+        padding-bottom: 10px;
         border-bottom: 1px solid var(--border-divider);
       }
+      .header-left { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
       header h1 {
-        font-size: var(--fs-title);
-        min-width: 0;
-        flex-shrink: 0;
+        font-size: var(--fs-heading);
+        line-height: 1.2;
       }
       .session-meta {
-        flex: 1 1 auto;
         min-width: 0;
         display: flex;
         align-items: baseline;
         flex-wrap: wrap;
-        gap: 4px 8px;
-        font-size: var(--fs-ui);
+        gap: 0 6px;
+        font-size: var(--fs-label);
         color: var(--text-value);
       }
       .session-meta .ctx-label {
@@ -126,15 +129,55 @@
         letter-spacing: 0.04em;
       }
       .session-meta .ctx-sep { color: var(--text-muted-3); }
-      .header-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-      .theme-toggle { padding: 8px 12px; font-size: var(--fs-ui); color: var(--text); }
-      .statusline { font-family: var(--font-mono); font-size: var(--fs-ui); color: var(--text-muted); }
+      .header-actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
+      .header-actions .h5-search { flex: 1 1 auto; min-width: 0; }
+      .shortcuts-btn { flex: 0 0 auto; padding: 6px 10px; font-size: var(--fs-ui); color: var(--text); }
+      .shortcuts-dialog {
+        border: 1px solid var(--border-panel);
+        border-radius: 8px;
+        padding: 0;
+        margin: auto;
+        background: var(--bg-panel);
+        color: var(--text);
+        max-width: min(640px, 92vw);
+        max-height: 85vh;
+      }
+      /* Padding lives here so that a click on the dialog element itself is a backdrop click. */
+      .shortcuts-body { padding: 16px 20px; }
+      .shortcuts-dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
+      .shortcuts-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+      .shortcuts-head h2 { font-size: var(--fs-heading); }
+      .shortcuts-head button { padding: 4px 10px; font-size: var(--fs-ui); }
+      .shortcuts-dialog h3 {
+        font-size: var(--fs-label);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--text-muted-2);
+        margin: 12px 0 4px;
+      }
+      .shortcuts-dialog table { border-collapse: collapse; width: 100%; font-size: var(--fs-ui); }
+      .shortcuts-dialog td { padding: 3px 0; vertical-align: top; }
+      .shortcuts-dialog td:first-child { width: 42%; padding-right: 12px; white-space: nowrap; }
+      kbd {
+        display: inline-block;
+        min-width: 1.6em;
+        padding: 1px 5px;
+        border: 1px solid var(--border-input);
+        border-bottom-width: 2px;
+        border-radius: 4px;
+        background: var(--bg-inset);
+        font-family: var(--font-mono);
+        font-size: var(--fs-label);
+        text-align: center;
+      }
+      .theme-toggle { flex: 0 0 auto; padding: 6px 10px; font-size: var(--fs-ui); color: var(--text); }
+      .statusline { font-family: var(--font-mono); font-size: var(--fs-label); color: var(--text-muted); }
 
       .main-content {
         flex: 1 1 auto;
         min-height: 0;
         display: grid;
-        grid-template-columns: minmax(220px, 1.2fr) minmax(0, 3fr) minmax(320px, 1.8fr);
+        grid-template-columns: var(--main-cols);
         gap: 16px;
         padding-bottom: 16px;
       }
@@ -151,6 +194,13 @@
       .sidebar #h5List { flex: 1 1 auto; margin-top: 10px; }
       .h5-header { display:flex; align-items:center; margin-bottom: 10px; padding: 0 5px; }
       .h5-title { font-size: var(--fs-ui); color: var(--text-muted-2); font-weight: 600; }
+      .sidebar-toggle { margin-left: auto; padding: 2px 8px; font-size: var(--fs-ui); }
+      .main-content.sidebar-collapsed {
+        grid-template-columns: auto minmax(0, 3.4fr) minmax(280px, 1.4fr);
+      }
+      .sidebar-collapsed .sidebar > :not(.h5-header),
+      .sidebar-collapsed .h5-title { display: none; }
+      .sidebar-collapsed .h5-header { margin-bottom: 0; padding: 0; }
       .sidebar-stats {
         padding: 0 5px 10px;
         border-bottom: 1px solid var(--border-panel);
@@ -198,21 +248,7 @@
       }
       .filter-shown:empty::before { content: "\00a0"; } /* reserve a line so toggling never reflows */
 
-      .episode-toolbar {
-        flex: 0 0 auto;
-        display: grid;
-        grid-template-columns: minmax(220px, 1.2fr) minmax(0, 3fr) minmax(320px, 1.8fr);
-        gap: 16px;
-        align-items: center;
-        margin-bottom: 14px;
-        background: var(--bg-panel);
-        border: 1px solid var(--border-panel);
-        border-radius: 8px;
-        padding: 8px 12px;
-      }
-      .episode-toolbar > .toolbar-left { grid-column: 1; display: flex; align-items: center; gap: 10px; min-width: 0; }
-      .episode-toolbar > .episode-nav { grid-column: 2; justify-self: stretch; width: 100%; justify-content: center; }
-      .episode-toolbar > .h5-search { grid-column: 3; }
+      header > .episode-nav { justify-content: center; }
       /*
         Both "Start next rollout" buttons — toolbar and save bar — are the same action, so
         they get one look here rather than a class each. Deliberately not .primary: that is
@@ -287,7 +323,7 @@
       .video-section {
         background: var(--bg-panel);
         border-radius: 8px;
-        padding: 16px 20px;
+        padding: 10px 14px;
         min-height: 0;
         height: 100%;
         display: flex;
@@ -310,8 +346,8 @@
         display: flex;
         align-items: center;
         justify-content: flex-end;
-        gap: 16px;
-        margin-bottom: 12px;
+        gap: 14px;
+        margin-bottom: 6px;
         flex-wrap: wrap;
       }
       .video-controls label {
@@ -323,7 +359,7 @@
         font-size: var(--fs-ui);
         color: var(--text-muted);
       }
-      .video-controls select { width: auto; padding: 5px 8px; }
+      .video-controls select { width: auto; padding: 3px 6px; }
       .video-controls input[type="checkbox"] { width: 16px; height: 16px; }
 
       .form-section {
@@ -445,10 +481,13 @@
         display: grid;
         grid-template-rows: subgrid;
         grid-row: span 2;
-        margin-bottom: 10px;
+        margin-bottom: 6px;
       }
+      /* Sized to the picture rather than the column, so the segment frame hugs the image. */
       .video-card video {
-        width: 100%;
+        justify-self: center;
+        width: auto;
+        max-width: 100%;
         height: auto;
         max-height: var(--video-h);
         object-fit: contain;
@@ -461,8 +500,8 @@
         background: var(--bg-inset);
         border: 1px solid var(--border-panel);
         border-radius: 6px;
-        padding: 12px 14px;
-        margin-bottom: 14px;
+        padding: 8px 12px;
+        margin-bottom: 10px;
       }
       .task-instruction-box-label {
         font-size: var(--fs-label);
@@ -473,7 +512,7 @@
         margin-bottom: 4px;
       }
       .task-instruction-box-value {
-        font-size: var(--fs-ui);
+        font-size: var(--fs-heading);
         font-weight: 600;
         color: var(--text-strong);
         line-height: 1.4;
@@ -491,9 +530,7 @@
       .ef-key { flex: 0 0 42%; color: var(--text-muted-2); font-family: var(--font-mono); word-break: break-word; }
       .ef-val { flex: 1; color: var(--text-muted); font-family: var(--font-mono); word-break: break-word; }
 
-      #autofillRow { margin-bottom: 16px; }
       .autofill-label { display: block; font-size: var(--fs-ui); color: var(--text-muted-2); font-weight: 500; margin-bottom: 4px; }
-      #autofillRow select { margin-top: 4px; }
       /* Clears the instruction field's focus ring, which is drawn 2px outside its border
          and would otherwise sit on top of this label. */
       #instructionHistoryRow { margin-top: 14px; }
@@ -506,6 +543,107 @@
       #instrEditRow .instr-btns button { padding: 6px 10px; font-size: var(--fs-ui); }
 
       .card-title { font-size: var(--fs-heading); margin-bottom: 10px; font-weight: 600; }
+
+      .temporal-panel {
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid var(--border-divider);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .tl-transport { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .tl-transport button { padding: 2px 8px; font-size: var(--fs-ui); min-width: 32px; }
+      .tl-time { font-family: var(--font-mono); font-size: var(--fs-ui); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+      .tl-legend { margin-left: auto; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: var(--fs-label); color: var(--text-muted-2); }
+      .tl-legend .tl-swatch + span { margin-right: 6px; }
+      .tl-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; flex: 0 0 auto; }
+      .tl-swatch.failure { background: var(--seg-failure); }
+      .tl-swatch.suboptimal_action { background: var(--seg-suboptimal); }
+      .tl-swatch.side_effect { background: var(--seg-side-effect); }
+      .tl-track {
+        position: relative;
+        height: 40px;
+        background: var(--bg-inset);
+        border: 1px solid var(--border-panel);
+        border-radius: 6px;
+        cursor: pointer;
+        user-select: none;
+        touch-action: none;
+        overflow: hidden;
+      }
+      .tl-track.dragging, .tl-track.dragging .tl-seg { cursor: grabbing; }
+      .tl-ruler { position: absolute; left: 0; right: 0; top: 0; height: 14px; border-bottom: 1px solid var(--border-divider); }
+      .tl-tick {
+        position: absolute;
+        top: 0;
+        height: 100%;
+        border-left: 1px solid var(--border-divider);
+        padding-left: 3px;
+        font-size: var(--fs-label);
+        line-height: 14px;
+        color: var(--text-muted-3);
+        font-family: var(--font-mono);
+        white-space: nowrap;
+      }
+      .tl-lane { position: absolute; left: 0; right: 0; top: 18px; bottom: 4px; }
+      .tl-seg { position: absolute; top: 0; bottom: 0; min-width: 6px; border-radius: 3px; opacity: 0.7; cursor: grab; }
+      .tl-seg.failure { background: var(--seg-failure); }
+      .tl-seg.suboptimal_action { background: var(--seg-suboptimal); }
+      .tl-seg.side_effect { background: var(--seg-side-effect); }
+      .tl-seg:hover { opacity: 0.9; }
+      .tl-seg.selected { opacity: 1; box-shadow: inset 0 0 0 2px var(--text-strong); }
+      .tl-handle { position: absolute; top: 0; bottom: 0; width: 7px; cursor: ew-resize; border-radius: 3px; }
+      .tl-handle.l { left: 0; }
+      .tl-handle.r { right: 0; }
+      .tl-seg:hover .tl-handle, .tl-seg.selected .tl-handle { background: rgba(255, 255, 255, 0.4); }
+      .tl-pending { position: absolute; top: 0; bottom: 0; border: 2px dashed var(--accent); border-radius: 3px; pointer-events: none; }
+      .tl-pending.point { border-width: 0 0 0 2px; border-radius: 0; }
+      .tl-playhead { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--accent); pointer-events: none; }
+      .tl-playhead::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: -5px;
+        border: 6px solid transparent;
+        border-top-color: var(--accent);
+      }
+      .ts-editor {
+        border: 1px solid var(--border-panel);
+        border-radius: 6px;
+        padding: 6px 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .ts-editor.editing { border-color: var(--accent); }
+      .ts-editor-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; font-size: var(--fs-ui); font-weight: 600; color: var(--text-muted-2); }
+      .ts-msg { font-weight: 500; color: var(--warn); }
+      .ts-controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+      .ts-controls select { flex: 0 0 auto; width: auto; padding: 5px 8px; }
+      #tsLabel { padding: 5px 8px; }
+      .ts-controls button { flex: 0 0 auto; padding: 5px 8px; font-size: var(--fs-ui); font-variant-numeric: tabular-nums; }
+      .ts-cats { display: flex; flex-wrap: wrap; gap: 2px 12px; align-items: center; }
+      .ts-cats-label { font-size: var(--fs-label); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted-2); }
+      .ts-cats label { display: flex; align-items: center; gap: 4px; margin: 0; font-size: var(--fs-label); font-weight: 500; cursor: pointer; }
+      .ts-cats input { width: 13px; height: 13px; }
+      .ts-list { display: flex; flex-direction: column; gap: 4px; }
+      .ts-empty { font-size: var(--fs-ui); color: var(--text-muted-3); font-style: italic; }
+      /* Header line (swatch, range, type, remove), then description and categories below. */
+      .ts-row { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; padding: 5px 8px; border: 1px solid var(--border-panel); border-radius: 6px; background: var(--bg-inset); cursor: pointer; }
+      .ts-row.selected { border-color: var(--accent); }
+      .ts-row .ts-range { flex: 0 0 auto; font-size: var(--fs-label); font-family: var(--font-mono); color: var(--accent); }
+      .ts-row .ts-type { flex: 0 0 auto; font-size: var(--fs-label); font-weight: 600; color: var(--text-muted-2); }
+      .ts-row .ts-text { order: 1; flex: 1 0 100%; font-size: var(--fs-ui); color: var(--text-muted); overflow-wrap: anywhere; }
+      .ts-row .ts-text:empty { display: none; }
+      .ts-row .ts-cats-text { order: 2; flex: 1 0 100%; font-size: var(--fs-label); color: var(--text-muted-2); }
+      .ts-row .ts-cats-text:empty { display: none; }
+      .ts-row .ts-remove { flex: 0 0 auto; margin-left: auto; padding: 2px 6px; border: none; color: var(--text-muted-2); }
+      .ts-row .ts-remove:hover { color: var(--danger); background: none; }
+      /* Frames the videos while the playhead is inside a marked segment. */
+      .video-card[data-segment="failure"] video { box-shadow: 0 0 0 3px var(--seg-failure); }
+      .video-card[data-segment="suboptimal_action"] video { box-shadow: 0 0 0 3px var(--seg-suboptimal); }
+      .video-card[data-segment="side_effect"] video { box-shadow: 0 0 0 3px var(--seg-side-effect); }
       .button-row { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
       .instr-edit { margin-top: 8px; }
       .instr-edit input { margin-bottom: 6px; }
@@ -561,9 +699,7 @@
           flex: 0 0 auto;
           min-height: 0;
         }
-        .episode-toolbar { grid-template-columns: 1fr; }
-        .episode-toolbar > .episode-nav,
-        .episode-toolbar > .h5-search { grid-column: auto; justify-self: stretch; }
+        header { grid-template-columns: 1fr; }
         .sidebar, .video-section, .form-section { height: auto; }
         .sidebar #h5List {
           flex: 0 1 auto;
@@ -600,38 +736,37 @@
   <body>
     <div class="container">
       <header>
-        <h1>OopsieData</h1>
-        <div class="session-meta" aria-label="Current session">
-          <span class="ctx-label">Status</span>
-          <span class="statusline" id="statusLine">Loading…</span>
-          <span class="ctx-sep">·</span>
-          <span class="ctx-label">Annotator</span>
-          <span id="sessionAnnotatorName">—</span>
+        <div class="header-left">
+          <h1>OopsieData</h1>
+          <div class="session-meta" aria-label="Current session">
+            <span class="ctx-label">Status</span>
+            <span class="statusline" id="statusLine">Loading…</span>
+            <span class="ctx-sep">·</span>
+            <span class="ctx-label">Annotator</span>
+            <span id="sessionAnnotatorName">—</span>
+          </div>
         </div>
-        <div class="header-actions">
-          <button class="theme-toggle" id="themeToggleBtn" type="button" aria-label="Toggle light/dark theme" title="Toggle theme">Light mode</button>
-        </div>
-      </header>
-
-      <nav class="episode-toolbar" aria-label="Episode navigation">
-        <div class="toolbar-left">
-          <!-- Hidden by default. Only the in-the-loop mode reveals it (browse-only launches, i.e. standalone annotation of pre-collected data, never show this control). -->
-          <button class="rollout-btn" id="backToTaskBtn" type="button" hidden title="Return to instruction / next rollout">▶ Start next rollout</button>
-        </div>
-        <div class="episode-nav">
+        <nav class="episode-nav" aria-label="Episode navigation">
           <button id="prevBtn" type="button" title="Previous episode (←)" aria-label="Previous episode">◀ Prev</button>
           <div class="episode-name placeholder" id="sessionH5Name" aria-live="polite">No episode selected</div>
           <span class="episode-position" id="episodePosition" aria-hidden="true"></span>
           <button id="nextBtn" type="button" title="Next episode (→)" aria-label="Next episode">Next ▶</button>
           <button id="nextUnannotatedBtn" type="button" title="Jump to next episode that isn't fully annotated" aria-label="Next unannotated episode">Next unannotated ▶▶</button>
+        </nav>
+        <div class="header-actions">
+          <!-- Hidden by default. Only the in-the-loop mode reveals it (browse-only launches, i.e. standalone annotation of pre-collected data, never show this control). -->
+          <button class="rollout-btn" id="backToTaskBtn" type="button" hidden title="Return to instruction / next rollout">▶ Start next rollout</button>
+          <input id="h5Search" class="h5-search" type="search" placeholder="Search files…" aria-label="Search episode files" />
+          <button class="shortcuts-btn" id="shortcutsBtn" type="button" title="Keyboard shortcuts (?)" aria-haspopup="dialog">Shortcuts</button>
+          <button class="theme-toggle" id="themeToggleBtn" type="button" aria-label="Toggle light/dark theme" title="Toggle theme">Light mode</button>
         </div>
-        <input id="h5Search" class="h5-search" type="search" placeholder="Search files…" aria-label="Search episode files" />
-      </nav>
+      </header>
 
-      <main class="main-content">
+      <main class="main-content" id="mainContent">
         <aside class="sidebar" aria-label="Episode list">
           <div class="h5-header">
             <h2 class="h5-title">HDF5 files</h2>
+            <button class="sidebar-toggle" id="sidebarToggleBtn" type="button" aria-expanded="true" aria-label="Collapse file list" title="Collapse file list">◀</button>
           </div>
           <div class="h5-legend" aria-label="Annotation status icons">
             <div class="h5-legend-row"><span class="tick">✓</span> Outcome recorded (details left blank)</div>
@@ -656,6 +791,17 @@
         </aside>
 
         <section class="video-section" aria-label="Episode preview">
+          <div class="task-instruction-box">
+            <div class="task-instruction-box-label">Task instruction<button id="editInstrBtn" class="link-btn" type="button" hidden title="Edit this episode's task instruction">edit</button></div>
+            <div class="task-instruction-box-value" id="sessionTaskInstruction">—</div>
+            <div id="instrEditRow" class="instr-edit" hidden>
+              <input id="instrEditInput" type="text" placeholder="Task instruction" />
+              <div class="instr-btns">
+                <button id="instrSaveBtn" class="primary" type="button">Save instruction</button>
+                <button id="instrCancelBtn" type="button">Cancel</button>
+              </div>
+            </div>
+          </div>
           <div id="annotateControls" hidden>
             <div class="video-controls">
               <label title="Seek/play/pause one video and the others follow">Sync videos <input type="checkbox" id="syncVideosChk" /></label>
@@ -672,6 +818,7 @@
               </label>
               <label>Video grid layout
                 <select id="videoLayoutSel" aria-label="Video grid layout">
+                  <option value="auto">Auto (largest fit)</option>
                   <option value="1">1 wide</option>
                   <option value="2">2 side-by-side</option>
                   <option value="3">3 side-by-side</option>
@@ -711,26 +858,70 @@
               <div class="videos-grid" id="videosRow"></div>
             </div>
           </div>
+          <div class="temporal-panel" id="temporalPanel" data-question-id="temporal_segments" data-qtype="temporal_segments" hidden>
+            <div class="tl-transport">
+              <button type="button" id="tlStartBtn" title="Jump to the beginning (Home)" aria-label="Jump to the beginning">⏮</button>
+              <button type="button" id="tlPrevFrameBtn" title="Previous frame (,)" aria-label="Previous frame">‹</button>
+              <button type="button" id="tlPlayBtn" title="Play / pause (space)" aria-label="Play or pause">▶</button>
+              <button type="button" id="tlNextFrameBtn" title="Next frame (.)" aria-label="Next frame">›</button>
+              <button type="button" id="tlEndBtn" title="Jump to the end (End)" aria-label="Jump to the end">⏭</button>
+              <span class="tl-time" id="tlTime">No video loaded</span>
+              <span class="tl-legend" aria-hidden="true">
+                <span class="tl-swatch failure"></span><span>Failure</span>
+                <span class="tl-swatch suboptimal_action"></span><span>Suboptimal action</span>
+                <span class="tl-swatch side_effect"></span><span>Undesirable side-effect</span>
+              </span>
+            </div>
+            <div class="tl-track" id="tlTrack" role="slider" tabindex="0" aria-label="Episode timeline" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0">
+              <div class="tl-ruler" id="tlRuler"></div>
+              <div class="tl-lane" id="tlLane"></div>
+              <div class="tl-playhead" id="tlPlayhead"></div>
+            </div>
+            <!--
+              One editor for both new and existing segments. With no segment selected its
+              inputs describe the next segment to add; selecting one (click it on the
+              timeline or in the list) binds them to that segment and edits apply at once.
+              The category values are the stored slugs and must stay in step with
+              annotation_schema.py; test_ui_vocabulary_matches_python enforces that.
+            -->
+            <div class="ts-editor" id="tsEditor">
+              <div class="ts-editor-head">
+                <span id="tsEditorTitle">New segment</span>
+                <span class="ts-msg" id="tsMsg" role="status" aria-live="polite"></span>
+              </div>
+              <div class="ts-controls">
+                <!-- Values must stay in step with TEMPORAL_SEGMENT_TYPES in annotation_schema.py. -->
+                <select id="tsType" aria-label="Segment type">
+                  <option value="failure">Failure</option>
+                  <option value="suboptimal_action">Suboptimal action</option>
+                  <option value="side_effect">Undesirable side-effect</option>
+                </select>
+                <button type="button" id="tsStartBtn" title="Set the segment start to the current frame (I; Shift+I while editing)">Start: <span id="tsStartVal">—</span></button>
+                <button type="button" id="tsEndBtn" title="Set the segment end to the current frame (O; Shift+O while editing)">End: <span id="tsEndVal">—</span></button>
+                <button type="button" id="tsAddBtn" disabled>Add segment here</button>
+                <button type="button" id="tsDiscardBtn" hidden title="Discard the start/end you marked (Esc)">Discard</button>
+                <button type="button" id="tsDeleteBtn" hidden title="Delete this segment (Delete)">Delete segment</button>
+              </div>
+              <input type="text" id="tsLabel" placeholder="Describe this segment" aria-label="Segment description" />
+              <div class="ts-cats" role="group" aria-labelledby="tsCatsLabel">
+                <span class="ts-cats-label" id="tsCatsLabel">Failure categories</span>
+                <label title="The robot did not reach the target object or location, so no contact was made. If a grasp just barely misses the object, count this as grasp rather than reaching."><input type="checkbox" name="failure_category" value="reaching" /> Reaching (pre contact)</label>
+                <label title="The target object was not grasped properly. Includes slipping, dropping, or an incorrect grasp."><input type="checkbox" name="failure_category" value="grasp" /> Grasp (at contact)</label>
+                <label title="The object was grasped but not manipulated as intended. For example, successfully grasping a door handle but failing to open the door."><input type="checkbox" name="failure_category" value="manipulation" /> Manipulation (post contact)</label>
+                <label title="Error in planning or sequencing of actions. This includes executing a related but wrong action, such as pick-and-place of the wrong object, or executing a pick motion when a push motion was specified."><input type="checkbox" name="failure_category" value="sequencing_semantic" /> Sequencing or semantic</label>
+                <label title="Collision with an obstacle or the environment. This can co-occur with other categories; please select all that apply."><input type="checkbox" name="failure_category" value="collision" /> Collision</label>
+                <label title="Hardware or mechanical problem with the robot."><input type="checkbox" name="failure_category" value="hardware" /> Hardware/mechanical issue</label>
+                <label title="The robot made no discernible attempt at the task, e.g. by stalling."><input type="checkbox" name="failure_category" value="not_attempted" /> Task not attempted</label>
+                <label title="A side-effect or failure mode not covered by the categories above."><input type="checkbox" name="failure_category" value="other" /> Other</label>
+              </div>
+            </div>
+            <input type="hidden" name="temporal_segments" />
+          </div>
         </section>
 
         <section class="form-section" aria-label="Annotation form">
           <div class="form-scroll scroll-y">
-            <div class="task-instruction-box">
-              <div class="task-instruction-box-label">Task instruction<button id="editInstrBtn" class="link-btn" type="button" hidden title="Edit this episode's task instruction">edit</button></div>
-              <div class="task-instruction-box-value" id="sessionTaskInstruction">—</div>
-              <div id="instrEditRow" class="instr-edit" hidden>
-                <input id="instrEditInput" type="text" placeholder="Task instruction" />
-                <div class="instr-btns">
-                  <button id="instrSaveBtn" class="primary" type="button">Save instruction</button>
-                  <button id="instrCancelBtn" type="button">Cancel</button>
-                </div>
-              </div>
-            </div>
             <div id="episodeFields" hidden></div>
-            <div id="autofillRow" hidden>
-              <label class="autofill-label" for="autofillSelect">Copy from a previous annotation</label>
-              <select id="autofillSelect"><option value="">— select —</option></select>
-            </div>
             <!--
               The annotation form is hardcoded rather than rendered from a spec. The
               `value` on each input is what gets stored — a stable slug — while the
@@ -773,52 +964,6 @@
                   <textarea name="episode_description"></textarea>
                 </div>
 
-                <div class="form-group" data-question-id="failure_category" data-qtype="checkbox" hidden>
-                  <label id="failureCategoryLabel">Side-effect categories (select all that apply)</label>
-                  <div>
-                    <label class="opt-row">
-                      <input type="checkbox" name="failure_category" value="reaching" />
-                      <span>Reaching (pre contact)</span>
-                      <span class="info-icon" aria-hidden="true" data-tooltip="The robot did not reach the target object or location, so no contact was made. If a grasp just barely misses the object, count this as grasp rather than reaching.">ⓘ</span>
-                    </label>
-                    <label class="opt-row">
-                      <input type="checkbox" name="failure_category" value="grasp" />
-                      <span>Grasp (at contact)</span>
-                      <span class="info-icon" aria-hidden="true" data-tooltip="The target object was not grasped properly. Includes slipping, dropping, or an incorrect grasp.">ⓘ</span>
-                    </label>
-                    <label class="opt-row">
-                      <input type="checkbox" name="failure_category" value="manipulation" />
-                      <span>Manipulation (post contact)</span>
-                      <span class="info-icon" aria-hidden="true" data-tooltip="The object was grasped but not manipulated as intended. For example, successfully grasping a door handle but failing to open the door.">ⓘ</span>
-                    </label>
-                    <label class="opt-row">
-                      <input type="checkbox" name="failure_category" value="sequencing_semantic" />
-                      <span>Sequencing or semantic</span>
-                      <span class="info-icon" aria-hidden="true" data-tooltip="Error in planning or sequencing of actions. This includes executing a related but wrong action, such as pick-and-place of the wrong object, or executing a pick motion when a push motion was specified.">ⓘ</span>
-                    </label>
-                    <label class="opt-row">
-                      <input type="checkbox" name="failure_category" value="collision" />
-                      <span>Collision</span>
-                      <span class="info-icon" aria-hidden="true" data-tooltip="Collision with an obstacle or the environment. This can co-occur with other categories; please select all that apply.">ⓘ</span>
-                    </label>
-                    <label class="opt-row">
-                      <input type="checkbox" name="failure_category" value="hardware" />
-                      <span>Hardware/mechanical issue</span>
-                      <span class="info-icon" aria-hidden="true" data-tooltip="Hardware or mechanical problem with the robot.">ⓘ</span>
-                    </label>
-                    <label class="opt-row">
-                      <input type="checkbox" name="failure_category" value="not_attempted" />
-                      <span>Task not attempted</span>
-                      <span class="info-icon" aria-hidden="true" data-tooltip="The robot made no discernible attempt at the task, e.g. by stalling.">ⓘ</span>
-                    </label>
-                    <label class="opt-row">
-                      <input type="checkbox" name="failure_category" value="other" />
-                      <span>Other</span>
-                      <span class="info-icon" aria-hidden="true" data-tooltip="A side-effect or failure mode not covered by the categories above.">ⓘ</span>
-                    </label>
-                  </div>
-                </div>
-
                 <div class="form-group" data-question-id="severity" data-qtype="radio" hidden>
                   <label>Severity</label>
                   <div>
@@ -838,6 +983,13 @@
                       <span class="info-icon" aria-hidden="true" data-tooltip="Significant damage or risk of damage; the task cannot be reattempted without repair.">ⓘ</span>
                     </label>
                   </div>
+                </div>
+
+                <!-- Segments are edited on the timeline under the videos; listed here to keep the video pane short. -->
+                <div class="form-group">
+                  <div class="form-divider"></div>
+                  <label>Segments</label>
+                  <div class="ts-list" id="tsList"></div>
                 </div>
 
                 <div class="form-group" data-question-id="additional_notes" data-qtype="text">
@@ -884,8 +1036,50 @@
       back — restart <code>oopsie-data annotate</code>; this banner clears itself once the
       server answers again.
     </div>
+    <!-- Keep in step with the keydown handlers in the script below. -->
+    <dialog class="shortcuts-dialog" id="shortcutsDialog" aria-labelledby="shortcutsTitle">
+      <div class="shortcuts-body">
+      <div class="shortcuts-head">
+        <h2 id="shortcutsTitle">Keyboard shortcuts</h2>
+        <button type="button" id="shortcutsCloseBtn">Close</button>
+      </div>
+      <p class="muted">Single keys are ignored while typing in a text field.</p>
+      <h3>Episodes</h3>
+      <table>
+        <tr><td><kbd>→</kbd> <kbd>n</kbd> <kbd>j</kbd></td><td>Next episode</td></tr>
+        <tr><td><kbd>←</kbd> <kbd>p</kbd> <kbd>k</kbd></td><td>Previous episode</td></tr>
+      </table>
+      <h3>Outcome and saving</h3>
+      <table>
+        <tr><td><kbd>s</kbd> / <kbd>f</kbd></td><td>Success / failure</td></tr>
+        <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd></td><td>Success, suboptimal execution, unwanted side-effect, failure</td></tr>
+        <tr><td><kbd>Ctrl/⌘</kbd> <kbd>S</kbd> or <kbd>Ctrl/⌘</kbd> <kbd>Enter</kbd></td><td>Save annotation (also while typing)</td></tr>
+        <tr><td><kbd>Ctrl/⌘</kbd> <kbd>Z</kbd></td><td>Undo</td></tr>
+        <tr><td><kbd>Ctrl/⌘</kbd> <kbd>Shift</kbd> <kbd>Z</kbd> or <kbd>Ctrl</kbd> <kbd>Y</kbd></td><td>Redo</td></tr>
+      </table>
+      <h3>Video and timeline</h3>
+      <table>
+        <tr><td><kbd>Space</kbd></td><td>Play / pause</td></tr>
+        <tr><td><kbd>,</kbd> / <kbd>.</kbd></td><td>Previous / next frame (arrow keys too while the timeline has focus)</td></tr>
+        <tr><td><kbd>Home</kbd> / <kbd>End</kbd></td><td>Jump to the start / end</td></tr>
+      </table>
+      <h3>Segments</h3>
+      <table>
+        <tr><td><kbd>i</kbd></td><td>Start a new segment at the current frame</td></tr>
+        <tr><td><kbd>o</kbd></td><td>End it at the current frame; the segment is added and selected</td></tr>
+        <tr><td><kbd>Shift</kbd> <kbd>i</kbd> / <kbd>Shift</kbd> <kbd>o</kbd></td><td>Move the selected segment's start / end to the current frame</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>Discard the marked start/end, or stop editing the selected segment</td></tr>
+        <tr><td><kbd>Delete</kbd> <kbd>Backspace</kbd></td><td>Delete the selected segment</td></tr>
+      </table>
+      <h3>Help</h3>
+      <table>
+        <tr><td><kbd>?</kbd></td><td>Show this list</td></tr>
+      </table>
+      </div>
+    </dialog>
     <div id="toastRegion" class="toast-region" role="alert" aria-live="assertive"></div>
     <div id="floatingTooltip" class="floating-tooltip" aria-hidden="true"></div>
+    <div id="tlTooltip" class="floating-tooltip" aria-hidden="true"></div>
 
     <script>
       const el = (id) => document.getElementById(id);
@@ -894,7 +1088,6 @@
       const state = {
         h5Items: [],
         flatFileOrder: [],
-        recentAnnotations: [],
       };
 
       function escHtml(s) {
@@ -1025,13 +1218,12 @@
         if (which === "annotateCard") {
           setHidden("questionnaire", false);
           setHidden("saveBar", false);
-          setHidden("autofillRow", !(state.recentAnnotations && state.recentAnnotations.length));
         } else {
           setHidden("episodeFields", true);
-          setHidden("autofillRow", true);
           setHidden("questionnaire", true);
           setHidden("saveBar", true);
         }
+        applyOutcomeVisibility();
       }
 
       // Non-blocking notification (replaces alert() for save/network errors).
@@ -1049,13 +1241,93 @@
       const RATE_KEY = "oopsie_playback_rate";
       const SYNC_KEY = "oopsie_sync_videos";
       const COLS_KEY = "oopsie_video_cols";
+      function getVideoLayout() {
+        const v = localStorage.getItem(COLS_KEY) || "auto";
+        return (v === "1" || v === "2" || v === "3") ? v : "auto";
+      }
       function getVideoCols() {
-        const n = parseInt(localStorage.getItem(COLS_KEY) || "1", 10);
-        return (n === 2 || n === 3) ? n : 1;
+        const layout = getVideoLayout();
+        return layout === "auto" ? autoVideoCols() : parseInt(layout, 10);
+      }
+      // Height left for each row of videos in the video column, given the row count.
+      function videoRowHeight(rows) {
+        const row = el("videosRow");
+        const scroller = document.querySelector(".video-scroll");
+        const card = row && row.querySelector(".video-card");
+        if (!card || !scroller) return 0;
+        const labelH = card.querySelector(".video-label")?.offsetHeight || 0;
+        const marginB = parseFloat(getComputedStyle(card).marginBottom) || 0;
+        const rowGap = parseFloat(getComputedStyle(row).rowGap) || 0;
+        const chrome = rows * (labelH + marginB) + (2 * rows - 1) * rowGap;
+        return Math.floor((scroller.clientHeight - chrome) / rows) - 1;
+      }
+      // The column count (1–3) that shows the most total video area in the space
+      // available, fitting each camera at its own aspect ratio (4:3 until it has loaded).
+      function autoVideoCols() {
+        const row = el("videosRow");
+        const n = row ? row.querySelectorAll(".video-card").length : 0;
+        if (n <= 1 || !row) return 1;
+        const aspects = getVideos().map((v) => (v.videoWidth > 0 ? v.videoWidth / v.videoHeight : 4 / 3));
+        const colGap = parseFloat(getComputedStyle(row).columnGap) || 0;
+        let best = 1;
+        let bestArea = -1;
+        for (let c = 1; c <= Math.min(3, n); c++) {
+          const colW = (row.clientWidth - (c - 1) * colGap) / c;
+          const rowH = Math.max(MIN_FIT_VIDEO_H, videoRowHeight(Math.ceil(n / c)));
+          const area = aspects.reduce((sum, a) => {
+            const h = Math.min(rowH, colW / a);
+            return sum + h * h * a;
+          }, 0);
+          // A layout must beat the previous one clearly, so near-ties keep fewer columns.
+          if (area > bestArea * 1.02) { best = c; bestArea = area; }
+        }
+        return best;
       }
       function applyVideoCols(n) {
         const row = el("videosRow");
         if (row) row.style.setProperty("--video-cols", String(n));
+        fitVideos();
+      }
+
+      // Caps each video's height to the visible video column: in the auto layout so that
+      // every camera fits at once, otherwise so that one row fills it. Below a usable
+      // minimum the column scrolls; in the stacked narrow layout the page scrolls, so the
+      // cap is lifted.
+      const MIN_FIT_VIDEO_H = 120;
+      function fitVideos() {
+        const row = el("videosRow");
+        const scroller = document.querySelector(".video-scroll");
+        if (!row || !scroller) return;
+        const cards = row.querySelectorAll(".video-card");
+        if (!cards.length || getComputedStyle(scroller).overflowY === "visible") {
+          row.style.removeProperty("--video-h");
+          sizeVideos();
+          return;
+        }
+        // Auto fits every row on screen; a chosen column count lets each row fill the
+        // visible area, and the column scrolls to the rest.
+        const rows = getVideoLayout() === "auto" ? Math.ceil(cards.length / getVideoCols()) : 1;
+        row.style.setProperty("--video-h", `${Math.max(MIN_FIT_VIDEO_H, videoRowHeight(rows))}px`);
+        sizeVideos();
+      }
+
+      // Scales each video to the largest size that fits its grid cell at its own aspect
+      // ratio, so small recordings are enlarged and the frame still hugs the picture.
+      function sizeVideos() {
+        const row = el("videosRow");
+        const h = parseFloat(row.style.getPropertyValue("--video-h"));
+        row.querySelectorAll(".video-card").forEach((card) => {
+          const v = card.querySelector("video");
+          if (!v) return;
+          if (!h || !v.videoWidth) {
+            v.style.removeProperty("width");
+            v.style.removeProperty("height");
+            return;
+          }
+          const scale = Math.min(card.clientWidth / v.videoWidth, h / v.videoHeight);
+          v.style.width = `${Math.floor(v.videoWidth * scale)}px`;
+          v.style.height = `${Math.floor(v.videoHeight * scale)}px`;
+        });
       }
 
       function getVideos() {
@@ -1146,16 +1418,20 @@
           row.insertAdjacentHTML("beforeend", `
             <div class="video-card">
               <div class="video-label">${escHtml(cam)} view</div>
-              <video controls muted autoplay playsinline preload="metadata" src="${escHtml(url)}"></video>
+              <video controls muted playsinline preload="metadata" src="${escHtml(url)}"></video>
             </div>
           `);
         }
         const rate = getPlaybackRate();
         getVideos().forEach((v) => {
           v.playbackRate = rate;
-          v.addEventListener("loadedmetadata", () => { v.playbackRate = getPlaybackRate(); });
+          v.addEventListener("loadedmetadata", () => {
+            v.playbackRate = getPlaybackRate();
+            applyVideoCols(getVideoCols());
+          });
           attachSyncHandlers(v);
         });
+        applyVideoCols(getVideoCols());
       }
 
       // ── Episode data visualizer (#30) ──────────────────────────────────────
@@ -1198,17 +1474,6 @@
         panel.hidden = false;
       }
 
-      // ── Autofill from a previous annotation (#27) ──────────────────────────
-      const RECENT_LIMIT = 15;
-      async function loadRecentAnnotations() {
-        try {
-          const items = await jget(`/api/annotations/recent?limit=${RECENT_LIMIT}`);
-          state.recentAnnotations = Array.isArray(items) ? items : [];
-        } catch (e) {
-          state.recentAnnotations = [];
-        }
-        renderAutofillOptions();
-      }
       // ── Recent instructions, for the instruction card's picker ──────────────
       const INSTRUCTION_HISTORY_LIMIT = 10;
       async function loadRecentInstructions() {
@@ -1237,44 +1502,25 @@
         return t.length > 90 ? t.slice(0, 90) + "…" : t;
       }
 
-      function annotationSummaryLabel(a) {
-        const desc = String(a?.episode_description || "").trim() || "(no description)";
-        const trimmed = desc.length > 80 ? desc.slice(0, 80) + "…" : desc;
-        const ep = String(a?.__source_name || "").trim();
-        return ep ? `[${ep}] ${trimmed}` : trimmed;
-      }
-      function renderAutofillOptions() {
-        const sel = el("autofillSelect");
-        const row = el("autofillRow");
-        if (!sel || !row) return;
-        const items = state.recentAnnotations || [];
-        sel.innerHTML = items.length
-          ? '<option value="">— copy from a previous annotation —</option>' +
-            items.map((a, i) => `<option value="${i}">${escHtml(annotationSummaryLabel(a))}</option>`).join("")
-          : '<option value="">— select —</option>';
-        // Only surface the picker while annotating; showOnly also manages this.
-        const annotating = !el("annotateCard").hidden;
-        row.hidden = !(items.length && annotating);
-      }
-
       // The form itself is static markup (see #questionnaire above). This is only the
       // field list the generic save/populate/validate helpers iterate — ids and input
       // types, no vocabulary.
       const FIELDS = [
         { id: "outcome", type: "radio" },
         { id: "episode_description", type: "textarea" },
-        { id: "failure_category", type: "checkbox" },
         { id: "severity", type: "radio" },
+        { id: "temporal_segments", type: "temporal_segments" },
         { id: "additional_notes", type: "text" },
       ];
 
-      // Which fields each outcome asks about. Mirrors OUTCOME_EXPECTED_FIELDS in
-      // annotation_completeness.py; a clean success asks for nothing further.
+      // Which form fields each outcome asks about. Mirrors OUTCOME_EXPECTED_FIELDS in
+      // annotation_completeness.py, except failure_category: that is the union of the
+      // segments' categories and is edited on the timeline, not in the form.
       const OUTCOME_FIELDS = {
         success: [],
         success_suboptimal: ["episode_description"],
-        success_side_effect: ["episode_description", "failure_category", "severity"],
-        failure: ["episode_description", "failure_category", "severity"],
+        success_side_effect: ["episode_description", "severity"],
+        failure: ["episode_description", "severity"],
       };
 
       /**
@@ -1308,6 +1554,8 @@
                   e.preventDefault();
                   e.stopPropagation();
                   radio.checked = false;
+                  setDirty(true);
+                  commitHistory();
                 }
               },
               true,
@@ -1411,36 +1659,440 @@
         }, true);
       })();
 
+      // ── Timeline and temporal segments ─────────────────────────────────────
+      // Segments are non-overlapping inclusive frame ranges, each with its own failure
+      // categories; the episode-level failure_category is their union. The videos hold one
+      // frame per step but need not play at control_freq, so frames map to video time
+      // through trajectory_length / duration; control_freq is only the fallback.
+      const SEGMENT_TYPE_LABELS = {
+        failure: "Failure",
+        suboptimal_action: "Suboptimal action",
+        side_effect: "Undesirable side-effect",
+      };
+      let tsSegments = [];
+      let tsPending = { start: null, end: null };
+      let tsSelected = null; // index into tsSegments while a segment is being edited
+
+      function tlGeom() {
+        const ef = currentBrowseSample?.episode_fields || {};
+        const T = Number(ef?.trajectory_length) || 0;
+        const v = getVideos()[0];
+        const dur = v && Number.isFinite(v.duration) ? v.duration : 0;
+        const fps = (T > 0 && dur > 0) ? T / dur : (Number(ef?.robot_profile?.control_freq) || 0);
+        const D = dur > 0 ? dur : ((fps > 0 && T > 0) ? T / fps : 0);
+        return { fps, T, D };
+      }
+      function tlFrameCount(g = tlGeom()) {
+        return g.T > 0 ? g.T : Math.floor(g.D * g.fps);
+      }
+      function tlPct(t, D) {
+        return D > 0 ? Math.max(0, Math.min(100, (t / D) * 100)) : 0;
+      }
+      function tlTimeToFrame(t, g = tlGeom()) {
+        if (!(g.fps > 0)) return null;
+        const f = Math.floor(t * g.fps + 1e-6);
+        return Math.max(0, Math.min(Math.max(0, tlFrameCount(g) - 1), f));
+      }
+      function tlCurrentTime() {
+        const v = getVideos()[0];
+        return v ? (v.currentTime || 0) : 0;
+      }
+      function tlCurrentFrame() {
+        return getVideos().length ? tlTimeToFrame(tlCurrentTime()) : null;
+      }
+      function tlSeekTime(t) {
+        const { D } = tlGeom();
+        const clamped = Math.max(0, D > 0 ? Math.min(D, t) : t);
+        getVideos().forEach((v) => { v.currentTime = clamped; });
+      }
+      function tlSeekFrame(frame) {
+        const g = tlGeom();
+        if (!(g.fps > 0)) return;
+        const f = Math.max(0, Math.min(Math.max(0, tlFrameCount(g) - 1), frame));
+        tlSeekTime((f + 0.5) / g.fps);
+      }
+      function tlStepFrame(delta) {
+        const f = tlCurrentFrame();
+        if (f == null) return;
+        getVideos().forEach((v) => v.pause());
+        tlSeekFrame(f + delta);
+      }
+      function tlJump(toEnd) {
+        getVideos().forEach((v) => v.pause());
+        if (toEnd) tlSeekFrame(tlFrameCount() - 1);
+        else tlSeekTime(0);
+      }
+      function tlTogglePlay() {
+        const vids = getVideos();
+        if (!vids.length) return;
+        if (vids[0].paused) vids.forEach((v) => v.play().catch(() => {}));
+        else vids.forEach((v) => v.pause());
+      }
+      function tlFmtTick(t, step) {
+        if (step < 1) return `${t.toFixed(1)}s`;
+        if (t >= 60) return `${Math.floor(t / 60)}:${String(Math.round(t % 60)).padStart(2, "0")}`;
+        return `${Math.round(t)}s`;
+      }
+
+      function tsCategoryInputs() {
+        return Array.from(document.querySelectorAll('#tsEditor input[name="failure_category"]'));
+      }
+      function tsEditorCategories() {
+        return tsCategoryInputs().filter((i) => i.checked).map((i) => i.value);
+      }
+      // In vocabulary order, matching segment_category_union in annotation_schema.py.
+      function tsCategoryUnion() {
+        const seen = new Set(tsSegments.flatMap((seg) => seg.failure_category));
+        return tsCategoryInputs().map((i) => i.value).filter((v) => seen.has(v));
+      }
+      function tsCategoryText(slugs) {
+        const names = new Map(tsCategoryInputs().map((i) => [i.value, i.closest("label").textContent.trim()]));
+        return slugs.map((c) => names.get(c) || c).join(", ");
+      }
+      function tsTypeLabel(type) {
+        return SEGMENT_TYPE_LABELS[type] || type;
+      }
+      function tsFrameText(frame) {
+        return frame == null ? "—" : `frame ${frame}`;
+      }
+      function tsHasPending() {
+        return tsPending.start != null || tsPending.end != null;
+      }
+      function tsOverlaps(start, end, exceptIdx = null) {
+        return tsSegments.some((seg, i) => i !== exceptIdx && start <= seg.end && end >= seg.start);
+      }
+      function tsMsg(text) {
+        el("tsMsg").textContent = text || "";
+      }
+      function tsNormalize(segments) {
+        return (Array.isArray(segments) ? segments : [])
+          .filter((seg) => seg && Number.isInteger(Number(seg.start)) && Number.isInteger(Number(seg.end)))
+          .map((seg) => ({
+            start: Number(seg.start),
+            end: Number(seg.end),
+            type: String(seg.type || ""),
+            label: String(seg.label || "").trim(),
+            failure_category: Array.isArray(seg.failure_category) ? seg.failure_category.map(String) : [],
+          }))
+          .sort((a, b) => a.start - b.start || a.end - b.end);
+      }
+
+      function tlRender() {
+        const g = tlGeom();
+        const ruler = el("tlRuler");
+        const lane = el("tlLane");
+        if (!ruler || !lane) return;
+
+        let ticks = "";
+        if (g.D > 0) {
+          const steps = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
+          const step = steps.find((st) => g.D / st <= 10) || 1200;
+          for (let i = 0; i * step <= g.D + 1e-9; i++) {
+            ticks += `<div class="tl-tick" style="left:${tlPct(i * step, g.D)}%">${tlFmtTick(i * step, step)}</div>`;
+          }
+        }
+        ruler.innerHTML = ticks;
+
+        let html = "";
+        if (g.fps > 0 && g.D > 0) {
+          html = tsSegments.map((seg, i) => {
+            const left = tlPct(seg.start / g.fps, g.D);
+            const right = tlPct((seg.end + 1) / g.fps, g.D);
+            const cls = `tl-seg ${escHtml(seg.type)}${i === tsSelected ? " selected" : ""}`;
+            return `<div class="${cls}" data-idx="${i}" style="left:${left}%;width:${right - left}%">`
+              + '<span class="tl-handle l"></span><span class="tl-handle r"></span></div>';
+          }).join("");
+          const { start, end } = tsPending;
+          if (start != null || end != null) {
+            const single = start == null || end == null;
+            const lo = Math.min(start ?? end, end ?? start);
+            const hi = Math.max(start ?? end, end ?? start);
+            const left = tlPct(lo / g.fps, g.D);
+            const width = single ? 0 : tlPct((hi + 1) / g.fps, g.D) - left;
+            html += `<div class="tl-pending${single ? " point" : ""}" style="left:${left}%;width:${width}%"></div>`;
+          }
+        }
+        lane.innerHTML = html;
+        el("tlTrack").setAttribute("aria-valuemax", String(Math.max(0, tlFrameCount(g) - 1)));
+      }
+
+      function tsRenderEditor() {
+        const seg = tsSelected != null ? tsSegments[tsSelected] : null;
+        const canMark = tlGeom().fps > 0;
+        el("tsEditor").classList.toggle("editing", Boolean(seg));
+        el("tsEditorTitle").textContent = seg
+          ? `Editing ${tsTypeLabel(seg.type)} segment, frames ${seg.start}–${seg.end}`
+          : "New segment";
+        el("tsStartVal").textContent = tsFrameText(seg ? seg.start : tsPending.start);
+        el("tsEndVal").textContent = tsFrameText(seg ? seg.end : tsPending.end);
+        el("tsStartBtn").disabled = !canMark;
+        el("tsEndBtn").disabled = !canMark;
+        const ending = !seg && tsPending.start != null;
+        el("tsAddBtn").textContent = ending ? "End segment here" : "Add segment here";
+        el("tsAddBtn").title = ending
+          ? "Set the end to the current frame and add the segment (O)"
+          : "Start a new segment at the current frame (I)";
+        el("tsAddBtn").disabled = !canMark;
+        el("tsDiscardBtn").hidden = Boolean(seg) || !tsHasPending();
+        el("tsDeleteBtn").hidden = !seg;
+      }
+
+      function tsRenderList() {
+        const list = el("tsList");
+        if (!list) return;
+        if (!tsSegments.length) {
+          list.innerHTML = '<div class="ts-empty">No segments yet. Press Add segment here (I) at the start and End segment here (O) at the end.</div>';
+          return;
+        }
+        list.innerHTML = tsSegments.map((seg, i) => `
+          <div class="ts-row${i === tsSelected ? " selected" : ""}" data-idx="${i}" title="Select and jump to this segment">
+            <span class="tl-swatch ${escHtml(seg.type)}" aria-hidden="true"></span>
+            <span class="ts-range">${seg.start}–${seg.end}</span>
+            <span class="ts-type">${escHtml(tsTypeLabel(seg.type))}</span>
+            <span class="ts-text">${escHtml(seg.label)}</span>
+            <span class="ts-cats-text">${escHtml(tsCategoryText(seg.failure_category))}</span>
+            <button type="button" class="ts-remove" data-idx="${i}" title="Remove segment" aria-label="Remove segment">✕</button>
+          </div>`).join("");
+      }
+
+      function tsRefresh() {
+        const hidden = el("temporalPanel")?.querySelector('input[type="hidden"]');
+        if (hidden) hidden.value = JSON.stringify(tsSegments);
+        tsRenderList();
+        tlRender();
+        tsRenderEditor();
+      }
+      function tsSetSegments(segments) {
+        tsSegments = tsNormalize(segments);
+        if (tsSelected != null && tsSelected >= tsSegments.length) tsSelected = null;
+        tsRefresh();
+      }
+      // A data edit: re-render, mark the form dirty and record an undo step.
+      function tsChanged() {
+        tsRefresh();
+        setDirty(true);
+        el("saveMsg").textContent = "";
+        commitHistory();
+      }
+
+      function tsLoadEditorFrom(seg) {
+        el("tsType").value = seg.type;
+        el("tsLabel").value = seg.label;
+        const cats = new Set(seg.failure_category);
+        tsCategoryInputs().forEach((i) => { i.checked = cats.has(i.value); });
+      }
+      function tsClearEditorInputs() {
+        el("tsLabel").value = "";
+        tsCategoryInputs().forEach((i) => { i.checked = false; });
+      }
+      // Selecting binds the editor to a segment; null returns it to "new segment" mode.
+      function tsSelect(idx) {
+        if (idx != null && tsHasPending()) {
+          tsMsg("Add or discard the segment you started first.");
+          return false;
+        }
+        tsSelected = idx;
+        if (idx != null) tsLoadEditorFrom(tsSegments[idx]);
+        else tsClearEditorInputs();
+        tsMsg("");
+        tsRefresh();
+        return true;
+      }
+
+      // Marks the pending segment's start or end at the current frame. With a segment
+      // selected, ``retime`` moves that segment's bound instead; otherwise the selection
+      // is released first, so marking always works towards a new segment.
+      function tsMark(which, retime = false) {
+        const f = tlCurrentFrame();
+        if (f == null) return;
+        if (tsSelected != null && !retime) tsSelect(null);
+        if (tsSelected != null) {
+          const seg = tsSegments[tsSelected];
+          const start = which === "start" ? f : seg.start;
+          const end = which === "end" ? f : seg.end;
+          if (start > end) {
+            tsMsg(which === "start" ? "The start cannot be after the end." : "The end cannot be before the start.");
+            return;
+          }
+          if (tsOverlaps(start, end, tsSelected)) { tsMsg("Segments may not overlap."); return; }
+          seg.start = start;
+          seg.end = end;
+          tsMsg("");
+          tsChanged();
+          return;
+        }
+        tsPending[which] = f;
+        tsMsg("");
+        if (tsPending.start != null && tsPending.end != null) {
+          if (tsAddPending()) return;
+          tsPending[which] = null;
+        }
+        tlRender();
+        tsRenderEditor();
+        commitHistory();
+      }
+      // Adds the pending range as a segment; false when it is incomplete or overlaps one.
+      function tsAddPending() {
+        const { start, end } = tsPending;
+        if (start == null || end == null) return false;
+        const lo = Math.min(start, end);
+        const hi = Math.max(start, end);
+        if (tsOverlaps(lo, hi)) {
+          tsMsg("This range overlaps an existing segment. Move the start or end.");
+          return false;
+        }
+        tsSegments = tsNormalize([
+          ...tsSegments,
+          { start: lo, end: hi, type: el("tsType").value, label: el("tsLabel").value, failure_category: tsEditorCategories() },
+        ]);
+        tsPending = { start: null, end: null };
+        // Select the new segment so its description and categories can be filled in next.
+        tsSelected = tsSegments.findIndex((s) => s.start === lo && s.end === hi);
+        tsLoadEditorFrom(tsSegments[tsSelected]);
+        tsMsg("");
+        tsChanged();
+        return true;
+      }
+      function tsDiscardPending() {
+        if (!tsHasPending()) return;
+        tsPending = { start: null, end: null };
+        tsMsg("");
+        tlRender();
+        tsRenderEditor();
+        commitHistory();
+      }
+      function tsDelete(idx) {
+        if (idx == null || !tsSegments[idx]) return;
+        tsSegments.splice(idx, 1);
+        if (tsSelected === idx) { tsSelected = null; tsClearEditorInputs(); }
+        else if (tsSelected != null && tsSelected > idx) tsSelected -= 1;
+        tsChanged();
+      }
+
+      // Redraws the playhead every frame; ruler and segments only when the geometry changes.
+      let tlLastGeom = "";
+      let tlLastTime = "";
+      function tlTick() {
+        requestAnimationFrame(tlTick);
+        const panel = el("temporalPanel");
+        if (!panel || panel.hidden) return;
+        const g = tlGeom();
+        const sig = `${g.D}|${g.fps}|${g.T}`;
+        if (sig !== tlLastGeom) { tlLastGeom = sig; tlRender(); tsRenderEditor(); }
+
+        const t = tlCurrentTime();
+        el("tlPlayhead").style.left = `${tlPct(t, g.D)}%`;
+        const f = tlTimeToFrame(t, g);
+        let text = "No video loaded";
+        if (g.D > 0) {
+          text = `${t.toFixed(2)} s / ${g.D.toFixed(2)} s`;
+          text += f == null
+            ? " · frame rate unknown, open the episode from the file list to mark segments"
+            : ` · frame ${f} / ${tlFrameCount(g) - 1}`;
+        }
+        if (text !== tlLastTime) {
+          tlLastTime = text;
+          el("tlTime").textContent = text;
+          el("tlTrack").setAttribute("aria-valuenow", String(f ?? 0));
+        }
+        const v0 = getVideos()[0];
+        const playLabel = v0 && !v0.paused ? "❚❚" : "▶";
+        if (el("tlPlayBtn").textContent !== playLabel) el("tlPlayBtn").textContent = playLabel;
+
+        const active = f == null ? null : tsSegments.find((seg) => f >= seg.start && f <= seg.end);
+        const kind = active ? active.type : "";
+        document.querySelectorAll("#videosRow .video-card").forEach((card) => {
+          if ((card.dataset.segment || "") !== kind) card.dataset.segment = kind;
+        });
+      }
+
+      // ── Undo / redo ────────────────────────────────────────────────────────
+      // Whole-form snapshots, recorded after each completed interaction. Text fields
+      // record on change (blur), so while typing the browser's own undo applies.
+      let historyPast = [];
+      let historyFuture = [];
+      let historyCurrent = null;
+      const HISTORY_LIMIT = 200;
+
+      function formSnapshot() {
+        const out = {};
+        for (const q of FIELDS) {
+          if (q.type !== "temporal_segments") out[q.id] = fieldValue(q);
+        }
+        out.temporal_segments = tsSegments;
+        out.pending = tsPending;
+        return JSON.stringify(out);
+      }
+      function historyReset() {
+        historyPast = [];
+        historyFuture = [];
+        historyCurrent = formSnapshot();
+      }
+      function commitHistory() {
+        const snap = formSnapshot();
+        if (snap === historyCurrent) return;
+        if (historyCurrent != null) historyPast.push(historyCurrent);
+        if (historyPast.length > HISTORY_LIMIT) historyPast.shift();
+        historyCurrent = snap;
+        historyFuture = [];
+      }
+      function restoreSnapshot(snap) {
+        historyCurrent = snap;
+        const data = JSON.parse(snap);
+        applyFormValues(data);
+        tsSelected = null;
+        tsClearEditorInputs();
+        tsPending = data.pending || { start: null, end: null };
+        tsMsg("");
+        tsSetSegments(data.temporal_segments);
+        setDirty(true);
+        el("saveMsg").textContent = "";
+      }
+      function undo() {
+        commitHistory();
+        if (!historyPast.length) return;
+        historyFuture.push(historyCurrent);
+        restoreSnapshot(historyPast.pop());
+      }
+      function redo() {
+        if (!historyFuture.length) return;
+        historyPast.push(historyCurrent);
+        restoreSnapshot(historyFuture.pop());
+      }
+
+      function fieldValue(q) {
+        if (q.type === "radio") {
+          const checked = document.querySelector(`input[type="radio"][name="${CSS.escape(q.id)}"]:checked`);
+          return checked ? checked.value : "";
+        }
+        const el0 = document.querySelector(`[name="${CSS.escape(q.id)}"]`);
+        return el0 ? String(el0.value ?? "") : "";
+      }
+
       function gatherAnswers() {
         const out = {};
         for (const q of FIELDS) {
           const id = q.id;
-          const type = q.type;
           // Conditionally-hidden fields (e.g. severity when "Success" is selected)
           // count as empty: they must neither block save (#35) nor be persisted with
           // stale values the annotator can no longer see.
           const group = document.querySelector(`[data-question-id="${CSS.escape(id)}"]`);
           if (group && group.hidden) {
-            out[id] = type === "checkbox" ? [] : "";
-            continue;
-          }
-          if (type === "checkbox") {
-            const els = Array.from(document.querySelectorAll(`input[type="checkbox"][name="${CSS.escape(id)}"]`));
-            out[id] = els.filter(e => e.checked).map(e => e.value);
-          } else if (type === "radio") {
-            const checked = document.querySelector(`input[type="radio"][name="${CSS.escape(id)}"]:checked`);
-            out[id] = checked ? checked.value : "";
+            out[id] = q.type === "temporal_segments" ? [] : "";
+          } else if (q.type === "temporal_segments") {
+            out[id] = tsSegments.map((seg) => ({ ...seg, failure_category: [...seg.failure_category] }));
           } else {
-            const el0 = document.querySelector(`[name="${CSS.escape(id)}"]`);
-            out[id] = el0 ? String(el0.value ?? "") : "";
+            out[id] = fieldValue(q);
           }
         }
+        out.failure_category = out.temporal_segments.length ? tsCategoryUnion() : [];
         return out;
       }
 
       // Only the outcome is required; every taxonomy field is optional in every branch,
       // so a partial annotation saves cleanly and the tick prompts to finish it later.
       function validateSaveAnswers(answers) {
+        if (tsHasPending()) return "Add or discard the segment you started before saving.";
         return String(answers?.outcome ?? "").trim() ? "" : "Please select an outcome.";
       }
 
@@ -1452,23 +2104,16 @@
       }
 
       // Show only the fields the selected outcome asks about (#29). With no outcome
-      // chosen, all three conditional fields stay hidden.
-      // The category list is one question (slug `failure_category`) shared by the
-      // side-effect and failure branches, so only its heading changes with the outcome.
+      // chosen, both conditional fields stay hidden.
       function applyOutcomeVisibility() {
         const outcome = questionCurrentValue("outcome");
         const shown = OUTCOME_FIELDS[outcome] || [];
-        for (const id of ["episode_description", "failure_category", "severity"]) {
+        for (const id of ["episode_description", "severity"]) {
           const group = document.querySelector(`[data-question-id="${CSS.escape(id)}"]`);
           if (group) group.hidden = !shown.includes(id);
         }
-        const catLabel = el("failureCategoryLabel");
-        if (catLabel) {
-          catLabel.textContent =
-            outcome === "failure"
-              ? "Failure categories (select all that apply)"
-              : "Side-effect categories (select all that apply)";
-        }
+        // Lives under the videos rather than in the form, so it follows the main pane.
+        el("temporalPanel").hidden = el("annotateCard").hidden;
       }
 
       let currentSampleId = null; // rollout sample_id
@@ -1609,7 +2254,7 @@
           r.checked = match;
         });
         applyOutcomeVisibility();
-        if (changed) { setDirty(true); el("saveMsg").textContent = ""; }
+        if (changed) { setDirty(true); el("saveMsg").textContent = ""; commitHistory(); }
       }
 
       // Browse-only launches annotate pre-collected data: there is no rollout to start.
@@ -1791,44 +2436,35 @@
         });
       }
 
-      function populateForm(existing) {
-        const ann = existing && typeof existing === "object" ? existing : {};
-        const skip = new Set(["annotated_at", "annotator", "source"]);
-        // Reset every managed field first so applying a (possibly partial) annotation —
-        // e.g. copying a previous annotation onto an already-filled form (#27) — never
-        // leaves stale values (like a severity) from a prior selection.
+      // Sets the form fields from an annotation dict; segments are handled by the caller.
+      function applyFormValues(ann) {
         for (const q of FIELDS) {
-          const id = q.id;
-          const type = q.type;
-          if (skip.has(id)) continue;
-          if (type === "checkbox" || type === "radio") {
-            document.querySelectorAll(`input[name="${CSS.escape(id)}"]`).forEach((e) => { e.checked = false; });
+          if (q.type === "temporal_segments") continue;
+          const value = ann[q.id];
+          if (q.type === "radio") {
+            document.querySelectorAll(`input[type="radio"][name="${CSS.escape(q.id)}"]`).forEach((r) => {
+              r.checked = value != null && String(r.value) === String(value);
+            });
           } else {
-            const el0 = document.querySelector(`[name="${CSS.escape(id)}"]`);
-            if (el0) el0.value = "";
-          }
-        }
-        for (const q of FIELDS) {
-          const id = q.id;
-          const type = q.type;
-          if (skip.has(id) || !(id in ann)) continue;
-          const value = ann[id];
-          if (type === "checkbox") {
-            const values = Array.isArray(value) ? value.map(String) : [String(value)];
-            const els = Array.from(document.querySelectorAll(`input[type="checkbox"][name="${CSS.escape(id)}"]`));
-            for (const elc of els) elc.checked = values.includes(String(elc.value));
-          } else if (type === "radio") {
-            const els = Array.from(document.querySelectorAll(`input[type="radio"][name="${CSS.escape(id)}"]`));
-            for (const elr of els) elr.checked = String(elr.value) === String(value);
-          } else {
-            const el0 = document.querySelector(`[name="${CSS.escape(id)}"]`);
-            if (el0) el0.value = (value == null) ? "" : String(value);
+            const el0 = document.querySelector(`[name="${CSS.escape(q.id)}"]`);
+            if (el0) el0.value = value == null ? "" : String(value);
           }
         }
         applyOutcomeVisibility();
+      }
+
+      function populateForm(existing) {
+        const ann = existing && typeof existing === "object" ? existing : {};
+        applyFormValues(ann);
+        tsSelected = null;
+        tsPending = { start: null, end: null };
+        tsClearEditorInputs();
+        tsMsg("");
+        tsSetSegments(ann.temporal_segments || []);
         // Programmatic population does not fire input/change events, so the form
         // starts clean after (re)loading an episode.
         setDirty(false);
+        historyReset();
       }
 
       async function selectBrowseH5(relPath) {
@@ -2011,7 +2647,6 @@
           el("saveMsg").textContent = "";
           markSaved();
           await pollH5List();
-          loadRecentAnnotations().catch(() => {}); // the just-saved annotation becomes copyable
           // Nothing moves on save unless the annotator opted in. Both branches are
           // opt-in and independent: one walks the file tree, the other the rollout loop.
           if (browseRelPath) {
@@ -2064,17 +2699,6 @@
       });
       el("instrCancelBtn").addEventListener("click", () => { el("instrEditRow").hidden = true; });
 
-      // Autofill: copy a chosen previous annotation into the form (#27)
-      el("autofillSelect").addEventListener("change", () => {
-        const items = state.recentAnnotations || [];
-        const idx = parseInt(el("autofillSelect").value, 10);
-        if (Number.isInteger(idx) && items[idx]) {
-          populateForm(items[idx]);
-          setDirty(true);
-          el("saveMsg").textContent = "Copied from a previous annotation — review and Save.";
-        }
-        el("autofillSelect").value = "";
-      });
       el("instrSaveBtn").addEventListener("click", async () => {
         if (!browseRelPath) return;
         const val = el("instrEditInput").value.trim();
@@ -2101,7 +2725,172 @@
 
       // Dirty tracking: any real edit flips the indicator and clears stale messages (#34).
       el("questionnaire").addEventListener("input", () => { setDirty(true); el("saveMsg").textContent = ""; });
-      el("questionnaire").addEventListener("change", () => { setDirty(true); el("saveMsg").textContent = ""; });
+      el("questionnaire").addEventListener("change", () => {
+        setDirty(true);
+        el("saveMsg").textContent = "";
+        commitHistory();
+      });
+      if (typeof ResizeObserver !== "undefined") {
+        new ResizeObserver(() => applyVideoCols(getVideoCols())).observe(document.querySelector(".video-scroll"));
+      }
+
+      (function initTimeline() {
+        const track = el("tlTrack");
+        const tip = el("tlTooltip");
+        // { mode: "scrub" } or { mode: "move" | "start" | "end", idx, orig, originFrame, x0, moved }
+        let drag = null;
+
+        function timeAt(e) {
+          const r = track.getBoundingClientRect();
+          return tlGeom().D * Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+        }
+        // Frames a segment may occupy without touching its neighbours.
+        function room(idx) {
+          const lo = idx > 0 ? tsSegments[idx - 1].end + 1 : 0;
+          const hi = idx < tsSegments.length - 1 ? tsSegments[idx + 1].start - 1 : tlFrameCount() - 1;
+          return { lo, hi };
+        }
+        function hideTip() { tip.classList.remove("visible"); }
+        function showTip(seg, e) {
+          const cats = seg.failure_category.length ? ` [${tsCategoryText(seg.failure_category)}]` : "";
+          tip.textContent = `${tsTypeLabel(seg.type)}, frames ${seg.start}–${seg.end}${cats}: ${seg.label || "no description"}`;
+          tip.classList.add("visible");
+          const r = track.getBoundingClientRect();
+          const vw = document.documentElement.clientWidth;
+          const left = Math.max(8, Math.min(vw - tip.offsetWidth - 8, e.clientX - tip.offsetWidth / 2));
+          tip.style.left = `${Math.round(left)}px`;
+          tip.style.top = `${Math.round(Math.max(8, r.top - tip.offsetHeight - 8))}px`;
+        }
+
+        track.addEventListener("pointerdown", (e) => {
+          if (e.button !== 0 || !getVideos().length) return;
+          track.setPointerCapture(e.pointerId);
+          hideTip();
+          const node = e.target.closest(".tl-seg");
+          if (node && tlGeom().fps > 0) {
+            const idx = Number(node.dataset.idx);
+            const handle = e.target.closest(".tl-handle");
+            drag = {
+              mode: handle ? (handle.classList.contains("l") ? "start" : "end") : "move",
+              idx,
+              orig: { ...tsSegments[idx] },
+              originFrame: tlTimeToFrame(timeAt(e)),
+              x0: e.clientX,
+              moved: false,
+            };
+            return;
+          }
+          drag = { mode: "scrub" };
+          getVideos().forEach((v) => v.pause());
+          tlSeekTime(timeAt(e));
+        });
+        track.addEventListener("pointermove", (e) => {
+          if (!drag) {
+            const node = e.target.closest(".tl-seg");
+            const seg = node ? tsSegments[Number(node.dataset.idx)] : null;
+            if (seg) showTip(seg, e); else hideTip();
+            return;
+          }
+          if (drag.mode === "scrub") { tlSeekTime(timeAt(e)); return; }
+          if (!drag.moved) {
+            if (Math.abs(e.clientX - drag.x0) < 4) return;
+            if (tsHasPending()) { tsMsg("Add or discard the segment you started first."); drag = null; return; }
+            drag.moved = true;
+            track.classList.add("dragging");
+            getVideos().forEach((v) => v.pause());
+          }
+          const f = tlTimeToFrame(timeAt(e));
+          if (f == null) return;
+          const seg = tsSegments[drag.idx];
+          const o = drag.orig;
+          const { lo, hi } = room(drag.idx);
+          if (drag.mode === "move") {
+            const len = o.end - o.start;
+            seg.start = Math.max(lo, Math.min(hi - len, o.start + f - drag.originFrame));
+            seg.end = seg.start + len;
+          } else if (drag.mode === "start") {
+            seg.start = Math.max(lo, Math.min(o.end, f));
+            tlSeekFrame(seg.start);
+          } else {
+            seg.end = Math.min(hi, Math.max(o.start, f));
+            tlSeekFrame(seg.end);
+          }
+          tlRender();
+          tsRenderEditor();
+        });
+        function endDrag() {
+          const d = drag;
+          drag = null;
+          track.classList.remove("dragging");
+          if (!d || d.mode === "scrub") return;
+          if (d.moved) tsChanged();
+          else tsSelect(d.idx);
+        }
+        track.addEventListener("pointerup", endDrag);
+        track.addEventListener("pointercancel", endDrag);
+        track.addEventListener("pointerleave", hideTip);
+        // Arrow keys step frames here instead of switching episodes.
+        track.addEventListener("keydown", (e) => {
+          if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+            e.preventDefault();
+            e.stopPropagation();
+            tlStepFrame(e.key === "ArrowLeft" ? -1 : 1);
+          }
+        });
+        window.addEventListener("scroll", hideTip, true);
+
+        el("tlPlayBtn").addEventListener("click", tlTogglePlay);
+        el("tlPrevFrameBtn").addEventListener("click", () => tlStepFrame(-1));
+        el("tlNextFrameBtn").addEventListener("click", () => tlStepFrame(1));
+        el("tlStartBtn").addEventListener("click", () => tlJump(false));
+        el("tlEndBtn").addEventListener("click", () => tlJump(true));
+        el("tsStartBtn").addEventListener("click", () => tsMark("start", true));
+        el("tsEndBtn").addEventListener("click", () => tsMark("end", true));
+        el("tsAddBtn").addEventListener("click", () => {
+          tsMark(tsSelected == null && tsPending.start != null ? "end" : "start");
+        });
+        el("tsDiscardBtn").addEventListener("click", tsDiscardPending);
+        el("tsDeleteBtn").addEventListener("click", () => tsDelete(tsSelected));
+
+        // In edit mode the editor inputs write straight through to the selected segment.
+        el("tsType").addEventListener("change", () => {
+          if (tsSelected == null) return;
+          tsSegments[tsSelected].type = el("tsType").value;
+          tsChanged();
+        });
+        el("tsLabel").addEventListener("input", () => {
+          if (tsSelected == null) return;
+          tsSegments[tsSelected].label = el("tsLabel").value.trim();
+          tsRenderList();
+          setDirty(true);
+        });
+        el("tsLabel").addEventListener("change", () => {
+          if (tsSelected != null) tsChanged();
+        });
+        el("tsLabel").addEventListener("keydown", (e) => {
+          if (e.key !== "Enter") return;
+          e.preventDefault();
+          el("tsLabel").blur();
+        });
+        tsCategoryInputs().forEach((input) => input.addEventListener("change", () => {
+          if (tsSelected == null) return;
+          tsSegments[tsSelected].failure_category = tsEditorCategories();
+          tsChanged();
+        }));
+        el("tsList").addEventListener("click", (e) => {
+          const rm = e.target.closest(".ts-remove");
+          if (rm) { tsDelete(parseInt(rm.dataset.idx, 10)); return; }
+          const row = e.target.closest(".ts-row");
+          if (!row) return;
+          const idx = parseInt(row.dataset.idx, 10);
+          if (!tsSelect(idx)) return;
+          getVideos().forEach((v) => v.pause());
+          tlSeekFrame(tsSegments[idx].start);
+        });
+        tsRenderList();
+        tsRenderEditor();
+        requestAnimationFrame(tlTick);
+      })();
 
       // Theme toggle: dark/light. Reads OS preference by default; explicit choice is
       // persisted in localStorage and applied via data-theme on <html>.
@@ -2137,6 +2926,28 @@
 
       // Persisted jump-to-next-unannotated-on-save preference (#33), default off: saving
       // must never move you off the episode you are looking at unless you asked it to.
+      // Persisted file-list collapse state, default expanded.
+      (function initSidebarToggle() {
+        const KEY = "oopsie_sidebar_collapsed";
+        const btn = el("sidebarToggleBtn");
+        const main = el("mainContent");
+        if (!btn || !main) return;
+        function apply(collapsed) {
+          main.classList.toggle("sidebar-collapsed", collapsed);
+          btn.textContent = collapsed ? "▶" : "◀";
+          const label = collapsed ? "Expand file list" : "Collapse file list";
+          btn.title = label;
+          btn.setAttribute("aria-label", label);
+          btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+        }
+        apply(localStorage.getItem(KEY) === "1");
+        btn.addEventListener("click", () => {
+          const collapsed = !main.classList.contains("sidebar-collapsed");
+          localStorage.setItem(KEY, collapsed ? "1" : "0");
+          apply(collapsed);
+        });
+      })();
+
       (function initAutoAdvance() {
         const KEY = "oopsie_auto_advance";
         const chk = el("autoAdvanceChk");
@@ -2173,13 +2984,11 @@
         }
         const colsSel = el("videoLayoutSel");
         if (colsSel) {
-          colsSel.value = String(getVideoCols());
+          colsSel.value = getVideoLayout();
           applyVideoCols(getVideoCols());
           colsSel.addEventListener("change", () => {
-            const n = parseInt(colsSel.value, 10);
-            const clean = (n === 2 || n === 3) ? n : 1;
-            localStorage.setItem(COLS_KEY, String(clean));
-            applyVideoCols(clean);
+            localStorage.setItem(COLS_KEY, colsSel.value);
+            applyVideoCols(getVideoCols());
           });
         }
       })();
@@ -2188,6 +2997,8 @@
       // are ignored while typing in a field.
       document.addEventListener("keydown", (e) => {
         const t = e.target;
+        // The open dialog handles its own keys; Esc closes it natively.
+        if (el("shortcutsDialog").open) return;
         // The instruction editor owns Enter=save / Esc=cancel / Ctrl+S=save (#31), so its
         // keys never fall through to the questionnaire save hotkey (which would save the
         // annotation and auto-advance, silently discarding the typed instruction).
@@ -2207,10 +3018,43 @@
           el("saveBtn").click();
           return;
         }
+        if ((e.ctrlKey || e.metaKey) && (e.key === "z" || e.key === "Z" || e.key === "y")) {
+          // Inside a text field the browser's own undo applies.
+          const textEntry = t && (t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && ["text", "search"].includes(t.type)));
+          if (textEntry) return;
+          e.preventDefault();
+          if (e.key === "y" || e.shiftKey) redo(); else undo();
+          return;
+        }
         if (typing) return;
+        if (e.key === "?") { e.preventDefault(); el("shortcutsDialog").showModal(); return; }
         if (e.key === "ArrowRight" || e.key === "n" || e.key === "j") { e.preventDefault(); navigateBy(1); return; }
         if (e.key === "ArrowLeft" || e.key === "p" || e.key === "k") { e.preventDefault(); navigateBy(-1); return; }
         if (!browseRelPath && !currentSampleId) return;
+        if (!el("temporalPanel").hidden) {
+          if (e.key === "i" || e.key === "I") { e.preventDefault(); tsMark("start", e.shiftKey); return; }
+          if (e.key === "o" || e.key === "O") { e.preventDefault(); tsMark("end", e.shiftKey); return; }
+          if (e.key === ",") { e.preventDefault(); tlStepFrame(-1); return; }
+          if (e.key === "Home") { e.preventDefault(); tlJump(false); return; }
+          if (e.key === "End") { e.preventDefault(); tlJump(true); return; }
+          if (e.key === "Escape") {
+            if (tsHasPending()) tsDiscardPending();
+            else if (tsSelected != null) tsSelect(null);
+            return;
+          }
+          if ((e.key === "Delete" || e.key === "Backspace") && tsSelected != null) {
+            e.preventDefault();
+            tsDelete(tsSelected);
+            return;
+          }
+          if (e.key === ".") { e.preventDefault(); tlStepFrame(1); return; }
+          // Buttons and native video controls already act on space themselves.
+          if (e.key === " " && t.tagName !== "BUTTON" && t.tagName !== "VIDEO") {
+            e.preventDefault();
+            tlTogglePlay();
+            return;
+          }
+        }
         if (e.key === "s" || e.key === "S") { e.preventDefault(); setOutcome("success"); }
         else if (e.key === "f" || e.key === "F") { e.preventDefault(); setOutcome("failure"); }
         // 1-4 reach the two qualified successes, which s/f alone cannot.
@@ -2218,6 +3062,12 @@
           e.preventDefault();
           setOutcome(["success", "success_suboptimal", "success_side_effect", "failure"][Number(e.key) - 1]);
         }
+      });
+
+      el("shortcutsBtn").addEventListener("click", () => el("shortcutsDialog").showModal());
+      el("shortcutsCloseBtn").addEventListener("click", () => el("shortcutsDialog").close());
+      el("shortcutsDialog").addEventListener("click", (e) => {
+        if (e.target === el("shortcutsDialog")) el("shortcutsDialog").close();
       });
 
       // Guard against losing unsaved edits on tab close / reload (#34).
@@ -2278,8 +3128,15 @@
 
       updateSaveButtonState(); // start disabled with the "select an episode" tooltip
       initAnnotationForm();     // conditional visibility + optional-radio deselect
-      loadH5List().catch(() => {});
-      loadRecentAnnotations().catch(() => {});
+      // Browse launches open on the first episode that still needs work. In-the-loop
+      // launches start on the instruction card instead.
+      loadH5List()
+        .then(() => {
+          if (IS_IN_THE_LOOP || browseRelPath) return;
+          const rel = findNextUnannotatedRel(-1);
+          if (rel) return navigateToRel(rel);
+        })
+        .catch(() => {});
       refresh().catch(() => {}); // initial paint
       if (IS_IN_THE_LOOP) {
         setInterval(() => refresh().catch(() => {}), POLL_TASK_MS);
