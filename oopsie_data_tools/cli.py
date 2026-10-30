@@ -501,6 +501,136 @@ def annotate(samples_dir, annotator_name, port, no_browser, with_rollouts):
     )
 
 
+# ── annotation batches ────────────────────────────────────────────────────────
+
+
+def _prompt(label: str, value: str | None, flag: str, hide_input: bool = False) -> str | None:
+    """``value`` stripped, else prompted for; ``None`` when nobody can answer the prompt."""
+    value = (value or "").strip()
+    if value:
+        return value
+    if not sys.stdin.isatty():
+        logger.error("%s is required when stdin is not a terminal.", flag)
+        return None
+    return click.prompt(label, hide_input=hide_input).strip() or None
+
+
+_ANNOTATION_DIR = click.option(
+    "--dir",
+    "local_dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=Path("oopsie-annotation"),
+    show_default=True,
+    metavar="DIR",
+    help="Local folder of your share",
+)
+_TOKEN = click.option(
+    "--token",
+    envvar="HF_TOKEN",
+    default=None,
+    metavar="TOKEN",
+    help="HuggingFace token (default: $HF_TOKEN, else prompted for; never stored)",
+)
+
+
+@cli.group()
+def annotation():
+    """Download your annotation batches and upload your annotations.
+
+    \b
+    A typical session:
+      oopsie-data annotation download
+      oopsie-data annotate --samples-dir oopsie-annotation/<folder>/<batch>/episodes \\
+          --annotator-name "<full name>"
+      oopsie-data annotation upload
+    """
+
+
+@annotation.command("download")
+@click.option("--name", default=None, metavar="NAME", help="Your full name (prompted for if omitted)")
+@_TOKEN
+@_ANNOTATION_DIR
+@click.option("--repo", default=None, metavar="REPO", help="Batch repo (default: the coordinator's)")
+def annotation_download(name, token, local_dir, repo):
+    """Download only your share of the annotation batches.
+
+    Asks for your full name and a HuggingFace token, then downloads your folder of the
+    batch repo into --dir. Run it again to resume an interrupted download.
+    """
+    from huggingface_hub import HfApi
+
+    from oopsie_data_tools.utils.annotation_batches import (
+        BATCH_REPO,
+        batch_dirs,
+        check_token,
+        download_share,
+    )
+
+    name = _prompt("Full name", name, "--name")
+    if not name:
+        return 1
+    token = _prompt("HuggingFace token", token, "--token", hide_input=True)
+    if not token:
+        return 1
+    logger.info("[auth]  Logged in as: %s", check_token(token))
+    share = download_share(HfApi(token=token), repo or BATCH_REPO, name, local_dir)
+    logger.info("[download] Your batches are in %s. Annotate each with:", share)
+    for episodes in batch_dirs(share):
+        click.echo(f'  oopsie-data annotate --samples-dir {episodes} --annotator-name "{name}"')
+    click.echo("Then return your annotations with: oopsie-data annotation upload")
+    return 0
+
+
+@annotation.command("upload")
+@_TOKEN
+@_ANNOTATION_DIR
+@click.option("--repo", default=None, metavar="REPO", help="Returns repo (default: the coordinator's)")
+@click.option("--yes", "-y", is_flag=True, help="Upload without asking for confirmation")
+def annotation_upload(token, local_dir, repo, yes):
+    """Upload every episode you annotated as a pull request.
+
+    Reads your name from the folder that 'oopsie-data annotation download' wrote, and
+    uploads every h5 file in it that holds an annotation under that name. Uploading again
+    later is fine: each upload opens a new pull request, and the latest annotation counts.
+    """
+    from huggingface_hub import HfApi
+
+    from oopsie_data_tools.utils.annotation_batches import (
+        RETURNS_REPO,
+        annotation_progress,
+        check_token,
+        read_state,
+        upload_share,
+    )
+
+    state = read_state(local_dir)
+    if state is None:
+        logger.error("%s holds no downloaded share; run 'oopsie-data annotation download'.", local_dir)
+        return 1
+    name, share = state["name"], local_dir / state["folder"]
+    progress = annotation_progress(share, name)
+    for batch, (done, total) in progress.items():
+        logger.info("[upload] %s: %d/%d episodes annotated by %s", batch, len(done), total, name)
+    files = [p for done, _ in progress.values() for p in done]
+    if not files:
+        logger.error(
+            "No episode in %s is annotated under the name %r. Pass exactly that name to "
+            "'oopsie-data annotate --annotator-name'.",
+            share,
+            name,
+        )
+        return 1
+    token = _prompt("HuggingFace token", token, "--token", hide_input=True)
+    if not token:
+        return 1
+    logger.info("[auth]  Logged in as: %s", check_token(token))
+    if not yes and not click.confirm(f"Upload {len(files)} annotated episodes?", default=True):
+        return 1
+    url = upload_share(HfApi(token=token), repo or RETURNS_REPO, share, name, files)
+    logger.info("[upload] Opened %s", url)
+    return 0
+
+
 # ── validate ──────────────────────────────────────────────────────────────────
 
 

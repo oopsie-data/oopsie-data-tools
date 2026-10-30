@@ -241,3 +241,4 @@ vendor/
 # Local mock/scratch driver for the annotation UI
 mock_rollout.py
 mock_rollout_data/
+oopsie-annotation/

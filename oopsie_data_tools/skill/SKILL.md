@@ -31,7 +31,8 @@ bypasses every recording-time check — see `reference/conversion.md`.
 Also: `show-config`, `submissions` (counts, total size and when the last upload landed, all
 from Hub metadata — nothing is downloaded), `inspect <file.h5>` (structure dump; works even on files
 `validate` rejects, and the path is positional), `restructure` (split a directory HuggingFace
-would reject), `install-skill`. `validate`, `qa`, `show-config` and `inspect` take `--json`; prefer it.
+would reject), `install-skill`, and `annotation download` / `annotation upload` (fetch an
+annotator's share of the coordinator's batches and return the annotated h5s as a pull request). `validate`, `qa`, `show-config` and `inspect` take `--json`; prefer it.
 Two things the payloads do not tell you: a failed episode's `error_type` is either `validation`
 (the episode is bad — the user's to fix) or `unexpected` (the validator broke — report it, do not
 work around it), and `inspect`'s `robot_profile` attr is a JSON string *inside* the JSON, so it
@@ -44,6 +45,9 @@ Inside a `uv sync` checkout, prefix every command with `uv run`.
 - **`annotate` never returns** — it serves the UI until Ctrl-C. Background it and give the user
   the URL, or hand them the command. Annotation is human judgement; there is nothing for you to
   do while it runs.
+- **`annotation download` and `annotation upload` prompt** for the full name and HuggingFace
+  token (exit 1 without a terminal). Pass `--name`, `--token` (or `$HF_TOKEN`) and, for upload,
+  `--yes` to run them unattended.
 - **`restructure` prompts and has no terminal check** — without `--yes` it hangs or dies on
   `EOFError`. It copies the whole dataset, which is why it asks. `upload --with-restructure`
   treats the flag as that agreement.
